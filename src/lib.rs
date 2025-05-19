@@ -23,11 +23,9 @@ impl WindowSize {
 ioctl_read_bad!(get_window_size_unsafe, TIOCGWINSZ, c_ushort);
 
 pub fn get_window_size() -> WindowSize {
-    let data = unsafe {
-        let mut data: [u16; 4] = [0, 0, 0, 0];
-        let data_ptr = data.as_mut_ptr();
-        get_window_size_unsafe(0, data_ptr).unwrap();
-        data
-    };
+    let mut data: [u16; 4] = [0, 0, 0, 0];
+    unsafe {
+        get_window_size_unsafe(0, data.as_mut_ptr()).unwrap();
+    }
     WindowSize::build_from_ioctl(data)
 }
