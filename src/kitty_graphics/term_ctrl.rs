@@ -39,6 +39,7 @@ pub fn write_img_data(
         handle.write_all(cmd.as_slice())?;
         handle.flush()?;
     }
+    handle.write(b"\n")?;
 
     Ok(())
 }

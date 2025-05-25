@@ -1,8 +1,7 @@
 mod kitty_graphics;
 
 fn main() {
-    let window_size = termplt::get_window_size();
-    println!("{window_size:?}");
+    println!("{:?}", termplt::get_window_size());
 
     kitty_graphics::rgb_imgs::print_red_square(100).unwrap();
 
