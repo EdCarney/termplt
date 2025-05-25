@@ -23,9 +23,6 @@ pub fn write_img_data(
 
         control_data += if ind == num_chunks - 1 { "m=0" } else { "m=1" };
 
-        println!("Ctrl data: {control_data}");
-        return Ok(());
-
         cmd.clear();
         let mut start = b"\x1B_G".to_vec();
         let mut control_data = control_data.as_bytes().to_vec();
