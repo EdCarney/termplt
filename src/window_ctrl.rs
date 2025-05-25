@@ -4,7 +4,7 @@ use std::{error::Error, fmt};
 
 #[derive(Debug)]
 pub struct WindowCtrlError {
-    exit_code: i32,
+    pub exit_code: i32,
 }
 
 impl fmt::Display for WindowCtrlError {
