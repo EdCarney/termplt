@@ -1,7 +1,5 @@
-use termplt::get_window_size;
-
 fn main() {
-    let window_size = get_window_size();
+    let window_size = termplt::get_window_size();
 
     println!("{window_size:?}");
 }

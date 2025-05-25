@@ -1,31 +1,8 @@
-use libc::{TIOCGWINSZ, c_ushort};
-use nix::ioctl_read_bad;
+mod window_ctrl;
 
-#[derive(Debug)]
-pub struct WindowSize {
-    rows: u16,
-    cols: u16,
-    x_pixels: u16,
-    y_pixels: u16,
-}
+pub use window_ctrl::get_window_size;
 
-impl WindowSize {
-    fn build_from_ioctl(ioctl_data: [u16; 4]) -> WindowSize {
-        WindowSize {
-            rows: ioctl_data[0],
-            cols: ioctl_data[1],
-            x_pixels: ioctl_data[2],
-            y_pixels: ioctl_data[3],
-        }
-    }
-}
-
-ioctl_read_bad!(get_window_size_unsafe, TIOCGWINSZ, c_ushort);
-
-pub fn get_window_size() -> WindowSize {
-    let mut data: [u16; 4] = [0, 0, 0, 0];
-    unsafe {
-        get_window_size_unsafe(0, data.as_mut_ptr()).unwrap();
-    }
-    WindowSize::build_from_ioctl(data)
+pub fn print_hello() {
+    let winsz = window_ctrl::get_window_size();
+    println!("{winsz:?}");
 }
