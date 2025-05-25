@@ -1,5 +1,19 @@
 use libc::{TIOCGWINSZ, c_ushort};
 use nix::ioctl_read_bad;
+use std::{error::Error, fmt};
+
+#[derive(Debug)]
+pub struct WindowCtrlError {
+    exit_code: i32,
+}
+
+impl fmt::Display for WindowCtrlError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Non-zero exit code {} from ioctl read", self.exit_code)
+    }
+}
+
+impl Error for WindowCtrlError {}
 
 #[derive(Debug)]
 pub struct WindowSize {
@@ -22,10 +36,11 @@ impl WindowSize {
 
 ioctl_read_bad!(get_window_size_unsafe, TIOCGWINSZ, c_ushort);
 
-pub fn get_window_size() -> WindowSize {
+pub fn get_window_size() -> Result<WindowSize, Box<dyn Error>> {
     let mut data: [u16; 4] = [0, 0, 0, 0];
-    unsafe {
-        get_window_size_unsafe(0, data.as_mut_ptr()).unwrap();
+    let exit_code = unsafe { get_window_size_unsafe(0, data.as_mut_ptr())? };
+    match exit_code {
+        0 => Ok(WindowSize::build_from_ioctl(data)),
+        _ => Err(Box::new(WindowCtrlError { exit_code }) as Box<dyn Error>),
     }
-    WindowSize::build_from_ioctl(data)
 }
