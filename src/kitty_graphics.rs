@@ -1,3 +1,4 @@
+mod ctrl_seq;
 mod encoding;
 pub mod png_imgs;
 pub mod rgb_imgs;

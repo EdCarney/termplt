@@ -1,11 +1,10 @@
-use std::{
-    collections::HashMap,
-    io::{self, Write},
-};
+use std::io::{self, Write};
+
+use super::ctrl_seq::CtrlSeq;
 
 pub fn write_img_data(
     img_data: &[u8],
-    ctrl_data: &HashMap<&str, &str>,
+    ctrl_data: &[Box<dyn CtrlSeq>],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut handle = io::stdout().lock();
     let chunks = img_data.chunks(4096);
@@ -14,9 +13,9 @@ pub fn write_img_data(
 
     for (ind, chunk) in chunks.enumerate() {
         let mut control_data = if ind == 0 {
-            ctrl_data
-                .iter()
-                .fold(String::new(), |acc, (&k, &v)| format!("{k}={v},{acc}"))
+            ctrl_data.iter().fold(String::new(), |acc, seq| {
+                format!("{},{acc}", seq.get_ctrl_seq())
+            })
         } else {
             String::new()
         };
