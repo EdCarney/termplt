@@ -1,5 +1,5 @@
 [package]
-name = "nix_ioctl"
+name = "termplt"
 version = "0.1.0"
 edition = "2024"
 
