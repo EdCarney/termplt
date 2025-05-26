@@ -1,13 +1,9 @@
 use super::ctrl_seq::{CtrlSeq, Metadata};
 use std::io::{self, Write};
 
-const START: &[u8] = b"\x1B";
+const START: &[u8] = b"\x1B_G";
 const SEP: &[u8] = b";";
 const END: &[u8] = b"\x1B\\";
-
-pub fn query_term_capabilities() {}
-
-pub fn query_device_capabilities() {}
 
 pub fn write_img_data(
     img_data: &[u8],
@@ -44,7 +40,5 @@ pub fn write_img_data(
         handle.write_all(cmd.drain(..).as_slice())?;
         handle.flush()?;
     }
-    handle.write(b"\n")?;
-
     Ok(())
 }
