@@ -1,8 +1,13 @@
+use super::ctrl_seq::{CtrlSeq, Metadata};
 use std::io::{self, Write};
 
-use crate::kitty_graphics::ctrl_seq::Metadata;
+const START: &[u8] = b"\x1B";
+const SEP: &[u8] = b";";
+const END: &[u8] = b"\x1B\\";
 
-use super::ctrl_seq::CtrlSeq;
+pub fn query_term_capabilities() {}
+
+pub fn query_device_capabilities() {}
 
 pub fn write_img_data(
     img_data: &[u8],
@@ -24,11 +29,11 @@ pub fn write_img_data(
             .join(",")
             .into_bytes();
 
-        let mut start = b"\x1B_G".to_vec();
+        let mut start = START.to_vec();
         let mut control_data = ctl_bytes.to_vec();
-        let mut sep = b";".to_vec();
+        let mut sep = SEP.to_vec();
         let mut payload = chunk.to_vec();
-        let mut term = b"\x1B\\".to_vec();
+        let mut term = END.to_vec();
 
         cmd.append(&mut start);
         cmd.append(&mut control_data);
