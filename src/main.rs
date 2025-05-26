@@ -1,4 +1,4 @@
-use rgb::RGB8;
+use rgb::{RGB8, RGBA8};
 
 mod kitty_graphics;
 
@@ -23,8 +23,14 @@ fn main() {
     kitty_graphics::png_imgs::print_img(img_path).unwrap();
     println!();
 
-    kitty_graphics::rgb_imgs::print_square(100, GREEN).unwrap();
-    println!();
+    // let c = RGBA8 {
+    //     r: 0,
+    //     g: 255,
+    //     b: 0,
+    //     a: 0,
+    // };
+    // kitty_graphics::rgba_imgs::print_square(50, c).unwrap();
+    // println!();
 
     kitty_graphics::rgb_imgs::print_square(200, WHITE).unwrap();
     println!();

@@ -24,7 +24,7 @@ pub enum PixelFormat {
     Png,
     PngBounded { cols: u32, rows: u32 },
     Rgb { width: u32, height: u32 },
-    Rgba,
+    Rgba { width: u32, height: u32 },
 }
 
 impl CtrlSeq for PixelFormat {
@@ -36,7 +36,10 @@ impl CtrlSeq for PixelFormat {
                 width: pix_width,
                 height: pix_height,
             } => format!("f=24,s={pix_width},v={pix_height}"),
-            PixelFormat::Rgba => String::from("f=32"),
+            PixelFormat::Rgba {
+                width: pix_width,
+                height: pix_height,
+            } => format!("f=32,s={pix_width},v={pix_height}"),
         }
     }
 }
