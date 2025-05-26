@@ -18,19 +18,17 @@ const WHITE: RGB8 = RGB8 {
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
-    kitty_graphics::png_imgs::print_img("/home/edcarney/wallpapers/pixel-night-city.png").unwrap();
+    let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
+
+    kitty_graphics::png_imgs::print_img(img_path).unwrap();
     println!();
 
     kitty_graphics::rgb_imgs::print_square(100, GREEN).unwrap();
     println!();
+
     kitty_graphics::rgb_imgs::print_square(200, WHITE).unwrap();
     println!();
 
-    kitty_graphics::png_imgs::print_bounded_img(
-        "/home/edcarney/wallpapers/pixel-night-city.png",
-        100,
-        25,
-    )
-    .unwrap();
+    kitty_graphics::png_imgs::print_bounded_img(img_path, 100, 25).unwrap();
     println!();
 }
