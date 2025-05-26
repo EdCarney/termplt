@@ -38,7 +38,7 @@ pub fn write_img_data(
         cmd.append(&mut term);
 
         handle.write_all(cmd.drain(..).as_slice())?;
-        handle.flush()?;
     }
+    handle.flush()?;
     Ok(())
 }
