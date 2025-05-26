@@ -12,7 +12,7 @@ pub fn print_img(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         Box::new(Action::TransmitDisplay),
         Box::new(PixelFormat::Png),
     ];
-    term_ctrl::write_img_data(&img_data, &ctrl_data)
+    term_ctrl::write_img_data(&img_data, ctrl_data)
 }
 
 pub fn print_bounded_img(
@@ -27,5 +27,5 @@ pub fn print_bounded_img(
         Box::new(PixelFormat::PngBounded { cols, rows }),
     ];
 
-    term_ctrl::write_img_data(&img_data, &ctrl_data)
+    term_ctrl::write_img_data(&img_data, ctrl_data)
 }

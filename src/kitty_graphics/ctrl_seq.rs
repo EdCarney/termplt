@@ -43,13 +43,28 @@ impl CtrlSeq for PixelFormat {
 
 pub enum Action {
     TransmitDisplay,
+    Query,
 }
 
 impl CtrlSeq for Action {
     fn get_ctrl_seq(&self) -> String {
         match self {
             Action::TransmitDisplay => String::from("a=T"),
+            Action::Query => String::from("a=q"),
         }
     }
 }
 
+pub enum Metadata {
+    Id(u32),
+    MoreData(bool),
+}
+
+impl CtrlSeq for Metadata {
+    fn get_ctrl_seq(&self) -> String {
+        match self {
+            Metadata::Id(id) => format!("i={id}"),
+            Metadata::MoreData(more) => format!("m={}", if more.clone() { 1 } else { 0 }),
+        }
+    }
+}

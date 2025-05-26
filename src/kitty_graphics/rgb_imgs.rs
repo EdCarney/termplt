@@ -19,5 +19,5 @@ pub fn print_red_square(size: usize) -> Result<(), Box<dyn std::error::Error>> {
         Box::new(PixelFormat::Rgb { width, height }),
     ];
 
-    term_ctrl::write_img_data(&img_data, &ctrl_data)
+    term_ctrl::write_img_data(&img_data, ctrl_data)
 }
