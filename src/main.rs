@@ -1,6 +1,7 @@
 use rgb::RGB8;
 
 mod kitty_graphics;
+mod terminal_commands;
 
 const RED: RGB8 = RGB8 { r: 255, g: 0, b: 0 };
 const GREEN: RGB8 = RGB8 { r: 0, g: 255, b: 0 };
