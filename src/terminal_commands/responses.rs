@@ -3,12 +3,24 @@ use std::io::{self, Read, Write};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-pub fn execute_csi(csi_cmd: &str) -> Result<Vec<u8>> {
+pub fn execute_csi(cmd: &str) -> Result<Vec<u8>> {
+    let cmd = String::from("\x1b[") + cmd;
+    execute_and_read(&cmd, "\x1b", "R")
+}
+
+pub fn execute_kitty(cmd: &str) -> Result<Vec<u8>> {
+    let resp_start = "\x1b_G";
+    let resp_end = "\x1b\\";
+    let cmd = String::from(resp_start) + cmd + resp_end;
+    execute_and_read(&cmd, resp_start, resp_end)
+}
+
+fn execute_and_read(cmd: &str, resp_start: &str, resp_end: &str) -> Result<Vec<u8>> {
     terminal::enable_raw_mode()?;
 
     {
         let mut stdout = io::stdout().lock();
-        write!(stdout, "\x1b[{csi_cmd}")?;
+        write!(stdout, "{cmd}")?;
         stdout.flush()?;
     }
 
@@ -20,9 +32,8 @@ pub fn execute_csi(csi_cmd: &str) -> Result<Vec<u8>> {
         match stdin.read_exact(&mut byte_buf) {
             Ok(_) => {
                 buf.push(byte_buf[0]);
-
-                if buf.len() > 3 && buf.ends_with(b"R") {
-                    if buf.starts_with(b"\x1b") {
+                if buf.len() > 3 && buf.ends_with(resp_end.as_bytes()) {
+                    if buf.starts_with(resp_start.as_bytes()) {
                         break;
                     }
                     buf.clear();
@@ -37,7 +48,10 @@ pub fn execute_csi(csi_cmd: &str) -> Result<Vec<u8>> {
 }
 
 pub fn read_command() -> Result<()> {
-    let csi_resp = execute_csi("6n")?;
-    println!("CSI Seq: {csi_resp:?}");
+    let resp = execute_csi("6n")?;
+    println!("CSI Resp: {resp:?}");
+
+    let resp = execute_kitty("i=31,s=1,v=1,a=q,d=t,f=24;AAAA")?;
+    println!("Kitty Resp: {resp:?}");
     Ok(())
 }
