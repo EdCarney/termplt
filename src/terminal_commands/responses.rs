@@ -3,16 +3,20 @@ use std::io::{self, Read, Write};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-pub fn execute_csi(cmd: &str) -> Result<Vec<u8>> {
+pub fn execute_csi(cmd: &str) -> Result<String> {
+    let resp_start = "\x1b";
+    let resp_end = "R";
     let cmd = String::from("\x1b[") + cmd;
-    execute_and_read(&cmd, "\x1b", "R")
+    let resp = execute_and_read(&cmd, resp_start, resp_end)?;
+    resp_to_str(resp, resp_start, resp_end)
 }
 
-pub fn execute_kitty(cmd: &str) -> Result<Vec<u8>> {
+pub fn execute_kitty(cmd: &str) -> Result<String> {
     let resp_start = "\x1b_G";
     let resp_end = "\x1b\\";
     let cmd = String::from(resp_start) + cmd + resp_end;
-    execute_and_read(&cmd, resp_start, resp_end)
+    let resp = execute_and_read(&cmd, resp_start, resp_end)?;
+    resp_to_str(resp, resp_start, resp_end)
 }
 
 fn execute_and_read(cmd: &str, resp_start: &str, resp_end: &str) -> Result<Vec<u8>> {
@@ -47,6 +51,19 @@ fn execute_and_read(cmd: &str, resp_start: &str, resp_end: &str) -> Result<Vec<u
     Ok(buf)
 }
 
+fn resp_to_str(resp: Vec<u8>, resp_start: &str, resp_end: &str) -> Result<String> {
+    assert!(resp.len() >= resp_start.len() + resp_end.len());
+
+    let net_resp_len = resp.len() - resp_start.len() - resp_end.len();
+    let resp = resp
+        .into_iter()
+        .skip(resp_start.len())
+        .take(net_resp_len)
+        .collect();
+    let resp = String::from_utf8(resp)?;
+    Ok(resp)
+}
+
 pub fn read_command() -> Result<()> {
     let resp = execute_csi("6n")?;
     println!("CSI Resp: {resp:?}");
@@ -55,3 +72,4 @@ pub fn read_command() -> Result<()> {
     println!("Kitty Resp: {resp:?}");
     Ok(())
 }
+
