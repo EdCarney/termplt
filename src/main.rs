@@ -1,4 +1,4 @@
-use rgb::{RGB8, RGBA8};
+use rgb::RGB8;
 
 mod kitty_graphics;
 
@@ -20,14 +20,12 @@ const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 fn main() {
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
 
-    // let c = RGBA8 {
-    //     r: 1,
-    //     g: 1,
-    //     b: 1,
-    //     a: 1,
-    // };
-    // kitty_graphics::rgba_imgs::print_square(50, c).unwrap();
-    // println!();
+    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(25)).unwrap();
+    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(50)).unwrap();
+    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(100)).unwrap();
+    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(200)).unwrap();
+    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(u8::MAX)).unwrap();
+    println!();
 
     kitty_graphics::rgb_imgs::print_square(200, WHITE).unwrap();
     println!();

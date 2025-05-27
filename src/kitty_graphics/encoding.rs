@@ -8,14 +8,16 @@ const B64_CHARS: [u8; 64] = [
 ];
 
 pub fn read_bytes_to_b64(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
+    // every 3 bytes will be 4 6-bit base64 encoded values; the number of base64 values will
+    // [number of bytes] * (4/3), with an extra value if the division is not clean; use this to
+    // preallocate the encoded vector
     let num_raw = bytes.len();
     let rem = num_raw % 3;
     let num_b64 = ((num_raw * 4) / 3) + if rem > 0 { 1 } else { 0 };
-
     let mut b64_data = vec![0; num_b64];
 
     // iterate first through all full byte sets to allow us to avoid checking the length of the
-    // chunk during each encoding
+    // chunk during each encoding; that is, all chunks of length 3
     for (ind, byte_chunk) in bytes.chunks(3).take(num_raw / 3).enumerate() {
         let buf_start = ind * 4;
         let buf_end = buf_start + 4;
@@ -25,7 +27,7 @@ pub fn read_bytes_to_b64(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
     // encode the last 1 or 2 bytes if present
     if rem > 0 {
         let raw_start = num_raw - rem;
-        let b64_start = num_raw - (rem + 1);
+        let b64_start = num_b64 - (rem + 1);
         convert_partial_bytes_to_b64(&bytes[raw_start..], &mut b64_data[b64_start..]);
     }
 
@@ -57,5 +59,37 @@ fn convert_partial_bytes_to_b64(bytes: &[u8], buf: &mut [u8]) {
         }
         3 => convert_full_bytes_to_b64(bytes, buf),
         _ => panic!("Number of bytes cannot exceed 3"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encode_1_byte() {
+        let text = b"M";
+        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        let enc_text = str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
+        assert_eq!(enc_text.len(), 2, "1 byte should be 2 base64 values");
+        assert_eq!(enc_text, "TQ");
+    }
+
+    #[test]
+    fn encode_2_bytes() {
+        let text = b"Ma";
+        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        let enc_text = str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
+        assert_eq!(enc_text.len(), 3, "2 bytes should be 3 base64 values");
+        assert_eq!(enc_text, "TWE");
+    }
+
+    #[test]
+    fn encode_3_bytes() {
+        let text = b"Man";
+        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        let enc_text = str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
+        assert_eq!(enc_text.len(), 4, "3 bytes should be 4 base64 values");
+        assert_eq!(enc_text, "TWFu");
     }
 }
