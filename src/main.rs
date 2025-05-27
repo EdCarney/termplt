@@ -20,19 +20,19 @@ const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 fn main() {
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
 
-    kitty_graphics::png_imgs::print_img(img_path).unwrap();
-    println!();
-
     // let c = RGBA8 {
-    //     r: 0,
-    //     g: 255,
-    //     b: 0,
-    //     a: 0,
+    //     r: 1,
+    //     g: 1,
+    //     b: 1,
+    //     a: 1,
     // };
     // kitty_graphics::rgba_imgs::print_square(50, c).unwrap();
     // println!();
 
     kitty_graphics::rgb_imgs::print_square(200, WHITE).unwrap();
+    println!();
+
+    kitty_graphics::png_imgs::print_img(img_path).unwrap();
     println!();
 
     kitty_graphics::png_imgs::print_bounded_img(img_path, 100, 25).unwrap();

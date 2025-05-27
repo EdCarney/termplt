@@ -11,12 +11,11 @@ pub fn write_img_data(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let chunks = img_data.chunks(4096);
     let num_chunks = chunks.len();
-
-    let mut cmd: Vec<u8> = Vec::with_capacity(4200);
     let mut handle = io::stdout().lock();
 
     for (ind, chunk) in chunks.enumerate() {
-        ctrl_data.push(Box::new(Metadata::MoreData(ind < num_chunks - 1)));
+        let last_chunk = ind == num_chunks - 1;
+        ctrl_data.push(Box::new(Metadata::MoreData(!last_chunk)));
 
         let ctl_bytes = ctrl_data
             .drain(..)
@@ -25,19 +24,11 @@ pub fn write_img_data(
             .join(",")
             .into_bytes();
 
-        let mut start = START.to_vec();
-        let mut control_data = ctl_bytes.to_vec();
-        let mut sep = SEP.to_vec();
-        let mut payload = chunk.to_vec();
-        let mut term = END.to_vec();
-
-        cmd.append(&mut start);
-        cmd.append(&mut control_data);
-        cmd.append(&mut sep);
-        cmd.append(&mut payload);
-        cmd.append(&mut term);
-
-        handle.write_all(cmd.drain(..).as_slice())?;
+        handle.write_all(START)?;
+        handle.write_all(&ctl_bytes)?;
+        handle.write_all(SEP)?;
+        handle.write_all(chunk)?;
+        handle.write_all(END)?;
     }
     handle.flush()?;
     Ok(())
