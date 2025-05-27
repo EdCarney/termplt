@@ -19,6 +19,10 @@ const WHITE: RGB8 = RGB8 {
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
+    terminal_commands::responses::read_command().unwrap();
+}
+
+fn test_printin() {
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
 
     kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(25)).unwrap();

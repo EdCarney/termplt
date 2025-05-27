@@ -1,14 +1,16 @@
-use crossterm::{event, terminal};
+use crossterm::terminal;
 use std::io::{self, Read, Write};
 
-pub fn read_command() -> Result<(), Box<dyn std::error::Error>> {
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+pub fn execute_csi(csi_cmd: &str) -> Result<Vec<u8>> {
     terminal::enable_raw_mode()?;
 
-    let mut stdout = std::io::stdout().lock();
-
-    write!(stdout, "\x1b[6n")?;
-
-    stdout.flush()?;
+    {
+        let mut stdout = io::stdout().lock();
+        write!(stdout, "\x1b[{csi_cmd}")?;
+        stdout.flush()?;
+    }
 
     let mut stdin = std::io::stdin().lock();
     let mut buf = Vec::<u8>::new();
@@ -20,13 +22,22 @@ pub fn read_command() -> Result<(), Box<dyn std::error::Error>> {
                 buf.push(byte_buf[0]);
 
                 if buf.len() > 3 && buf.ends_with(b"R") {
-                    break;
+                    if buf.starts_with(b"\x1b") {
+                        break;
+                    }
+                    buf.clear();
                 }
             }
             _ => (),
         }
     }
 
-    Ok(())
+    terminal::disable_raw_mode()?;
+    Ok(buf)
 }
 
+pub fn read_command() -> Result<()> {
+    let csi_resp = execute_csi("6n")?;
+    println!("CSI Seq: {csi_resp:?}");
+    Ok(())
+}
