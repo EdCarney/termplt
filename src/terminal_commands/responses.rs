@@ -5,7 +5,6 @@ use std::{
     io::{self, Read, Write},
 };
 
-const ESC: &str = "\x1b";
 const CSI_START: &str = "\x1b[";
 const KITTY_START: &str = "\x1b_G";
 const KITTY_END: &str = "\x1b\\";
@@ -158,3 +157,4 @@ pub fn read_command() -> Result<()> {
 
     Ok(())
 }
+
