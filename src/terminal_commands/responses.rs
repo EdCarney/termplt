@@ -86,7 +86,42 @@ impl fmt::Display for TerminalCommandError {
 impl Error for TerminalCommandError {}
 
 fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
+    let (tx1, rx) = std::sync::mpsc::channel();
+    let tx2 = tx1.clone();
+    let res_start = cmd.res_start().into_bytes();
+    let res_end = cmd.res_end().into_bytes();
+
     terminal::enable_raw_mode()?;
+
+    std::thread::spawn(move || {
+        let mut buf = Vec::<u8>::new();
+        let mut stdin = std::io::stdin().lock();
+        let mut byte_buf = [0u8; 1];
+
+        loop {
+            match stdin.read_exact(&mut byte_buf) {
+                Ok(_) => {
+                    buf.push(byte_buf[0]);
+                    if buf.len() > res_start.len() && buf.ends_with(&res_end) {
+                        if buf.starts_with(&res_start) {
+                            break;
+                        }
+
+                        // if buffer ends with the correct bytes but does not start with the correct
+                        // bytes, then it is not what we are looking for; clear and start again
+                        buf.clear();
+                    }
+                }
+                _ => (),
+            }
+        }
+        tx1.send(buf).unwrap();
+    });
+
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        tx2.send(Vec::new()).unwrap();
+    });
 
     {
         let mut stdout = io::stdout().lock();
@@ -94,30 +129,22 @@ fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
         stdout.flush()?;
     }
 
-    let mut stdin = std::io::stdin().lock();
-    let mut buf = Vec::<u8>::new();
-    let mut byte_buf = [0u8; 1];
-
-    let res_start = cmd.res_start().into_bytes();
-    let res_end = cmd.res_end().into_bytes();
-
-    loop {
-        match stdin.read_exact(&mut byte_buf) {
-            Ok(_) => {
-                buf.push(byte_buf[0]);
-                if buf.len() > res_start.len() && buf.ends_with(&res_end) {
-                    if buf.starts_with(&res_start) {
-                        break;
-                    }
-                    buf.clear();
-                }
+    if let Ok(buf) = rx.recv() {
+        terminal::disable_raw_mode()?;
+        match buf.len() {
+            0 => {
+                return Err(Box::new(TerminalCommandError {
+                    failed_cmd: "test".to_string(),
+                }));
             }
-            _ => (),
+            _ => return Ok(buf),
         }
+    } else {
+        terminal::disable_raw_mode()?;
+        return Err(Box::new(TerminalCommandError {
+            failed_cmd: "test".to_string(),
+        }));
     }
-
-    terminal::disable_raw_mode()?;
-    Ok(buf)
 }
 
 fn resp_to_str<T: TermCommand>(resp: &[u8], cmd: &T) -> Result<String> {
@@ -157,4 +184,3 @@ pub fn read_command() -> Result<()> {
 
     Ok(())
 }
-
