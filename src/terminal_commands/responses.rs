@@ -13,18 +13,18 @@ const KITTY_END: &str = "\x1b\\";
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 trait TermCommand {
-    fn cmd(&self) -> String;
-    fn req_start(&self) -> String {
-        String::from("")
+    fn cmd(&self) -> &str;
+    fn req_start(&self) -> &str {
+        ""
     }
-    fn req_end(&self) -> String {
-        String::from("")
+    fn req_end(&self) -> &str {
+        ""
     }
-    fn res_start(&self) -> String {
-        String::from("")
+    fn res_start(&self) -> &str {
+        ""
     }
-    fn res_end(&self) -> String {
-        String::from("")
+    fn res_end(&self) -> &str {
+        ""
     }
     fn generate_request(&self) -> Vec<u8> {
         let mut req = Vec::new();
@@ -35,47 +35,45 @@ trait TermCommand {
     }
 }
 
-#[derive(Clone)]
 struct KittyCommand {
     cmd: String,
 }
 
 impl TermCommand for KittyCommand {
-    fn cmd(&self) -> String {
-        self.cmd.clone()
+    fn cmd(&self) -> &str {
+        &self.cmd
     }
-    fn req_start(&self) -> String {
-        String::from(KITTY_START)
+    fn req_start(&self) -> &str {
+        KITTY_START
     }
-    fn req_end(&self) -> String {
-        String::from(KITTY_END)
+    fn req_end(&self) -> &str {
+        KITTY_END
     }
-    fn res_start(&self) -> String {
-        String::from(KITTY_START)
+    fn res_start(&self) -> &str {
+        KITTY_START
     }
-    fn res_end(&self) -> String {
-        String::from(KITTY_END)
+    fn res_end(&self) -> &str {
+        KITTY_END
     }
 }
 
-#[derive(Clone)]
 struct CsiCommand {
     cmd: String,
     res_end: String,
 }
 
 impl TermCommand for CsiCommand {
-    fn cmd(&self) -> String {
-        self.cmd.clone()
+    fn cmd(&self) -> &str {
+        &self.cmd
     }
-    fn req_start(&self) -> String {
-        String::from(CSI_START)
+    fn req_start(&self) -> &str {
+        CSI_START
     }
-    fn res_start(&self) -> String {
-        String::from(CSI_START)
+    fn res_start(&self) -> &str {
+        CSI_START
     }
-    fn res_end(&self) -> String {
-        self.res_end.clone()
+    fn res_end(&self) -> &str {
+        &self.res_end
     }
 }
 
@@ -93,8 +91,8 @@ impl fmt::Display for TerminalCommandError {
 impl Error for TerminalCommandError {}
 
 fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
-    let res_start = cmd.res_start().into_bytes();
-    let res_end = cmd.res_end().into_bytes();
+    let res_start = cmd.res_start().as_bytes();
+    let res_end = cmd.res_end().as_bytes();
 
     terminal::enable_raw_mode()?;
 
@@ -135,7 +133,7 @@ fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
         Ok(buf)
     } else {
         Err(Box::new(TerminalCommandError {
-            failed_cmd: cmd.cmd(),
+            failed_cmd: cmd.cmd().into(),
         }))
     }
 }
@@ -147,7 +145,7 @@ fn resp_to_str<T: TermCommand>(resp: &[u8], cmd: &T) -> Result<String> {
         Ok(String::from_utf8(resp[start..end].to_vec())?)
     } else {
         Err(Box::new(TerminalCommandError {
-            failed_cmd: cmd.cmd(),
+            failed_cmd: cmd.cmd().into(),
         }))
     }
 }
