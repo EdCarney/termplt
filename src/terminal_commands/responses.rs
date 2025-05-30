@@ -119,8 +119,8 @@ fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
     });
 
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        tx2.send(Vec::new()).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        tx2.send(Vec::new()).unwrap_or_else(|_| ());
     });
 
     {
