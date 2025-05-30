@@ -1,0 +1,175 @@
+use crossterm::terminal;
+use std::{
+    error::Error,
+    fmt,
+    io::{self, Read, Write},
+    time::Instant,
+};
+
+const CSI_START: &str = "\x1b[";
+const KITTY_START: &str = "\x1b_G";
+const KITTY_END: &str = "\x1b\\";
+
+pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+trait TermCommand {
+    fn cmd(&self) -> &str;
+    fn req_start(&self) -> &str {
+        ""
+    }
+    fn req_end(&self) -> &str {
+        ""
+    }
+    fn res_start(&self) -> &str {
+        ""
+    }
+    fn res_end(&self) -> &str {
+        ""
+    }
+    fn generate_request(&self) -> Vec<u8> {
+        let mut req = Vec::new();
+        req.append(&mut self.req_start().as_bytes().to_vec());
+        req.append(&mut self.cmd().as_bytes().to_vec());
+        req.append(&mut self.req_end().as_bytes().to_vec());
+        req
+    }
+}
+
+struct KittyCommand {
+    cmd: String,
+}
+
+impl TermCommand for KittyCommand {
+    fn cmd(&self) -> &str {
+        &self.cmd
+    }
+    fn req_start(&self) -> &str {
+        KITTY_START
+    }
+    fn req_end(&self) -> &str {
+        KITTY_END
+    }
+    fn res_start(&self) -> &str {
+        KITTY_START
+    }
+    fn res_end(&self) -> &str {
+        KITTY_END
+    }
+}
+
+struct CsiCommand {
+    cmd: String,
+    res_end: String,
+}
+
+impl TermCommand for CsiCommand {
+    fn cmd(&self) -> &str {
+        &self.cmd
+    }
+    fn req_start(&self) -> &str {
+        CSI_START
+    }
+    fn res_start(&self) -> &str {
+        CSI_START
+    }
+    fn res_end(&self) -> &str {
+        &self.res_end
+    }
+}
+
+#[derive(Debug)]
+pub struct TerminalCommandError {
+    failed_cmd: String,
+}
+
+impl fmt::Display for TerminalCommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Error executing terminal command: {}", self.failed_cmd)
+    }
+}
+
+impl Error for TerminalCommandError {}
+
+fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
+    let res_start = cmd.res_start().as_bytes();
+    let res_end = cmd.res_end().as_bytes();
+
+    terminal::enable_raw_mode()?;
+
+    {
+        let mut stdout = io::stdout().lock();
+        stdout.write_all(cmd.generate_request().as_slice())?;
+        stdout.flush()?;
+    }
+
+    let mut buf = Vec::<u8>::new();
+    let mut stdin = std::io::stdin().lock();
+    let mut byte_buf = [0u8; 1];
+
+    let mut response_recvd = false;
+    let watch = Instant::now();
+    while watch.elapsed().as_millis() < 1000 {
+        match stdin.read_exact(&mut byte_buf) {
+            Ok(_) => {
+                buf.push(byte_buf[0]);
+                if buf.len() > res_start.len() && buf.ends_with(&res_end) {
+                    if buf.starts_with(&res_start) {
+                        response_recvd = true;
+                        break;
+                    }
+
+                    // if buffer ends with the correct bytes but does not start with the correct
+                    // bytes, then it is not what we are looking for; clear and start again
+                    buf.clear();
+                }
+            }
+            _ => (),
+        }
+    }
+
+    terminal::disable_raw_mode()?;
+
+    if response_recvd {
+        Ok(buf)
+    } else {
+        Err(Box::new(TerminalCommandError {
+            failed_cmd: cmd.cmd().into(),
+        }))
+    }
+}
+
+fn resp_to_str<T: TermCommand>(resp: &[u8], cmd: &T) -> Result<String> {
+    if resp.starts_with(cmd.res_start().as_bytes()) && resp.ends_with(cmd.res_end().as_bytes()) {
+        let start = cmd.res_start().len();
+        let end = resp.len() - cmd.res_end().len();
+        Ok(String::from_utf8(resp[start..end].to_vec())?)
+    } else {
+        Err(Box::new(TerminalCommandError {
+            failed_cmd: cmd.cmd().into(),
+        }))
+    }
+}
+
+pub fn read_command() -> Result<()> {
+    let cmd = CsiCommand {
+        cmd: String::from("6n"),
+        res_end: String::from("R"),
+    };
+    let resp = execute_and_read(&cmd)?;
+    println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
+
+    let cmd = CsiCommand {
+        cmd: String::from("c"),
+        res_end: String::from("c"),
+    };
+    let resp = execute_and_read(&cmd)?;
+    println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
+
+    let cmd_kitty = KittyCommand {
+        cmd: String::from("i=31,s=1,v=1,a=q,f=24;AAA"),
+    };
+    let resp = execute_and_read(&cmd_kitty)?;
+    println!("Kitty Resp: {} ({resp:?})", resp_to_str(&resp, &cmd_kitty)?);
+
+    Ok(())
+}
