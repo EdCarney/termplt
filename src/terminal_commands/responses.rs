@@ -1,3 +1,5 @@
+use super::kitty_cmds::KittyCommand;
+use crate::kitty_graphics::ctrl_seq::*;
 use crossterm::terminal;
 use std::{
     error::Error,
@@ -6,74 +8,51 @@ use std::{
     time::Instant,
 };
 
-const CSI_START: &str = "\x1b[";
-const KITTY_START: &str = "\x1b_G";
-const KITTY_END: &str = "\x1b\\";
+const CSI_START: &[u8] = b"\x1b[";
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-trait TermCommand {
-    fn cmd(&self) -> &str;
-    fn req_start(&self) -> &str {
-        ""
+pub trait TermCommand {
+    fn req_start(&self) -> &[u8] {
+        "".as_bytes()
     }
-    fn req_end(&self) -> &str {
-        ""
+    fn req_end(&self) -> &[u8] {
+        "".as_bytes()
     }
-    fn res_start(&self) -> &str {
-        ""
+    fn res_start(&self) -> &[u8] {
+        "".as_bytes()
     }
-    fn res_end(&self) -> &str {
-        ""
+    fn res_end(&self) -> &[u8] {
+        "".as_bytes()
     }
-    fn generate_request(&self) -> Vec<u8> {
-        let mut req = Vec::new();
-        req.append(&mut self.req_start().as_bytes().to_vec());
-        req.append(&mut self.cmd().as_bytes().to_vec());
-        req.append(&mut self.req_end().as_bytes().to_vec());
-        req
-    }
-}
-
-struct KittyCommand {
-    cmd: String,
-}
-
-impl TermCommand for KittyCommand {
-    fn cmd(&self) -> &str {
-        &self.cmd
-    }
-    fn req_start(&self) -> &str {
-        KITTY_START
-    }
-    fn req_end(&self) -> &str {
-        KITTY_END
-    }
-    fn res_start(&self) -> &str {
-        KITTY_START
-    }
-    fn res_end(&self) -> &str {
-        KITTY_END
-    }
+    fn generate_next_request(&mut self) -> Option<Vec<u8>>;
 }
 
 struct CsiCommand {
-    cmd: String,
-    res_end: String,
+    cmd: Vec<u8>,
+    res_end: Vec<u8>,
 }
 
 impl TermCommand for CsiCommand {
-    fn cmd(&self) -> &str {
-        &self.cmd
-    }
-    fn req_start(&self) -> &str {
+    fn req_start(&self) -> &[u8] {
         CSI_START
     }
-    fn res_start(&self) -> &str {
+    fn res_start(&self) -> &[u8] {
         CSI_START
     }
-    fn res_end(&self) -> &str {
+    fn res_end(&self) -> &[u8] {
         &self.res_end
+    }
+    fn generate_next_request(&mut self) -> Option<Vec<u8>> {
+        if self.cmd.is_empty() {
+            None
+        } else {
+            let mut req = Vec::new();
+            req.extend_from_slice(self.req_start());
+            req.extend_from_slice(self.cmd.drain(..).as_slice());
+            req.extend_from_slice(self.req_end());
+            Some(req)
+        }
     }
 }
 
@@ -90,17 +69,19 @@ impl fmt::Display for TerminalCommandError {
 
 impl Error for TerminalCommandError {}
 
-fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
-    let res_start = cmd.res_start().as_bytes();
-    let res_end = cmd.res_end().as_bytes();
-
+fn execute_and_read<T: TermCommand>(cmd: &mut T) -> Result<Vec<u8>> {
     terminal::enable_raw_mode()?;
 
     {
         let mut stdout = io::stdout().lock();
-        stdout.write_all(cmd.generate_request().as_slice())?;
+        while let Some(req) = cmd.generate_next_request() {
+            stdout.write_all(&req)?;
+        }
         stdout.flush()?;
     }
+
+    let res_start = cmd.res_start();
+    let res_end = cmd.res_end();
 
     let mut buf = Vec::<u8>::new();
     let mut stdin = std::io::stdin().lock();
@@ -133,42 +114,52 @@ fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
         Ok(buf)
     } else {
         Err(Box::new(TerminalCommandError {
-            failed_cmd: cmd.cmd().into(),
+            // TODO: fix error construction from cmd()
+            failed_cmd: "".to_string(), // cmd.cmd().unwrap(),
         }))
     }
 }
 
 fn resp_to_str<T: TermCommand>(resp: &[u8], cmd: &T) -> Result<String> {
-    if resp.starts_with(cmd.res_start().as_bytes()) && resp.ends_with(cmd.res_end().as_bytes()) {
+    if resp.starts_with(cmd.res_start()) && resp.ends_with(cmd.res_end()) {
         let start = cmd.res_start().len();
         let end = resp.len() - cmd.res_end().len();
         Ok(String::from_utf8(resp[start..end].to_vec())?)
     } else {
         Err(Box::new(TerminalCommandError {
-            failed_cmd: cmd.cmd().into(),
+            // TODO: fix error construction from cmd()
+            failed_cmd: "".to_string(), // cmd.cmd().unwrap(),
         }))
     }
 }
 
 pub fn read_command() -> Result<()> {
-    let cmd = CsiCommand {
-        cmd: String::from("6n"),
-        res_end: String::from("R"),
+    let mut cmd = CsiCommand {
+        cmd: b"6n".to_vec(),
+        res_end: b"R".to_vec(),
     };
-    let resp = execute_and_read(&cmd)?;
+    let resp = execute_and_read(&mut cmd)?;
     println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
 
-    let cmd = CsiCommand {
-        cmd: String::from("c"),
-        res_end: String::from("c"),
+    let mut cmd = CsiCommand {
+        cmd: b"c".to_vec(),
+        res_end: b"c".to_vec(),
     };
-    let resp = execute_and_read(&cmd)?;
+    let resp = execute_and_read(&mut cmd)?;
     println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
 
-    let cmd_kitty = KittyCommand {
-        cmd: String::from("i=31,s=1,v=1,a=q,f=24;AAA"),
-    };
-    let resp = execute_and_read(&cmd_kitty)?;
+    let payload: Vec<u8> = vec![255, 255, 255];
+    let ctrl_data: Vec<Box<dyn CtrlSeq>> = vec![
+        Box::new(Metadata::Id(32)),
+        Box::new(Transmission::Direct),
+        Box::new(PixelFormat::Rgb {
+            width: 1,
+            height: 1,
+        }),
+        Box::new(Action::Query),
+    ];
+    let mut cmd_kitty = KittyCommand::new(&payload, ctrl_data);
+    let resp = execute_and_read(&mut cmd_kitty)?;
     println!("Kitty Resp: {} ({resp:?})", resp_to_str(&resp, &cmd_kitty)?);
 
     Ok(())
