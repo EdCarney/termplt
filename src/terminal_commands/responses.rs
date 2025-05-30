@@ -129,21 +129,14 @@ fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
         stdout.flush()?;
     }
 
-    if let Ok(buf) = rx.recv() {
-        terminal::disable_raw_mode()?;
-        match buf.len() {
-            0 => {
-                return Err(Box::new(TerminalCommandError {
-                    failed_cmd: "test".to_string(),
-                }));
-            }
-            _ => return Ok(buf),
-        }
-    } else {
-        terminal::disable_raw_mode()?;
-        return Err(Box::new(TerminalCommandError {
-            failed_cmd: "test".to_string(),
-        }));
+    let msg = rx.recv();
+    terminal::disable_raw_mode()?;
+
+    match msg {
+        Ok(buf) if buf.len() > 0 => Ok(buf),
+        _ => Err(Box::new(TerminalCommandError {
+            failed_cmd: cmd.cmd(),
+        })),
     }
 }
 
@@ -177,10 +170,11 @@ pub fn read_command() -> Result<()> {
     println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
 
     let cmd = KittyCommand {
-        cmd: String::from("i=31,s=1,v=1,a=q,d=t,f=24;AAAA"),
+        cmd: String::from("i=31,s=1,v=1,a=q,d=t,f=24;AAA"),
     };
     let resp = execute_and_read(&cmd)?;
     println!("Kitty Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
 
     Ok(())
 }
+
