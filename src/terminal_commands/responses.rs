@@ -3,6 +3,7 @@ use std::{
     error::Error,
     fmt,
     io::{self, Read, Write},
+    sync::Arc,
 };
 
 const CSI_START: &str = "\x1b[";
@@ -25,11 +26,16 @@ trait TermCommand {
     fn res_end(&self) -> String {
         String::from("")
     }
-    fn generate_request(&self) -> String {
-        format!("{}{}{}", self.req_start(), self.cmd(), self.req_end())
+    fn generate_request(&self) -> Vec<u8> {
+        let mut req = Vec::new();
+        req.append(&mut self.req_start().as_bytes().to_vec());
+        req.append(&mut self.cmd().as_bytes().to_vec());
+        req.append(&mut self.req_end().as_bytes().to_vec());
+        req
     }
 }
 
+#[derive(Clone)]
 struct KittyCommand {
     cmd: String,
 }
@@ -52,6 +58,7 @@ impl TermCommand for KittyCommand {
     }
 }
 
+#[derive(Clone)]
 struct CsiCommand {
     cmd: String,
     res_end: String,
@@ -125,7 +132,7 @@ fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
 
     {
         let mut stdout = io::stdout().lock();
-        stdout.write_all(cmd.generate_request().as_bytes())?;
+        stdout.write_all(cmd.generate_request().as_slice())?;
         stdout.flush()?;
     }
 
@@ -140,18 +147,80 @@ fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
     }
 }
 
-fn resp_to_str<T: TermCommand>(resp: &[u8], cmd: &T) -> Result<String> {
-    let res_start_len = cmd.res_start().len();
-    let res_end_len = cmd.res_end().len();
+fn execute_and_read_first(cmds: &[Arc<dyn TermCommand + Send + Sync>]) -> Result<Vec<u8>> {
+    let (tx, rx) = std::sync::mpsc::channel();
 
-    if resp.len() < res_start_len + res_end_len {
-        return Err(Box::new(TerminalCommandError {
-            failed_cmd: String::from(&cmd.cmd()),
-        }));
+    terminal::enable_raw_mode()?;
+
+    // spawn listeners
+    for cmd in cmds {
+        let tx = tx.clone();
+        let cmd = Arc::clone(&cmd);
+        std::thread::spawn(move || {
+            let mut buf = Vec::<u8>::new();
+            let mut byte_buf = [0u8; 1];
+            let res_start = cmd.res_start().into_bytes();
+            let res_end = cmd.res_end().into_bytes();
+
+            let mut stdin = std::io::stdin().lock();
+            loop {
+                match stdin.read_exact(&mut byte_buf) {
+                    Ok(_) => {
+                        buf.push(byte_buf[0]);
+                        if buf.len() > res_start.len() && buf.ends_with(&res_end) {
+                            if buf.starts_with(&res_start) {
+                                break;
+                            }
+
+                            // if buffer ends with the correct bytes but does not start with the correct
+                            // bytes, then it is not what we are looking for; clear and start again
+                            buf.clear();
+                        }
+                    }
+                    _ => (),
+                }
+            }
+            tx.send(buf).unwrap();
+        });
     }
 
-    let inner_resp = &resp[res_start_len..resp.len() - res_end_len];
-    Ok(String::from_utf8(inner_resp.to_vec())?)
+    // spawn senders in order they are provided
+    {
+        let mut stdout = io::stdout().lock();
+        for cmd in cmds {
+            stdout.write_all(cmd.generate_request().as_slice())?;
+        }
+        stdout.flush()?;
+    }
+
+    // spawn timeout listener
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        tx.send(Vec::new()).unwrap_or_else(|_| ());
+    });
+
+    // take first response recieved
+    let msg = rx.recv();
+    terminal::disable_raw_mode()?;
+
+    match msg {
+        Ok(buf) if buf.len() > 0 => Ok(buf),
+        _ => Err(Box::new(TerminalCommandError {
+            failed_cmd: String::from("(one of multiple)"),
+        })),
+    }
+}
+
+fn resp_to_str<T: TermCommand>(resp: &[u8], cmd: &T) -> Result<String> {
+    if resp.starts_with(cmd.res_start().as_bytes()) && resp.ends_with(cmd.res_end().as_bytes()) {
+        let start = cmd.res_start().len();
+        let end = resp.len() - cmd.res_end().len();
+        Ok(String::from_utf8(resp[start..end].to_vec())?)
+    } else {
+        Err(Box::new(TerminalCommandError {
+            failed_cmd: cmd.cmd(),
+        }))
+    }
 }
 
 pub fn read_command() -> Result<()> {
@@ -169,12 +238,20 @@ pub fn read_command() -> Result<()> {
     let resp = execute_and_read(&cmd)?;
     println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
 
-    let cmd = KittyCommand {
-        cmd: String::from("i=31,s=1,v=1,a=q,d=t,f=24;AAA"),
+    let cmd_kitty = KittyCommand {
+        cmd: String::from("i=31,s=1,v=1,a=q,f=24;AAA"),
     };
-    let resp = execute_and_read(&cmd)?;
-    println!("Kitty Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
+    let cmd_csi = CsiCommand {
+        cmd: String::from("c"),
+        res_end: String::from("c"),
+    };
+    let cmds: Vec<Arc<dyn TermCommand + Send + Sync>> =
+        vec![Arc::new(cmd_kitty.clone()), Arc::new(cmd_csi.clone())];
+    let resp = execute_and_read_first(&cmds)?;
+    println!(
+        "Kitty or Csi Resp: {} ({resp:?})",
+        resp_to_str(&resp, &cmd_kitty).or(resp_to_str(&resp, &cmd_csi))?
+    );
 
     Ok(())
 }
-
