@@ -3,7 +3,7 @@ use std::{
     error::Error,
     fmt,
     io::{self, Read, Write},
-    sync::Arc,
+    time::Instant,
 };
 
 const CSI_START: &str = "\x1b[";
@@ -93,42 +93,10 @@ impl fmt::Display for TerminalCommandError {
 impl Error for TerminalCommandError {}
 
 fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
-    let (tx1, rx) = std::sync::mpsc::channel();
-    let tx2 = tx1.clone();
     let res_start = cmd.res_start().into_bytes();
     let res_end = cmd.res_end().into_bytes();
 
     terminal::enable_raw_mode()?;
-
-    std::thread::spawn(move || {
-        let mut buf = Vec::<u8>::new();
-        let mut stdin = std::io::stdin().lock();
-        let mut byte_buf = [0u8; 1];
-
-        loop {
-            match stdin.read_exact(&mut byte_buf) {
-                Ok(_) => {
-                    buf.push(byte_buf[0]);
-                    if buf.len() > res_start.len() && buf.ends_with(&res_end) {
-                        if buf.starts_with(&res_start) {
-                            break;
-                        }
-
-                        // if buffer ends with the correct bytes but does not start with the correct
-                        // bytes, then it is not what we are looking for; clear and start again
-                        buf.clear();
-                    }
-                }
-                _ => (),
-            }
-        }
-        tx1.send(buf).unwrap();
-    });
-
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        tx2.send(Vec::new()).unwrap_or_else(|_| ());
-    });
 
     {
         let mut stdout = io::stdout().lock();
@@ -136,14 +104,39 @@ fn execute_and_read<T: TermCommand>(cmd: &T) -> Result<Vec<u8>> {
         stdout.flush()?;
     }
 
-    let msg = rx.recv();
+    let mut buf = Vec::<u8>::new();
+    let mut stdin = std::io::stdin().lock();
+    let mut byte_buf = [0u8; 1];
+
+    let mut response_recvd = false;
+    let watch = Instant::now();
+    while watch.elapsed().as_millis() < 1000 {
+        match stdin.read_exact(&mut byte_buf) {
+            Ok(_) => {
+                buf.push(byte_buf[0]);
+                if buf.len() > res_start.len() && buf.ends_with(&res_end) {
+                    if buf.starts_with(&res_start) {
+                        response_recvd = true;
+                        break;
+                    }
+
+                    // if buffer ends with the correct bytes but does not start with the correct
+                    // bytes, then it is not what we are looking for; clear and start again
+                    buf.clear();
+                }
+            }
+            _ => (),
+        }
+    }
+
     terminal::disable_raw_mode()?;
 
-    match msg {
-        Ok(buf) if buf.len() > 0 => Ok(buf),
-        _ => Err(Box::new(TerminalCommandError {
+    if response_recvd {
+        Ok(buf)
+    } else {
+        Err(Box::new(TerminalCommandError {
             failed_cmd: cmd.cmd(),
-        })),
+        }))
     }
 }
 
@@ -175,7 +168,7 @@ pub fn read_command() -> Result<()> {
     println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
 
     let cmd_kitty = KittyCommand {
-        cmd: String::from("i=31,s=1,v=1,a=q,f=24;AAAA"),
+        cmd: String::from("i=31,s=1,v=1,a=q,f=24;AAA"),
     };
     let resp = execute_and_read(&cmd_kitty)?;
     println!("Kitty Resp: {} ({resp:?})", resp_to_str(&resp, &cmd_kitty)?);
