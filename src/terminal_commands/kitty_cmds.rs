@@ -55,7 +55,7 @@ impl KittyCommand {
                     .join(",")
                     .into_bytes();
 
-                let mut cmd = Vec::new();
+                let mut cmd = Vec::with_capacity(MAX_PAYLOAD_SIZE + 100);
 
                 cmd.extend_from_slice(CMD_START);
                 cmd.extend_from_slice(&ctrl_str);
