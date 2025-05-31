@@ -8,10 +8,15 @@ pub struct CsiCommand {
 }
 
 impl CsiCommand {
-    pub fn new(cmd: &str, response_end: &str) -> CsiCommand {
+    pub fn new(command: &str, res_end: &str) -> CsiCommand {
+        let mut cmd = Vec::new();
+        cmd.extend_from_slice(CSI_START);
+        cmd.extend_from_slice(command.as_bytes());
+        cmd.extend_from_slice(res_end.as_bytes());
+
         CsiCommand {
-            cmd: Vec::from(cmd.as_bytes()),
-            res_end: Vec::from(response_end.as_bytes()),
+            cmd,
+            res_end: res_end.as_bytes().to_vec(),
         }
     }
 }
@@ -26,15 +31,7 @@ impl TermCommand for CsiCommand {
     fn res_end(&self) -> &[u8] {
         &self.res_end
     }
-    fn generate_next_request(&mut self) -> Option<Vec<u8>> {
-        if self.cmd.is_empty() {
-            None
-        } else {
-            let mut req = Vec::new();
-            req.extend_from_slice(self.req_start());
-            req.extend_from_slice(self.cmd.drain(..).as_slice());
-            req.extend_from_slice(self.req_end());
-            Some(req)
-        }
+    fn get_request(&mut self) -> &[u8] {
+        &self.cmd
     }
 }

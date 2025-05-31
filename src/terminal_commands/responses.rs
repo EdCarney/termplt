@@ -24,7 +24,7 @@ pub trait TermCommand {
     fn res_end(&self) -> &[u8] {
         "".as_bytes()
     }
-    fn generate_next_request(&mut self) -> Option<Vec<u8>>;
+    fn get_request(&mut self) -> &[u8];
 }
 
 #[derive(Debug)]
@@ -40,16 +40,17 @@ impl fmt::Display for TerminalCommandError {
 
 impl Error for TerminalCommandError {}
 
+pub fn execute<T: TermCommand>(cmd: &mut T) -> Result<()> {
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(&cmd.get_request())?;
+    stdout.flush()?;
+    Ok(())
+}
+
 fn execute_and_read<T: TermCommand>(cmd: &mut T) -> Result<Vec<u8>> {
     terminal::enable_raw_mode()?;
 
-    {
-        let mut stdout = io::stdout().lock();
-        while let Some(req) = cmd.generate_next_request() {
-            stdout.write_all(&req)?;
-        }
-        stdout.flush()?;
-    }
+    execute(cmd)?;
 
     let res_start = cmd.res_start();
     let res_end = cmd.res_end();

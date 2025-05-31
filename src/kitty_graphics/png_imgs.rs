@@ -1,13 +1,9 @@
+use super::ctrl_seq::{Action, CtrlSeq, PixelFormat};
+use crate::terminal_commands::{kitty_cmds::KittyCommand, responses::execute};
 use std::fs;
-
-use super::{
-    ctrl_seq::{Action, CtrlSeq, PixelFormat},
-    encoding, term_ctrl,
-};
 
 pub fn print_img(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = fs::read(path)?;
-    let img_data = encoding::read_bytes_to_b64(&bytes)?;
     let window_sz = termplt::get_window_size()?;
 
     let rows = window_sz.rows as u32;
@@ -17,7 +13,10 @@ pub fn print_img(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         Box::new(Action::TransmitDisplay),
         Box::new(PixelFormat::PngBounded { cols, rows }),
     ];
-    term_ctrl::write_img_data(&img_data, ctrl_data)
+
+    let mut cmd = KittyCommand::new(&bytes, ctrl_data);
+    execute(&mut cmd)?;
+    Ok(())
 }
 
 pub fn print_bounded_img(
@@ -26,11 +25,12 @@ pub fn print_bounded_img(
     rows: u32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = fs::read(path)?;
-    let img_data = encoding::read_bytes_to_b64(&bytes)?;
     let ctrl_data: Vec<Box<dyn CtrlSeq>> = vec![
         Box::new(Action::TransmitDisplay),
         Box::new(PixelFormat::PngBounded { cols, rows }),
     ];
 
-    term_ctrl::write_img_data(&img_data, ctrl_data)
+    let mut cmd = KittyCommand::new(&bytes, ctrl_data);
+    execute(&mut cmd)?;
+    Ok(())
 }

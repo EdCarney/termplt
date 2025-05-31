@@ -19,6 +19,7 @@ const WHITE: RGB8 = RGB8 {
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
+    test_printin();
     terminal_commands::responses::read_command().unwrap();
 }
 
@@ -35,8 +36,8 @@ fn test_printin() {
     kitty_graphics::rgb_imgs::print_square(200, WHITE).unwrap();
     println!();
 
-    kitty_graphics::png_imgs::print_img(img_path).unwrap();
-    println!();
+    // kitty_graphics::png_imgs::print_img(img_path).unwrap();
+    // println!();
 
     kitty_graphics::png_imgs::print_bounded_img(img_path, 100, 25).unwrap();
     println!();
