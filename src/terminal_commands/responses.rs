@@ -1,3 +1,4 @@
+use super::csi_cmds::CsiCommand;
 use super::kitty_cmds::KittyCommand;
 use crate::kitty_graphics::ctrl_seq::*;
 use crossterm::terminal;
@@ -7,8 +8,6 @@ use std::{
     io::{self, Read, Write},
     time::Instant,
 };
-
-const CSI_START: &[u8] = b"\x1b[";
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -26,34 +25,6 @@ pub trait TermCommand {
         "".as_bytes()
     }
     fn generate_next_request(&mut self) -> Option<Vec<u8>>;
-}
-
-struct CsiCommand {
-    cmd: Vec<u8>,
-    res_end: Vec<u8>,
-}
-
-impl TermCommand for CsiCommand {
-    fn req_start(&self) -> &[u8] {
-        CSI_START
-    }
-    fn res_start(&self) -> &[u8] {
-        CSI_START
-    }
-    fn res_end(&self) -> &[u8] {
-        &self.res_end
-    }
-    fn generate_next_request(&mut self) -> Option<Vec<u8>> {
-        if self.cmd.is_empty() {
-            None
-        } else {
-            let mut req = Vec::new();
-            req.extend_from_slice(self.req_start());
-            req.extend_from_slice(self.cmd.drain(..).as_slice());
-            req.extend_from_slice(self.req_end());
-            Some(req)
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -134,17 +105,11 @@ fn resp_to_str<T: TermCommand>(resp: &[u8], cmd: &T) -> Result<String> {
 }
 
 pub fn read_command() -> Result<()> {
-    let mut cmd = CsiCommand {
-        cmd: b"6n".to_vec(),
-        res_end: b"R".to_vec(),
-    };
+    let mut cmd = CsiCommand::new("6n", "R");
     let resp = execute_and_read(&mut cmd)?;
     println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
 
-    let mut cmd = CsiCommand {
-        cmd: b"c".to_vec(),
-        res_end: b"c".to_vec(),
-    };
+    let mut cmd = CsiCommand::new("c", "c");
     let resp = execute_and_read(&mut cmd)?;
     println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
 
