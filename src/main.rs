@@ -1,5 +1,7 @@
+use crate::kitty_graphics::ctrl_seq::*;
+
 use rgb::RGB8;
-use terminal_commands::{csi_cmds::CsiCommand, responses::TermCommand};
+use terminal_commands::{csi_cmds::CsiCommand, kitty_cmds::KittyCommand, responses::TermCommand};
 
 mod kitty_graphics;
 mod terminal_commands;
@@ -24,7 +26,23 @@ fn main() {
 
     let res = CsiCommand::new("6n", "R").execute_with_response().unwrap();
     println!("{res}");
+
     let res = CsiCommand::new("c", "c").execute_with_response().unwrap();
+    println!("{res}");
+
+    let payload: Vec<u8> = vec![255, 255, 255];
+    let ctrl_data: Vec<Box<dyn CtrlSeq>> = vec![
+        Box::new(Metadata::Id(32)),
+        Box::new(Transmission::Direct),
+        Box::new(PixelFormat::Rgba {
+            width: 1,
+            height: 1,
+        }),
+        Box::new(Action::Query),
+    ];
+    let res = KittyCommand::new(&payload, ctrl_data)
+        .execute_with_response()
+        .unwrap();
     println!("{res}");
 }
 
