@@ -1,4 +1,5 @@
 use rgb::RGB8;
+use terminal_commands::{csi_cmds::CsiCommand, responses::TermCommand};
 
 mod kitty_graphics;
 mod terminal_commands;
@@ -20,7 +21,11 @@ const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
     test_printin();
-    terminal_commands::responses::read_command().unwrap();
+
+    let res = CsiCommand::new("6n", "R").execute_with_response().unwrap();
+    println!("{res}");
+    let res = CsiCommand::new("c", "c").execute_with_response().unwrap();
+    println!("{res}");
 }
 
 fn test_printin() {

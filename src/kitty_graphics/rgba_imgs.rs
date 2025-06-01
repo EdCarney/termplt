@@ -1,5 +1,5 @@
 use super::ctrl_seq::{Action, CtrlSeq, PixelFormat};
-use crate::terminal_commands::{kitty_cmds::KittyCommand, responses::execute};
+use crate::terminal_commands::{kitty_cmds::KittyCommand, responses::TermCommand};
 use rgb::RGBA8;
 
 pub fn print_square(size: usize, color: RGBA8) -> Result<(), Box<dyn std::error::Error>> {
@@ -14,7 +14,6 @@ pub fn print_square(size: usize, color: RGBA8) -> Result<(), Box<dyn std::error:
         Box::new(Action::TransmitDisplay),
         Box::new(PixelFormat::Rgba { width, height }),
     ];
-    let mut cmd = KittyCommand::new(&bytes, ctrl_data);
-    execute(&mut cmd)?;
-    Ok(())
+
+    KittyCommand::new(&bytes, ctrl_data).execute()
 }

@@ -1,37 +1,34 @@
 use super::responses::TermCommand;
 
-const CSI_START: &[u8] = b"\x1b[";
+const CMD_START: &[u8] = b"\x1b[";
 
 pub struct CsiCommand {
     cmd: Vec<u8>,
-    res_end: Vec<u8>,
+    cmd_end: Vec<u8>,
 }
 
 impl CsiCommand {
-    pub fn new(command: &str, res_end: &str) -> CsiCommand {
-        let mut cmd = Vec::new();
-        cmd.extend_from_slice(CSI_START);
+    pub fn new(command: &str, command_end: &str) -> CsiCommand {
+        let mut cmd = Vec::from(CMD_START);
         cmd.extend_from_slice(command.as_bytes());
-        cmd.extend_from_slice(res_end.as_bytes());
 
         CsiCommand {
             cmd,
-            res_end: res_end.as_bytes().to_vec(),
+            cmd_end: command_end.as_bytes().to_vec(),
         }
     }
 }
 
 impl TermCommand for CsiCommand {
-    fn req_start(&self) -> &[u8] {
-        CSI_START
-    }
-    fn res_start(&self) -> &[u8] {
-        CSI_START
-    }
-    fn res_end(&self) -> &[u8] {
-        &self.res_end
-    }
-    fn get_request(&mut self) -> &[u8] {
+    fn get_request(&self) -> &[u8] {
         &self.cmd
+    }
+
+    fn get_response_start(&self) -> &[u8] {
+        CMD_START
+    }
+
+    fn get_response_end(&self) -> &[u8] {
+        &self.cmd_end
     }
 }
