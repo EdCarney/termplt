@@ -1,5 +1,5 @@
 use super::ctrl_seq::{Action, CtrlSeq, PixelFormat};
-use crate::terminal_commands::{kitty_cmds::KittyCommand, responses::execute};
+use crate::terminal_commands::{kitty_cmds::KittyCommand, responses::TermCommand};
 use std::fs;
 
 pub fn print_img(path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -14,9 +14,7 @@ pub fn print_img(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         Box::new(PixelFormat::PngBounded { cols, rows }),
     ];
 
-    let mut cmd = KittyCommand::new(&bytes, ctrl_data);
-    execute(&mut cmd)?;
-    Ok(())
+    KittyCommand::new(&bytes, ctrl_data).execute()
 }
 
 pub fn print_bounded_img(
@@ -30,7 +28,5 @@ pub fn print_bounded_img(
         Box::new(PixelFormat::PngBounded { cols, rows }),
     ];
 
-    let mut cmd = KittyCommand::new(&bytes, ctrl_data);
-    execute(&mut cmd)?;
-    Ok(())
+    KittyCommand::new(&bytes, ctrl_data).execute()
 }

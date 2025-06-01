@@ -12,20 +12,16 @@ pub struct KittyCommand {
 }
 
 impl TermCommand for KittyCommand {
-    fn req_start(&self) -> &[u8] {
-        CMD_START
-    }
-    fn req_end(&self) -> &[u8] {
-        CMD_END
-    }
-    fn res_start(&self) -> &[u8] {
-        CMD_START
-    }
-    fn res_end(&self) -> &[u8] {
-        CMD_END
-    }
-    fn get_request(&mut self) -> &[u8] {
+    fn get_request(&self) -> &[u8] {
         &self.cmd
+    }
+
+    fn get_response_start(&self) -> &[u8] {
+        CMD_START
+    }
+
+    fn get_response_end(&self) -> &[u8] {
+        CMD_END
     }
 }
 
@@ -37,7 +33,7 @@ impl KittyCommand {
         let chunks = payload.chunks(MAX_PAYLOAD_SIZE);
         let num_chunks = chunks.len();
 
-        let mut cmd = Vec::<u8>::with_capacity(payload.len() + num_chunks * 10);
+        let mut cmd = Vec::with_capacity(payload.len() + num_chunks * 10);
         for (ind, chunk) in chunks.enumerate() {
             let is_last = ind == num_chunks - 1;
 
