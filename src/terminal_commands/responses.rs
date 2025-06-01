@@ -1,6 +1,3 @@
-use super::csi_cmds::CsiCommand;
-use super::kitty_cmds::KittyCommand;
-use crate::kitty_graphics::ctrl_seq::*;
 use crossterm::terminal;
 use std::{
     error::Error,
@@ -89,29 +86,3 @@ impl fmt::Display for TerminalCommandError {
 }
 
 impl Error for TerminalCommandError {}
-
-// pub fn read_command() -> Result<()> {
-//     let mut cmd = CsiCommand::new("6n", "R");
-//     let resp = execute_and_read(&mut cmd)?;
-//     println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
-//
-//     let mut cmd = CsiCommand::new("c", "c");
-//     let resp = execute_and_read(&mut cmd)?;
-//     println!("CSI Resp: {} ({resp:?})", resp_to_str(&resp, &cmd)?);
-//
-//     let payload: Vec<u8> = vec![255, 255, 255];
-//     let ctrl_data: Vec<Box<dyn CtrlSeq>> = vec![
-//         Box::new(Metadata::Id(32)),
-//         Box::new(Transmission::Direct),
-//         Box::new(PixelFormat::Rgb {
-//             width: 1,
-//             height: 1,
-//         }),
-//         Box::new(Action::Query),
-//     ];
-//     let mut cmd_kitty = KittyCommand::new(&payload, ctrl_data);
-//     let resp = execute_and_read(&mut cmd_kitty)?;
-//     println!("Kitty Resp: {} ({resp:?})", resp_to_str(&resp, &cmd_kitty)?);
-//
-//     Ok(())
-// }
