@@ -3,7 +3,7 @@ use crate::{
     kitty_graphics::ctrl_seq::*,
     terminal_commands::{csi_cmds, kitty_cmds::KittyCommand, responses::TermCommand},
 };
-use std::{error::Error, fmt, fs};
+use std::{error::Error, fmt};
 
 #[derive(Debug)]
 pub enum ImageError {
@@ -118,23 +118,6 @@ impl Image {
 
     fn get_positioning_details(&self, x_pix: u32, y_pix: u32) -> Result<PositionDetails> {
         let window_sz = termplt::get_window_size()?;
-
-        // check display region is valid
-        // match self.display_region {
-        //     Some(x) => match x {
-        //         DisplayRegion::Rectangle {
-        //             x,
-        //             y,
-        //             width,
-        //             height,
-        //         } => {
-        //             if x > window_sz.x_pix || y > window_sz.y_pix {
-        //                 return Err(Box::new(ImageError::DisplayRegionExceedsImageBounds));
-        //             }
-        //         }
-        //     },
-        //     None => (),
-        // }
 
         // check positioning specification is valid
         if x_pix > window_sz.x_pix || y_pix > window_sz.y_pix {
