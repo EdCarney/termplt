@@ -1,8 +1,10 @@
 use crate::kitty_graphics::ctrl_seq::*;
 
+use kitty_graphics::images::Image;
 use rgb::RGB8;
 use terminal_commands::{csi_cmds::CsiCommand, kitty_cmds::KittyCommand, responses::TermCommand};
 
+mod common;
 mod kitty_graphics;
 mod terminal_commands;
 
@@ -21,7 +23,14 @@ const WHITE: RGB8 = RGB8 {
 };
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
-fn main() {}
+fn main() {
+    let data = vec![];
+    let format = PixelFormat::Rgb {
+        width: 10,
+        height: 10,
+    };
+    let img = Image::at_current_position(format, &data);
+}
 
 fn test_cursor_positioning() {
     let res_before_1 = CsiCommand::new("6n", "R").execute_with_response().unwrap();
