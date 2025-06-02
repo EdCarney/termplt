@@ -67,6 +67,7 @@ impl Image {
                     self.format.get_ctrl_seq(),
                     self.transmission.get_ctrl_seq(),
                     Positioning::WithCellOffset { offset_x, offset_y }.get_ctrl_seq(),
+                    Action::TransmitDisplay.get_ctrl_seq(),
                 ];
 
                 // move cursor, write data, then move back to original position
