@@ -61,13 +61,62 @@ impl CtrlSeq for Action {
 pub enum Metadata {
     Id(u32),
     MoreData(bool),
+    StackingOrder(u16),
 }
 
 impl CtrlSeq for Metadata {
     fn get_ctrl_seq(&self) -> String {
         match self {
             Metadata::Id(id) => format!("i={id}"),
-            Metadata::MoreData(more) => format!("m={}", if more.clone() { 1 } else { 0 }),
+            Metadata::MoreData(more) => format!("m={}", if *more { 1 } else { 0 }),
+            Metadata::StackingOrder(z) => format!("z={z}"),
+        }
+    }
+}
+
+pub enum Positioning {
+    Current,
+    WithCellOffset { offset_x: u16, offset_y: u16 },
+}
+
+impl CtrlSeq for Positioning {
+    fn get_ctrl_seq(&self) -> String {
+        match self {
+            Positioning::Current => String::from(""),
+            Positioning::WithCellOffset { offset_x, offset_y } => {
+                format!("X={offset_x},Y={offset_y}")
+            }
+        }
+    }
+}
+
+pub enum DisplayRegion {
+    Rectangle {
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+    },
+    Rows(u16),
+    Cols(u16),
+    RowsCols {
+        rows: u16,
+        cols: u16,
+    },
+}
+
+impl CtrlSeq for DisplayRegion {
+    fn get_ctrl_seq(&self) -> String {
+        match self {
+            DisplayRegion::Rectangle {
+                x,
+                y,
+                width,
+                height,
+            } => format!("x={x},y={y},w={width},h={height}"),
+            DisplayRegion::Rows(rows) => format!("r={rows}"),
+            DisplayRegion::Cols(cols) => format!("c={cols}"),
+            DisplayRegion::RowsCols { rows, cols } => format!("r={rows},c={cols}"),
         }
     }
 }
