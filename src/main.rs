@@ -1,5 +1,9 @@
 use rgb::RGB8;
-use terminal_commands::{csi_cmds::CsiCommand, responses::TermCommand};
+use terminal_commands::{
+    csi_cmds::{self, CsiCommand},
+    images::PositioningType,
+    responses::TermCommand,
+};
 
 mod common;
 mod kitty_graphics;
@@ -21,10 +25,23 @@ const WHITE: RGB8 = RGB8 {
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
+    csi_cmds::clear_screen().unwrap();
+
     kitty_graphics::rgb_imgs::print_square(50, RED).unwrap();
     println!();
 
-    test_printin();
+    let position = PositioningType::ExactPixel { x: 10, y: 10 };
+    kitty_graphics::rgb_imgs::print_square_at(50, GREEN, position).unwrap();
+    println!();
+
+    let position = PositioningType::Centered;
+    kitty_graphics::rgb_imgs::print_square_at(50, YELLOW, position).unwrap();
+    println!();
+
+    let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
+    let position = PositioningType::Centered;
+    kitty_graphics::png_imgs::print_bounded_img_at(img_path, 100, 25, position).unwrap();
+    println!();
 }
 
 fn test_cursor_positioning() {
