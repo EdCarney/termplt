@@ -109,8 +109,7 @@ impl Image {
         let cmd = match self.transmission {
             Transmission::Direct(ref bytes) => KittyCommand::new(bytes, &attributes),
             Transmission::File(ref file_path) => {
-                let bytes = fs::read(file_path)?;
-                KittyCommand::new(&bytes, &attributes)
+                KittyCommand::new(file_path.as_bytes(), &attributes)
             }
             _ => panic!("Unsupported type!"),
         };

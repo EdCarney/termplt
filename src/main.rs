@@ -34,13 +34,17 @@ fn main() {
     kitty_graphics::rgb_imgs::print_square_at(50, GREEN, position).unwrap();
     println!();
 
+    let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
+    let position = PositioningType::Centered;
+    kitty_graphics::png_imgs::print_bounded_img_at(img_path, 100, 25, position).unwrap();
+    println!();
+
     let position = PositioningType::Centered;
     kitty_graphics::rgb_imgs::print_square_at(50, YELLOW, position).unwrap();
     println!();
 
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
-    let position = PositioningType::Centered;
-    kitty_graphics::png_imgs::print_bounded_img_at(img_path, 100, 25, position).unwrap();
+    kitty_graphics::png_imgs::print_bounded_img(img_path, 50, 13).unwrap();
     println!();
 }
 
