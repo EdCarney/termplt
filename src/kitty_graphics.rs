@@ -1,6 +1,5 @@
 pub mod ctrl_seq;
 pub mod encoding;
-pub mod images;
 pub mod png_imgs;
 pub mod rgb_imgs;
 pub mod rgba_imgs;

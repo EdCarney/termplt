@@ -1,8 +1,5 @@
-use crate::kitty_graphics::ctrl_seq::*;
-
-use kitty_graphics::images::Image;
 use rgb::RGB8;
-use terminal_commands::{csi_cmds::CsiCommand, kitty_cmds::KittyCommand, responses::TermCommand};
+use terminal_commands::{csi_cmds::CsiCommand, responses::TermCommand};
 
 mod common;
 mod kitty_graphics;
@@ -24,12 +21,10 @@ const WHITE: RGB8 = RGB8 {
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
-    let data = vec![];
-    let format = PixelFormat::Rgb {
-        width: 10,
-        height: 10,
-    };
-    let img = Image::at_current_position(format, &data);
+    kitty_graphics::rgb_imgs::print_square(50, RED).unwrap();
+    println!();
+
+    test_printin();
 }
 
 fn test_cursor_positioning() {
@@ -72,18 +67,19 @@ fn test_cmd_seqs() {
     let res = CsiCommand::new("c", "c").execute_with_response().unwrap();
     println!("{res}");
 
-    let payload: Vec<u8> = vec![255, 255, 255];
-    let ctrl_data: Vec<Box<dyn CtrlSeq>> = vec![
-        Box::new(Metadata::Id(32)),
-        Box::new(Transmission::Direct),
-        Box::new(PixelFormat::Rgba {
-            width: 1,
-            height: 1,
-        }),
-        Box::new(Action::Query),
-    ];
-    let res = KittyCommand::new(&payload, ctrl_data)
-        .execute_with_response()
-        .unwrap();
-    println!("{res}");
+    // let payload = vec![255, 255, 255];
+    // let ctrl_data: Vec<String> = vec![
+    //     Metadata::Id(32).get_ctrl_seq(),
+    //     Transmission::Direct(&payload).get_ctrl_seq(),
+    //     PixelFormat::Rgba {
+    //         width: 1,
+    //         height: 1,
+    //     }
+    //     .get_ctrl_seq(),
+    //     Action::Query.get_ctrl_seq(),
+    // ];
+    // let res = KittyCommand::new(&payload, &ctrl_data)
+    //     .execute_with_response()
+    //     .unwrap();
+    // println!("{res}");
 }

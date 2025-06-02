@@ -61,3 +61,8 @@ pub fn get_cursor_pos() -> Result<TermPosition> {
         col: resp[1],
     })
 }
+
+pub fn set_cursor_pos(row: u32, col: u32) -> Result<()> {
+    let cmd = format!("{row};{col}H");
+    CsiCommand::new(&cmd, "").execute()
+}

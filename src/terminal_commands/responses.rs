@@ -45,8 +45,8 @@ pub trait TermCommand {
         let mut byte_buf = [0u8; 1];
         let mut resp_recvd = false;
 
-        terminal::enable_raw_mode()?;
         self.execute()?;
+        terminal::enable_raw_mode()?;
 
         let watch = Instant::now();
         while watch.elapsed().as_millis() < 1000 {

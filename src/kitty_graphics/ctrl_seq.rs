@@ -3,26 +3,26 @@ pub trait CtrlSeq {
 }
 
 pub enum Transmission {
-    Direct,
-    File,
-    TempFile,
-    SharedMemory,
+    Direct(Vec<u8>),
+    File(String),
+    TempFile(String),
+    SharedMemory(String),
 }
 
 impl CtrlSeq for Transmission {
     fn get_ctrl_seq(&self) -> String {
         match self {
-            Transmission::Direct => String::from("t=d"),
-            Transmission::File => String::from("t=f"),
-            Transmission::TempFile => String::from("t=t"),
-            Transmission::SharedMemory => String::from("t=s"),
+            Transmission::Direct(_) => String::from("t=d"),
+            Transmission::File(_) => String::from("t=f"),
+            Transmission::TempFile(_) => String::from("t=t"),
+            Transmission::SharedMemory(_) => String::from("t=s"),
         }
     }
 }
 
 pub enum PixelFormat {
     Png,
-    PngBounded { cols: u32, rows: u32 },
+    PngBounded { rows: u32, cols: u32 },
     Rgb { width: u32, height: u32 },
     Rgba { width: u32, height: u32 },
 }
@@ -76,7 +76,7 @@ impl CtrlSeq for Metadata {
 
 pub enum Positioning {
     Current,
-    WithCellOffset { offset_x: u16, offset_y: u16 },
+    WithCellOffset { offset_x: u32, offset_y: u32 },
 }
 
 impl CtrlSeq for Positioning {
