@@ -1,6 +1,15 @@
 use super::responses::TermCommand;
+use crate::common::Result;
 
 const CMD_START: &[u8] = b"\x1b[";
+
+#[derive(Debug)]
+pub struct TermPosition {
+    /// One-indexed row position with top row as index one.
+    pub row: u32,
+    /// One-indexed column position with leftmost column as index one.
+    pub col: u32,
+}
 
 pub struct CsiCommand {
     cmd: Vec<u8>,
@@ -31,4 +40,24 @@ impl TermCommand for CsiCommand {
     fn get_response_end(&self) -> &[u8] {
         &self.cmd_end
     }
+}
+
+pub fn get_cursor_pos() -> Result<TermPosition> {
+    let resp: Vec<u32> = CsiCommand::new("6n", "R")
+        .execute_with_response()
+        .expect("Error getting cursor position.")
+        .split(';')
+        .map(|c| c.parse::<u32>().expect("Failure parsing cursor position"))
+        .collect();
+
+    assert_eq!(
+        resp.len(),
+        2,
+        "Expect cursor position return to have 2 elements"
+    );
+
+    Ok(TermPosition {
+        row: resp[0],
+        col: resp[1],
+    })
 }
