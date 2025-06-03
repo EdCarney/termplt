@@ -11,5 +11,5 @@ pub fn print_square(size: usize, color: RGBA8) -> Result<(), Box<dyn std::error:
     let height = size as u32;
     let format = PixelFormat::Rgba { width, height };
     let transmission = Transmission::Direct(bytes);
-    Image::new(format, transmission).display()
+    Image::new(format, transmission)?.display()
 }

@@ -3,7 +3,8 @@ use crate::{
     kitty_graphics::ctrl_seq::*,
     terminal_commands::{csi_cmds, kitty_cmds::KittyCommand, responses::TermCommand},
 };
-use std::{error::Error, fmt};
+use image::{self, ImageFormat, ImageReader};
+use std::{error::Error, fmt, io::Cursor, path::Path};
 
 #[derive(Debug)]
 pub enum ImageError {
@@ -35,14 +36,38 @@ struct PositionDetails {
 pub struct Image {
     format: PixelFormat,
     transmission: Transmission,
+    width_pix: u32,
+    height_pix: u32,
 }
 
 impl Image {
-    pub fn new(format: PixelFormat, transmission: Transmission) -> Image {
-        Image {
+    pub fn new(format: PixelFormat, transmission: Transmission) -> Result<Image> {
+        let (width_pix, height_pix) = match format {
+            PixelFormat::Png => match transmission {
+                Transmission::File(ref file_path) => {
+                    image::image_dimensions(Path::new(&file_path))?
+                }
+                Transmission::Direct(ref bytes) => {
+                    let cursor = Cursor::new(bytes);
+                    ImageReader::with_format(cursor, ImageFormat::Png).into_dimensions()?
+                }
+                _ => panic!("Unsupported format"),
+            },
+            PixelFormat::PngBounded { cols, rows } => {
+                let window_sz = termplt::get_window_size()?;
+                let width = cols * window_sz.pix_per_col;
+                let height = rows * window_sz.pix_per_row;
+                (width, height)
+            }
+            PixelFormat::Rgb { width, height } => (width, height),
+            PixelFormat::Rgba { width, height } => (width, height),
+        };
+        Ok(Image {
             format,
             transmission,
-        }
+            width_pix,
+            height_pix,
+        })
     }
 
     pub fn display(&self) -> Result<()> {
@@ -77,29 +102,8 @@ impl Image {
                 csi_cmds::set_cursor_pos(cursor_pos.row, cursor_pos.col)
             }
             PositioningType::Centered => {
-                let (x, y) = match self.format {
-                    PixelFormat::Png => {
-                        // TODO: need to somehow get png pixel dimensions
-                        todo!()
-                    }
-                    PixelFormat::PngBounded { cols, rows } => {
-                        let width = cols * window_sz.pix_per_col;
-                        let height = rows * window_sz.pix_per_row;
-                        let x = (window_sz.x_pix / 2) - (width / 2);
-                        let y = (window_sz.y_pix / 2) - (height / 2);
-                        (x, y)
-                    }
-                    PixelFormat::Rgb { width, height } => {
-                        let x = (window_sz.x_pix / 2) - (width / 2);
-                        let y = (window_sz.y_pix / 2) - (height / 2);
-                        (x, y)
-                    }
-                    PixelFormat::Rgba { width, height } => {
-                        let x = (window_sz.x_pix / 2) - (width / 2);
-                        let y = (window_sz.y_pix / 2) - (height / 2);
-                        (x, y)
-                    }
-                };
+                let x = (window_sz.x_pix / 2) - (self.width_pix / 2);
+                let y = (window_sz.y_pix / 2) - (self.height_pix / 2);
                 self.display_at_position(PositioningType::ExactPixel { x, y })
             }
         }

@@ -46,6 +46,15 @@ fn main() {
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
     kitty_graphics::png_imgs::print_bounded_img(img_path, 50, 13).unwrap();
     println!();
+
+    let img_path = "/home/edcarney/Downloads/red_arrow.png";
+    kitty_graphics::png_imgs::print_img(img_path).unwrap();
+    println!();
+
+    let position = PositioningType::Centered;
+    let img_path = "/home/edcarney/Downloads/red_arrow.png";
+    kitty_graphics::png_imgs::print_img_at(img_path, position).unwrap();
+    println!();
 }
 
 fn test_cursor_positioning() {

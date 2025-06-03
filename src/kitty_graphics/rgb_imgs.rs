@@ -11,7 +11,7 @@ pub fn print_square(size: usize, color: RGB8) -> Result<(), Box<dyn std::error::
     let height = size as u32;
     let format = PixelFormat::Rgb { width, height };
     let transmission = Transmission::Direct(bytes);
-    Image::new(format, transmission).display()
+    Image::new(format, transmission)?.display()
 }
 
 pub fn print_square_at(
@@ -27,5 +27,5 @@ pub fn print_square_at(
     let height = size as u32;
     let format = PixelFormat::Rgb { width, height };
     let transmission = Transmission::Direct(bytes);
-    Image::new(format, transmission).display_at_position(positioning_type)
+    Image::new(format, transmission)?.display_at_position(positioning_type)
 }
