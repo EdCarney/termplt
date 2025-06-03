@@ -1,5 +1,6 @@
 mod common;
 pub mod kitty_graphics;
+mod plotting;
 pub mod terminal_commands;
 mod window_ctrl;
 
