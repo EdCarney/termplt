@@ -2,6 +2,7 @@ use crate::{
     common::Result,
     kitty_graphics::ctrl_seq::*,
     terminal_commands::{csi_cmds, kitty_cmds::KittyCommand, responses::TermCommand},
+    window_ctrl,
 };
 use image::{self, ImageFormat, ImageReader};
 use std::{error::Error, fmt, io::Cursor, path::Path};
@@ -54,7 +55,7 @@ impl Image {
                 _ => panic!("Unsupported format"),
             },
             PixelFormat::PngBounded { cols, rows } => {
-                let window_sz = termplt::get_window_size()?;
+                let window_sz = window_ctrl::get_window_size()?;
                 let width = cols * window_sz.pix_per_col;
                 let height = rows * window_sz.pix_per_row;
                 (width, height)
@@ -80,7 +81,7 @@ impl Image {
     }
 
     pub fn display_at_position(&self, positioning: PositioningType) -> Result<()> {
-        let window_sz = termplt::get_window_size()?;
+        let window_sz = window_ctrl::get_window_size()?;
         match positioning {
             PositioningType::ExactPixel { x, y } => {
                 let row = (y / window_sz.pix_per_row) + 1;
@@ -121,7 +122,7 @@ impl Image {
     }
 
     fn get_positioning_details(&self, x_pix: u32, y_pix: u32) -> Result<PositionDetails> {
-        let window_sz = termplt::get_window_size()?;
+        let window_sz = window_ctrl::get_window_size()?;
 
         // check positioning specification is valid
         if x_pix > window_sz.x_pix || y_pix > window_sz.y_pix {

@@ -1,13 +1,12 @@
 use rgb::RGB8;
-use terminal_commands::{
-    csi_cmds::{self, CsiCommand},
-    images::PositioningType,
-    responses::TermCommand,
+use termplt::{
+    kitty_graphics::{png_imgs, rgb_imgs, rgba_imgs},
+    terminal_commands::{
+        csi_cmds::{self, CsiCommand},
+        images::PositioningType,
+        responses::TermCommand,
+    },
 };
-
-mod common;
-mod kitty_graphics;
-mod terminal_commands;
 
 const RED: RGB8 = RGB8 { r: 255, g: 0, b: 0 };
 const GREEN: RGB8 = RGB8 { r: 0, g: 255, b: 0 };
@@ -27,43 +26,43 @@ const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 fn main() {
     csi_cmds::clear_screen().unwrap();
 
-    kitty_graphics::rgb_imgs::print_square(50, RED).unwrap();
+    rgb_imgs::print_square(50, RED).unwrap();
     println!();
 
     let position = PositioningType::ExactPixel { x: 10, y: 10 };
-    kitty_graphics::rgb_imgs::print_square_at(50, GREEN, position).unwrap();
+    rgb_imgs::print_square_at(50, GREEN, position).unwrap();
     println!();
 
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
     let position = PositioningType::Centered;
-    kitty_graphics::png_imgs::print_bounded_img_at(img_path, 100, 25, position).unwrap();
+    png_imgs::print_bounded_img_at(img_path, 100, 25, position).unwrap();
     println!();
 
     let position = PositioningType::Centered;
-    kitty_graphics::rgb_imgs::print_square_at(50, YELLOW, position).unwrap();
+    rgb_imgs::print_square_at(50, YELLOW, position).unwrap();
     println!();
 
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
-    kitty_graphics::png_imgs::print_bounded_img(img_path, 50, 13).unwrap();
+    png_imgs::print_bounded_img(img_path, 50, 13).unwrap();
     println!();
 
     let img_path = "/home/edcarney/Downloads/red_arrow.png";
-    kitty_graphics::png_imgs::print_img(img_path).unwrap();
+    png_imgs::print_img(img_path).unwrap();
     println!();
 
     let position = PositioningType::Centered;
     let img_path = "/home/edcarney/Downloads/red_arrow.png";
-    kitty_graphics::png_imgs::print_img_at(img_path, position).unwrap();
+    png_imgs::print_img_at(img_path, position).unwrap();
     println!();
 }
 
 fn test_cursor_positioning() {
     let res_before_1 = CsiCommand::new("6n", "R").execute_with_response().unwrap();
-    kitty_graphics::rgba_imgs::print_square(100, GREEN.with_alpha(25)).unwrap();
+    rgba_imgs::print_square(100, GREEN.with_alpha(25)).unwrap();
     let res_after_1 = CsiCommand::new("6n", "R").execute_with_response().unwrap();
 
     let res_before_2 = CsiCommand::new("6n", "R").execute_with_response().unwrap();
-    kitty_graphics::rgba_imgs::print_square(100, GREEN.with_alpha(25)).unwrap();
+    rgba_imgs::print_square(100, GREEN.with_alpha(25)).unwrap();
     let res_after_2 = CsiCommand::new("6n", "R").execute_with_response().unwrap();
     println!();
     println!("Before: {res_before_1}, After: {res_after_1}");
@@ -73,20 +72,17 @@ fn test_cursor_positioning() {
 fn test_printin() {
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
 
-    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(25)).unwrap();
-    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(50)).unwrap();
-    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(100)).unwrap();
-    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(200)).unwrap();
-    kitty_graphics::rgba_imgs::print_square(50, GREEN.with_alpha(u8::MAX)).unwrap();
+    rgba_imgs::print_square(50, GREEN.with_alpha(25)).unwrap();
+    rgba_imgs::print_square(50, GREEN.with_alpha(50)).unwrap();
+    rgba_imgs::print_square(50, GREEN.with_alpha(100)).unwrap();
+    rgba_imgs::print_square(50, GREEN.with_alpha(200)).unwrap();
+    rgba_imgs::print_square(50, GREEN.with_alpha(u8::MAX)).unwrap();
     println!();
 
-    kitty_graphics::rgb_imgs::print_square(200, WHITE).unwrap();
+    rgb_imgs::print_square(200, WHITE).unwrap();
     println!();
 
-    // kitty_graphics::png_imgs::print_img(img_path).unwrap();
-    // println!();
-
-    kitty_graphics::png_imgs::print_bounded_img(img_path, 100, 25).unwrap();
+    png_imgs::print_bounded_img(img_path, 100, 25).unwrap();
     println!();
 }
 
