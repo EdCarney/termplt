@@ -3,26 +3,26 @@ pub trait CtrlSeq {
 }
 
 pub enum Transmission {
-    Direct,
-    File,
-    TempFile,
-    SharedMemory,
+    Direct(Vec<u8>),
+    File(String),
+    TempFile(String),
+    SharedMemory(String),
 }
 
 impl CtrlSeq for Transmission {
     fn get_ctrl_seq(&self) -> String {
         match self {
-            Transmission::Direct => String::from("t=d"),
-            Transmission::File => String::from("t=f"),
-            Transmission::TempFile => String::from("t=t"),
-            Transmission::SharedMemory => String::from("t=s"),
+            Transmission::Direct(_) => String::from("t=d"),
+            Transmission::File(_) => String::from("t=f"),
+            Transmission::TempFile(_) => String::from("t=t"),
+            Transmission::SharedMemory(_) => String::from("t=s"),
         }
     }
 }
 
 pub enum PixelFormat {
     Png,
-    PngBounded { cols: u32, rows: u32 },
+    PngBounded { rows: u32, cols: u32 },
     Rgb { width: u32, height: u32 },
     Rgba { width: u32, height: u32 },
 }
@@ -61,13 +61,62 @@ impl CtrlSeq for Action {
 pub enum Metadata {
     Id(u32),
     MoreData(bool),
+    StackingOrder(u16),
 }
 
 impl CtrlSeq for Metadata {
     fn get_ctrl_seq(&self) -> String {
         match self {
             Metadata::Id(id) => format!("i={id}"),
-            Metadata::MoreData(more) => format!("m={}", if more.clone() { 1 } else { 0 }),
+            Metadata::MoreData(more) => format!("m={}", if *more { 1 } else { 0 }),
+            Metadata::StackingOrder(z) => format!("z={z}"),
+        }
+    }
+}
+
+pub enum Positioning {
+    Current,
+    WithCellOffset { offset_x: u32, offset_y: u32 },
+}
+
+impl CtrlSeq for Positioning {
+    fn get_ctrl_seq(&self) -> String {
+        match self {
+            Positioning::Current => String::from(""),
+            Positioning::WithCellOffset { offset_x, offset_y } => {
+                format!("X={offset_x},Y={offset_y}")
+            }
+        }
+    }
+}
+
+pub enum DisplayRegion {
+    Rectangle {
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+    },
+    Rows(u16),
+    Cols(u16),
+    RowsCols {
+        rows: u16,
+        cols: u16,
+    },
+}
+
+impl CtrlSeq for DisplayRegion {
+    fn get_ctrl_seq(&self) -> String {
+        match self {
+            DisplayRegion::Rectangle {
+                x,
+                y,
+                width,
+                height,
+            } => format!("x={x},y={y},w={width},h={height}"),
+            DisplayRegion::Rows(rows) => format!("r={rows}"),
+            DisplayRegion::Cols(cols) => format!("c={cols}"),
+            DisplayRegion::RowsCols { rows, cols } => format!("r={rows},c={cols}"),
         }
     }
 }

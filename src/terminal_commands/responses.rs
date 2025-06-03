@@ -1,3 +1,4 @@
+use crate::common::Result;
 use crossterm::terminal;
 use std::{
     error::Error,
@@ -6,7 +7,16 @@ use std::{
     time::Instant,
 };
 
-pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
+#[derive(Debug)]
+pub struct TerminalCommandError {}
+
+impl fmt::Display for TerminalCommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Error executing terminal command.")
+    }
+}
+
+impl Error for TerminalCommandError {}
 
 pub trait TermCommand {
     fn get_request(&self) -> &[u8];
@@ -35,8 +45,8 @@ pub trait TermCommand {
         let mut byte_buf = [0u8; 1];
         let mut resp_recvd = false;
 
-        terminal::enable_raw_mode()?;
         self.execute()?;
+        terminal::enable_raw_mode()?;
 
         let watch = Instant::now();
         while watch.elapsed().as_millis() < 1000 {
@@ -66,23 +76,7 @@ pub trait TermCommand {
             let resp = String::from_utf8(buf[start..end].to_vec())?;
             Ok(resp)
         } else {
-            Err(Box::new(TerminalCommandError {
-                // TODO: fix error construction from cmd()
-                failed_cmd: "".to_string(), // cmd.cmd().unwrap(),
-            }))
+            Err(Box::new(TerminalCommandError {}))
         }
     }
 }
-
-#[derive(Debug)]
-pub struct TerminalCommandError {
-    failed_cmd: String,
-}
-
-impl fmt::Display for TerminalCommandError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Error executing terminal command: {}", self.failed_cmd)
-    }
-}
-
-impl Error for TerminalCommandError {}

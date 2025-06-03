@@ -26,27 +26,22 @@ impl TermCommand for KittyCommand {
 }
 
 impl KittyCommand {
-    pub fn new(payload: &[u8], ctrl_data: Vec<Box<dyn CtrlSeq>>) -> KittyCommand {
+    pub fn new(payload: &[u8], ctrl_data: &[String]) -> KittyCommand {
         let payload = encoding::read_bytes_to_b64(&payload).unwrap();
         let mut ctrl_data = Vec::from(ctrl_data);
 
         let chunks = payload.chunks(MAX_PAYLOAD_SIZE);
         let num_chunks = chunks.len();
 
-        let mut cmd = Vec::with_capacity(payload.len() + num_chunks * 10);
+        let mut cmd = Vec::with_capacity(MAX_PAYLOAD_SIZE * num_chunks);
         for (ind, chunk) in chunks.enumerate() {
             let is_last = ind == num_chunks - 1;
 
-            ctrl_data.push(Box::new(Metadata::MoreData(!is_last)));
-            let ctrl_bytes = ctrl_data
-                .drain(..)
-                .map(|seq| seq.get_ctrl_seq())
-                .collect::<Vec<_>>()
-                .join(",")
-                .into_bytes();
+            ctrl_data.push(Metadata::MoreData(!is_last).get_ctrl_seq());
+            let ctrl_bytes = ctrl_data.drain(..).collect::<Vec<_>>().join(",");
 
             cmd.extend_from_slice(CMD_START);
-            cmd.extend_from_slice(&ctrl_bytes);
+            cmd.extend_from_slice(&ctrl_bytes.as_bytes());
             cmd.extend_from_slice(CMD_SEP);
             cmd.extend_from_slice(&chunk);
             cmd.extend_from_slice(CMD_END);

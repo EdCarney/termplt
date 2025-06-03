@@ -1,5 +1,5 @@
-use super::ctrl_seq::{Action, CtrlSeq, PixelFormat};
-use crate::terminal_commands::{kitty_cmds::KittyCommand, responses::TermCommand};
+use super::ctrl_seq::{PixelFormat, Transmission};
+use crate::terminal_commands::images::Image;
 use rgb::RGBA8;
 
 pub fn print_square(size: usize, color: RGBA8) -> Result<(), Box<dyn std::error::Error>> {
@@ -9,11 +9,7 @@ pub fn print_square(size: usize, color: RGBA8) -> Result<(), Box<dyn std::error:
 
     let width = size as u32;
     let height = size as u32;
-
-    let ctrl_data: Vec<Box<dyn CtrlSeq>> = vec![
-        Box::new(Action::TransmitDisplay),
-        Box::new(PixelFormat::Rgba { width, height }),
-    ];
-
-    KittyCommand::new(&bytes, ctrl_data).execute()
+    let format = PixelFormat::Rgba { width, height };
+    let transmission = Transmission::Direct(bytes);
+    Image::new(format, transmission)?.display()
 }

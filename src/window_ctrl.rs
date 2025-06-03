@@ -17,19 +17,29 @@ impl Error for WindowCtrlError {}
 
 #[derive(Debug)]
 pub struct WindowSize {
-    pub rows: u16,
-    pub cols: u16,
-    pub x_pixels: u16,
-    pub y_pixels: u16,
+    pub rows: u32,
+    pub cols: u32,
+    pub x_pix: u32,
+    pub y_pix: u32,
+    pub pix_per_row: u32,
+    pub pix_per_col: u32,
 }
 
 impl WindowSize {
     fn build_from_ioctl(ioctl_data: [u16; 4]) -> WindowSize {
+        let rows = ioctl_data[0] as u32;
+        let cols = ioctl_data[1] as u32;
+        let x_pix = ioctl_data[2] as u32;
+        let y_pix = ioctl_data[3] as u32;
+        let pix_per_col = x_pix / cols;
+        let pix_per_row = y_pix / rows;
         WindowSize {
-            rows: ioctl_data[0],
-            cols: ioctl_data[1],
-            x_pixels: ioctl_data[2],
-            y_pixels: ioctl_data[3],
+            rows,
+            cols,
+            x_pix,
+            y_pix,
+            pix_per_col,
+            pix_per_row,
         }
     }
 }
