@@ -1,8 +1,15 @@
 use std::ops::{Add, Div, Mul, Sub};
 
+#[derive(Debug, PartialEq)]
 pub struct Point {
-    x: f32,
-    y: f32,
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Point {
+    pub fn new(x: f32, y: f32) -> Point {
+        Point { x, y }
+    }
 }
 
 impl Add for Point {
