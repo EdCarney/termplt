@@ -1,18 +1,36 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Point {
-    pub x: f32,
-    pub y: f32,
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Point<T> {
+    pub x: T,
+    pub y: T,
 }
 
-impl Point {
-    pub fn new(x: f32, y: f32) -> Point {
+impl<T> Point<T> {
+    pub fn try_into_point<U>(self) -> Result<Point<U>, U::Error>
+    where
+        U: TryFrom<T>,
+    {
+        Ok(Point {
+            x: self.x.try_into()?,
+            y: self.y.try_into()?,
+        })
+    }
+}
+
+impl<T> Point<T>
+where
+    T: Add + Div + Mul + Sub,
+{
+    pub fn new(x: T, y: T) -> Point<T> {
         Point { x, y }
     }
 }
 
-impl Add for Point {
+impl<T> Add for Point<T>
+where
+    T: Add<Output = T> + Copy,
+{
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -23,7 +41,10 @@ impl Add for Point {
     }
 }
 
-impl Sub for Point {
+impl<T> Sub for Point<T>
+where
+    T: Sub<Output = T> + Copy,
+{
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -34,10 +55,13 @@ impl Sub for Point {
     }
 }
 
-impl Add<f32> for Point {
+impl<T> Add<T> for Point<T>
+where
+    T: Add<Output = T> + Copy,
+{
     type Output = Self;
 
-    fn add(self, rhs: f32) -> Self::Output {
+    fn add(self, rhs: T) -> Self::Output {
         Point {
             x: self.x + rhs,
             y: self.y + rhs,
@@ -45,10 +69,13 @@ impl Add<f32> for Point {
     }
 }
 
-impl Sub<f32> for Point {
+impl<T> Sub<T> for Point<T>
+where
+    T: Sub<Output = T> + Copy,
+{
     type Output = Self;
 
-    fn sub(self, rhs: f32) -> Self::Output {
+    fn sub(self, rhs: T) -> Self::Output {
         Point {
             x: self.x - rhs,
             y: self.y - rhs,
@@ -56,10 +83,13 @@ impl Sub<f32> for Point {
     }
 }
 
-impl Mul<f32> for Point {
+impl<T> Mul<T> for Point<T>
+where
+    T: Mul<Output = T> + Copy,
+{
     type Output = Self;
 
-    fn mul(self, rhs: f32) -> Self::Output {
+    fn mul(self, rhs: T) -> Self::Output {
         Point {
             x: self.x * rhs,
             y: self.y * rhs,
@@ -67,10 +97,13 @@ impl Mul<f32> for Point {
     }
 }
 
-impl Div<f32> for Point {
+impl<T> Div<T> for Point<T>
+where
+    T: Div<Output = T> + Copy,
+{
     type Output = Self;
 
-    fn div(self, rhs: f32) -> Self::Output {
+    fn div(self, rhs: T) -> Self::Output {
         Point {
             x: self.x / rhs,
             y: self.y / rhs,

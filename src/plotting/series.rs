@@ -1,58 +1,102 @@
 use super::{
-    markers::{LineStyle, MarkerStyle},
     point::Point,
+    styles::{LineStyle, MarkerStyle},
 };
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug, PartialEq)]
-pub struct Series {
-    data: Vec<Point>,
+pub struct Series<T> {
+    data: Vec<Point<T>>,
     marker_style: MarkerStyle,
-    line_style: LineStyle,
+    line_style: Option<LineStyle>,
 }
 
-impl Series {
-    pub fn new(data: &[Point]) -> Series {
+type Graphable = Clone;
+
+impl<T> Series<T>
+where
+    T: Clone + PartialOrd,
+{
+    pub fn new(data: &[Point<T>]) -> Series<T> {
+        if data.is_empty() {
+            panic!("Data series cannot be empty");
+        }
+
         Series {
             data: Vec::from(data),
             marker_style: MarkerStyle::default(),
-            line_style: LineStyle::default(),
+            line_style: None,
         }
     }
+
+    pub fn data(&self) -> &[Point<T>] {
+        &self.data
+    }
+
+    pub fn marker_style(&self) -> &MarkerStyle {
+        &self.marker_style
+    }
+
+    pub fn line_style(&self) -> &Option<LineStyle> {
+        &self.line_style
+    }
+
+    pub fn span(&self) -> (T, T) {
+        let mut iter = self.data.iter();
+        let first = iter.next().unwrap();
+        let mut min = (first.x, first.y);
+        let mut max = (first.x, first.y);
+        for point in iter {
+            min.0 = if point.x < min.0 { point.x } else { min.0 };
+        }
+        (max.0 - min.0, max.1 - min.1)
+    }
 }
 
-impl Add<f32> for Series {
+impl<T> Add<T> for Series<T>
+where
+    T: Add<Output = T> + Copy,
+{
     type Output = Self;
 
-    fn add(self, rhs: f32) -> Self::Output {
-        let data: Vec<Point> = self.data.into_iter().map(|p| p + rhs).collect();
+    fn add(self, rhs: T) -> Self::Output {
+        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p + rhs).collect();
         Series::new(&data)
     }
 }
 
-impl Sub<f32> for Series {
+impl<T> Sub<T> for Series<T>
+where
+    T: Sub<Output = T> + Copy,
+{
     type Output = Self;
 
-    fn sub(self, rhs: f32) -> Self::Output {
-        let data: Vec<Point> = self.data.into_iter().map(|p| p - rhs).collect();
+    fn sub(self, rhs: T) -> Self::Output {
+        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p - rhs).collect();
         Series::new(&data)
     }
 }
 
-impl Mul<f32> for Series {
+impl<T> Mul<T> for Series<T>
+where
+    T: Mul<Output = T> + Copy,
+{
     type Output = Self;
 
-    fn mul(self, rhs: f32) -> Self::Output {
-        let data: Vec<Point> = self.data.into_iter().map(|p| p * rhs).collect();
+    fn mul(self, rhs: T) -> Self::Output {
+        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p * rhs).collect();
         Series::new(&data)
     }
 }
 
-impl Div<f32> for Series {
+impl<T> Div<T> for Series<T>
+where
+    T: Div<Output = T> + Copy,
+{
     type Output = Self;
 
-    fn div(self, rhs: f32) -> Self::Output {
-        let data: Vec<Point> = self.data.into_iter().map(|p| p / rhs).collect();
+    fn div(self, rhs: T) -> Self::Output {
+        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p / rhs).collect();
         Series::new(&data)
     }
 }
@@ -66,7 +110,7 @@ mod tests {
         let p1 = Point { x: 10.0, y: 20.0 };
         let p2 = Point { x: 12.5, y: 17.5 };
         let p3 = Point { x: 15.0, y: 15.0 };
-        let data: Vec<Point> = vec![p1, p2, p3];
+        let data = vec![p1, p2, p3];
         let s1 = Series::new(&data);
         let x = 2.0;
 
@@ -81,7 +125,7 @@ mod tests {
         let p1 = Point { x: 10.0, y: 20.0 };
         let p2 = Point { x: 12.5, y: 17.5 };
         let p3 = Point { x: 15.0, y: 15.0 };
-        let data: Vec<Point> = vec![p1, p2, p3];
+        let data = vec![p1, p2, p3];
         let s1 = Series::new(&data);
         let x = 2.0;
 
@@ -96,7 +140,7 @@ mod tests {
         let p1 = Point { x: 10.0, y: 20.0 };
         let p2 = Point { x: 12.5, y: 17.5 };
         let p3 = Point { x: 15.0, y: 15.0 };
-        let data: Vec<Point> = vec![p1, p2, p3];
+        let data = vec![p1, p2, p3];
         let s1 = Series::new(&data);
         let x = 2.0;
 
@@ -111,7 +155,7 @@ mod tests {
         let p1 = Point { x: 10.0, y: 20.0 };
         let p2 = Point { x: 12.5, y: 17.5 };
         let p3 = Point { x: 15.0, y: 15.0 };
-        let data: Vec<Point> = vec![p1, p2, p3];
+        let data = vec![p1, p2, p3];
         let s1 = Series::new(&data);
         let x = 2.0;
 
