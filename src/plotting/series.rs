@@ -1,17 +1,32 @@
-use super::point::Point;
+use super::{
+    markers::{LineStyle, MarkerStyle},
+    point::Point,
+};
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug, PartialEq)]
 pub struct Series {
     data: Vec<Point>,
+    marker_style: MarkerStyle,
+    line_style: LineStyle,
+}
+
+impl Series {
+    pub fn new(data: &[Point]) -> Series {
+        Series {
+            data: Vec::from(data),
+            marker_style: MarkerStyle::default(),
+            line_style: LineStyle::default(),
+        }
+    }
 }
 
 impl Add<f32> for Series {
     type Output = Self;
 
     fn add(self, rhs: f32) -> Self::Output {
-        let data = self.data.into_iter().map(|p| p + rhs).collect();
-        Series { data }
+        let data: Vec<Point> = self.data.into_iter().map(|p| p + rhs).collect();
+        Series::new(&data)
     }
 }
 
@@ -19,8 +34,8 @@ impl Sub<f32> for Series {
     type Output = Self;
 
     fn sub(self, rhs: f32) -> Self::Output {
-        let data = self.data.into_iter().map(|p| p - rhs).collect();
-        Series { data }
+        let data: Vec<Point> = self.data.into_iter().map(|p| p - rhs).collect();
+        Series::new(&data)
     }
 }
 
@@ -28,8 +43,8 @@ impl Mul<f32> for Series {
     type Output = Self;
 
     fn mul(self, rhs: f32) -> Self::Output {
-        let data = self.data.into_iter().map(|p| p * rhs).collect();
-        Series { data }
+        let data: Vec<Point> = self.data.into_iter().map(|p| p * rhs).collect();
+        Series::new(&data)
     }
 }
 
@@ -37,8 +52,8 @@ impl Div<f32> for Series {
     type Output = Self;
 
     fn div(self, rhs: f32) -> Self::Output {
-        let data = self.data.into_iter().map(|p| p / rhs).collect();
-        Series { data }
+        let data: Vec<Point> = self.data.into_iter().map(|p| p / rhs).collect();
+        Series::new(&data)
     }
 }
 
@@ -51,8 +66,8 @@ mod tests {
         let p1 = Point { x: 10.0, y: 20.0 };
         let p2 = Point { x: 12.5, y: 17.5 };
         let p3 = Point { x: 15.0, y: 15.0 };
-        let data = vec![p1, p2, p3];
-        let s1 = Series { data };
+        let data: Vec<Point> = vec![p1, p2, p3];
+        let s1 = Series::new(&data);
         let x = 2.0;
 
         let s2 = s1 + x;
@@ -66,8 +81,8 @@ mod tests {
         let p1 = Point { x: 10.0, y: 20.0 };
         let p2 = Point { x: 12.5, y: 17.5 };
         let p3 = Point { x: 15.0, y: 15.0 };
-        let data = vec![p1, p2, p3];
-        let s1 = Series { data };
+        let data: Vec<Point> = vec![p1, p2, p3];
+        let s1 = Series::new(&data);
         let x = 2.0;
 
         let s2 = s1 - x;
@@ -81,8 +96,8 @@ mod tests {
         let p1 = Point { x: 10.0, y: 20.0 };
         let p2 = Point { x: 12.5, y: 17.5 };
         let p3 = Point { x: 15.0, y: 15.0 };
-        let data = vec![p1, p2, p3];
-        let s1 = Series { data };
+        let data: Vec<Point> = vec![p1, p2, p3];
+        let s1 = Series::new(&data);
         let x = 2.0;
 
         let s2 = s1 * x;
@@ -96,8 +111,8 @@ mod tests {
         let p1 = Point { x: 10.0, y: 20.0 };
         let p2 = Point { x: 12.5, y: 17.5 };
         let p3 = Point { x: 15.0, y: 15.0 };
-        let data = vec![p1, p2, p3];
-        let s1 = Series { data };
+        let data: Vec<Point> = vec![p1, p2, p3];
+        let s1 = Series::new(&data);
         let x = 2.0;
 
         let s2 = s1 / x;
