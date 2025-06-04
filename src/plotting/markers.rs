@@ -3,31 +3,29 @@ use rgb::RGB8;
 
 #[derive(Debug, PartialEq)]
 pub enum MarkerStyle {
-    SingleColorFilledSquare {
+    FilledSquare {
+        line_style: Option<LineStyle>,
         color: RGB8,
         size: u32,
     },
-    FilledSquare {
-        line_color: RGB8,
-        fill_color: RGB8,
-        size: u32,
-    },
     HollowSquare {
-        line_color: RGB8,
+        line_style: LineStyle
         size: u32,
     },
 }
 
 impl MarkerStyle {
     pub const fn default() -> MarkerStyle {
-        Self::SingleColorFilledSquare {
+        Self::FilledSquare {
+            line_style: None,
             color: colors::BLACK,
             size: 2,
         }
     }
 
     pub const fn default_with_size(size: u32) -> MarkerStyle {
-        Self::SingleColorFilledSquare {
+        Self::FilledSquare {
+            line_style: None,
             color: colors::BLACK,
             size,
         }
