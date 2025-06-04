@@ -1,15 +1,16 @@
+use super::common::Graphable;
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Point<T> {
+pub struct Point<T: Graphable<T>> {
     pub x: T,
     pub y: T,
 }
 
-impl<T> Point<T> {
+impl<T: Graphable<T>> Point<T> {
     pub fn try_into_point<U>(self) -> Result<Point<U>, U::Error>
     where
-        U: TryFrom<T>,
+        U: Graphable<U> + TryFrom<T>,
     {
         Ok(Point {
             x: self.x.try_into()?,
@@ -18,19 +19,13 @@ impl<T> Point<T> {
     }
 }
 
-impl<T> Point<T>
-where
-    T: Add + Div + Mul + Sub,
-{
+impl<T: Graphable<T>> Point<T> {
     pub fn new(x: T, y: T) -> Point<T> {
         Point { x, y }
     }
 }
 
-impl<T> Add for Point<T>
-where
-    T: Add<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Add for Point<T> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -41,10 +36,7 @@ where
     }
 }
 
-impl<T> Sub for Point<T>
-where
-    T: Sub<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Sub for Point<T> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -55,10 +47,7 @@ where
     }
 }
 
-impl<T> Add<T> for Point<T>
-where
-    T: Add<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Add<T> for Point<T> {
     type Output = Self;
 
     fn add(self, rhs: T) -> Self::Output {
@@ -69,10 +58,7 @@ where
     }
 }
 
-impl<T> Sub<T> for Point<T>
-where
-    T: Sub<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Sub<T> for Point<T> {
     type Output = Self;
 
     fn sub(self, rhs: T) -> Self::Output {
@@ -83,10 +69,7 @@ where
     }
 }
 
-impl<T> Mul<T> for Point<T>
-where
-    T: Mul<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Mul<T> for Point<T> {
     type Output = Self;
 
     fn mul(self, rhs: T) -> Self::Output {
@@ -97,10 +80,7 @@ where
     }
 }
 
-impl<T> Div<T> for Point<T>
-where
-    T: Div<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Div<T> for Point<T> {
     type Output = Self;
 
     fn div(self, rhs: T) -> Self::Output {

@@ -1,4 +1,4 @@
-use super::{graph::Graph, limits::Limits, point::*, series::Series};
+use super::{common::Graphable, graph::Graph, limits::Limits, point::Point, series::Series};
 use crate::common::Result;
 use rgb::RGB8;
 use std::ops::{Add, Div, Mul, Sub};
@@ -12,8 +12,8 @@ struct CanvasBuffer {
     bottom: u32,
 }
 
-trait Canvas<T> {
-    type CanvasType;
+trait Canvas<T: Graphable<T>> {
+    type CanvasType: Graphable<Self::CanvasType>;
     fn draw_data(&mut self, graph: &Graph<T>) -> Result<()>;
     fn scale_data(
         &self,
@@ -29,7 +29,7 @@ pub struct TerminalCanvas {
     buffer: CanvasBuffer,
 }
 
-impl<T> Canvas<T> for TerminalCanvas
+impl<T: Graphable<T>> Canvas<T> for TerminalCanvas
 where
     T: From<u64> + Add<Output = T> + Sub<Output = T> + Mul<Output = T> + Div<Output = T> + Copy,
 {
@@ -53,12 +53,12 @@ where
         let canvas_span = self.limits.span();
         let x_scale_factor = T::from(canvas_span.0) / data_span.0;
         let y_scale_factor = T::from(canvas_span.1) / data_span.1;
-        let series = series
-            .data()
-            .clone()
-            .iter()
-            .map(|p| *p - data_limits.min)
-            .collect();
+        // let series = series
+        //     .data()
+        //     .clone()
+        //     .iter()
+        //     .map(|p| *p - data_limits.min)
+        //     .collect();
         todo!()
     }
 }

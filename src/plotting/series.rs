@@ -1,22 +1,18 @@
 use super::{
+    common::Graphable,
     point::Point,
     styles::{LineStyle, MarkerStyle},
 };
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug, PartialEq)]
-pub struct Series<T> {
+pub struct Series<T: Graphable<T>> {
     data: Vec<Point<T>>,
     marker_style: MarkerStyle,
     line_style: Option<LineStyle>,
 }
 
-type Graphable = Clone;
-
-impl<T> Series<T>
-where
-    T: Clone + PartialOrd,
-{
+impl<T: Graphable<T>> Series<T> {
     pub fn new(data: &[Point<T>]) -> Series<T> {
         if data.is_empty() {
             panic!("Data series cannot be empty");
@@ -53,10 +49,7 @@ where
     }
 }
 
-impl<T> Add<T> for Series<T>
-where
-    T: Add<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Add<T> for Series<T> {
     type Output = Self;
 
     fn add(self, rhs: T) -> Self::Output {
@@ -65,10 +58,7 @@ where
     }
 }
 
-impl<T> Sub<T> for Series<T>
-where
-    T: Sub<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Sub<T> for Series<T> {
     type Output = Self;
 
     fn sub(self, rhs: T) -> Self::Output {
@@ -77,10 +67,7 @@ where
     }
 }
 
-impl<T> Mul<T> for Series<T>
-where
-    T: Mul<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Mul<T> for Series<T> {
     type Output = Self;
 
     fn mul(self, rhs: T) -> Self::Output {
@@ -89,10 +76,7 @@ where
     }
 }
 
-impl<T> Div<T> for Series<T>
-where
-    T: Div<Output = T> + Copy,
-{
+impl<T: Graphable<T>> Div<T> for Series<T> {
     type Output = Self;
 
     fn div(self, rhs: T) -> Self::Output {

@@ -9,7 +9,7 @@ pub enum MarkerStyle {
         size: u32,
     },
     HollowSquare {
-        line_style: LineStyle
+        line_style: LineStyle,
         size: u32,
     },
 }

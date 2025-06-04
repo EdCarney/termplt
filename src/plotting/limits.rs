@@ -1,13 +1,13 @@
 use std::ops::Sub;
 
-use super::point::Point;
+use super::{common::Graphable, point::Point};
 
-pub struct Limits<T> {
+pub struct Limits<T: Graphable<T>> {
     pub min: Point<T>,
     pub max: Point<T>,
 }
 
-impl<T> Limits<T>
+impl<T: Graphable<T>> Limits<T>
 where
     T: Sub<Output = T> + Copy,
 {
