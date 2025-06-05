@@ -1,5 +1,40 @@
-use super::common::Graphable;
+use super::{common::Graphable, limits::Limits};
 use std::ops::{Add, Div, Mul, Sub};
+
+pub trait PointCollection<T: Graphable<T>> {
+    fn limits(&self) -> Option<Limits<T>>;
+}
+
+impl<T: Graphable<T>> PointCollection<T> for Vec<Point<T>> {
+    fn limits(&self) -> Option<Limits<T>> {
+        self.as_slice().limits()
+    }
+}
+
+impl<T: Graphable<T>> PointCollection<T> for &[Point<T>] {
+    fn limits(&self) -> Option<Limits<T>> {
+        // limits must have at least two points
+        if self.iter().len() < 2 {
+            return None;
+        }
+        let first = self.first().unwrap();
+        let min_x = self
+            .iter()
+            .fold(first.x, |min, val| if val.x < min { val.x } else { min });
+        let min_y = self
+            .iter()
+            .fold(first.y, |min, val| if val.y < min { val.y } else { min });
+        let max_x = self
+            .iter()
+            .fold(first.x, |max, val| if val.x > max { val.x } else { max });
+        let max_y = self
+            .iter()
+            .fold(first.y, |max, val| if val.y > max { val.y } else { max });
+        let min = Point { x: min_x, y: min_y };
+        let max = Point { x: max_x, y: max_y };
+        Some(Limits::new(min, max))
+    }
+}
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Point<T: Graphable<T>> {
@@ -8,6 +43,10 @@ pub struct Point<T: Graphable<T>> {
 }
 
 impl<T: Graphable<T>> Point<T> {
+    pub fn new(x: T, y: T) -> Point<T> {
+        Point { x, y }
+    }
+
     pub fn try_into_point<U>(self) -> Result<Point<U>, U::Error>
     where
         U: Graphable<U> + TryFrom<T>,
@@ -16,12 +55,6 @@ impl<T: Graphable<T>> Point<T> {
             x: self.x.try_into()?,
             y: self.y.try_into()?,
         })
-    }
-}
-
-impl<T: Graphable<T>> Point<T> {
-    pub fn new(x: T, y: T) -> Point<T> {
-        Point { x, y }
     }
 }
 
@@ -153,5 +186,44 @@ mod tests {
         let p2 = p1 / x;
         assert_eq!(p2.x, 2.0);
         assert_eq!(p2.y, 3.0);
+    }
+
+    #[test]
+    fn point_collection_limits_empty() {
+        let p: Vec<Point<u32>> = vec![];
+        assert_eq!(p.limits(), None);
+    }
+
+    #[test]
+    fn point_collection_limits_single() {
+        let p = vec![Point { x: 10, y: 20 }];
+        assert_eq!(p.limits(), None);
+    }
+
+    #[test]
+    fn point_collection_limits_multiple_1() {
+        let p1 = Point { x: 0, y: 0 };
+        let p2 = Point { x: 10, y: 20 };
+        let limits = vec![p1, p2].limits();
+
+        assert!(limits.is_some());
+        assert_eq!(
+            limits.unwrap(),
+            Limits::new(Point::new(0, 0), Point::new(10, 20))
+        );
+    }
+
+    #[test]
+    fn point_collection_limits_multiple_2() {
+        let p1 = Point { x: -5, y: 50 };
+        let p2 = Point { x: 10, y: -20 };
+        let p3 = Point { x: 100, y: 20 };
+        let limits = vec![p1, p2, p3].limits();
+
+        assert!(limits.is_some());
+        assert_eq!(
+            limits.unwrap(),
+            Limits::new(Point::new(-5, -20), Point::new(100, 50))
+        );
     }
 }

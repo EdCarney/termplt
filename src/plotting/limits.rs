@@ -1,6 +1,6 @@
 use super::{common::Graphable, point::Point};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Limits<T: Graphable<T>> {
     min: Point<T>,
     max: Point<T>,

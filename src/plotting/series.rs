@@ -5,7 +5,7 @@ use super::{
 };
 use std::ops::{Add, Div, Mul, Sub};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Series<T: Graphable<T>> {
     data: Vec<Point<T>>,
     marker_style: MarkerStyle,
@@ -35,17 +35,6 @@ impl<T: Graphable<T>> Series<T> {
 
     pub fn line_style(&self) -> &Option<LineStyle> {
         &self.line_style
-    }
-
-    pub fn span(&self) -> (T, T) {
-        let mut iter = self.data.iter();
-        let first = iter.next().unwrap();
-        let mut min = (first.x, first.y);
-        let mut max = (first.x, first.y);
-        for point in iter {
-            min.0 = if point.x < min.0 { point.x } else { min.0 };
-        }
-        (max.0 - min.0, max.1 - min.1)
     }
 }
 

@@ -1,9 +1,4 @@
-use std::marker;
-
-use super::{
-    common::Graphable, graph::Graph, limits::Limits, point::Point, series::Series,
-    styles::MarkerStyle,
-};
+use super::{common::Graphable, graph::Graph, limits::Limits, point::Point, styles::MarkerStyle};
 use crate::common::Result;
 use rgb::RGB8;
 
@@ -68,8 +63,8 @@ where
     // TODO: calculate drawing limits considering the size of the markers (so that we don't go out
     // of bounds) and the canvas buffer
     fn draw_data(&mut self, graph: &Graph<T>) -> Result<()> {
-        for series in &graph.data {
-            let scaled_points = self.scale_data(series.data(), &graph.data_limits)?;
+        for series in graph.data() {
+            let scaled_points = self.scale_data(series.data(), graph.limits())?;
             for point in scaled_points {
                 match series.marker_style() {
                     MarkerStyle::FilledSquare {
