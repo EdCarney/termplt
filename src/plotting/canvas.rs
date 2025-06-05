@@ -7,8 +7,6 @@ use super::{
 use crate::common::Result;
 use rgb::RGB8;
 
-const CANVAS_ORIGIN: Point<u32> = Point { x: 0, y: 0 };
-
 #[derive(Debug)]
 struct CanvasBuffer {
     left: u32,
@@ -40,14 +38,12 @@ impl TerminalCanvas {
         for _ in 0..height {
             canvas.push(vec![background; width]);
         }
-
-        let limits = Limits {
-            min: Point { x: 0, y: 0 },
-            max: Point {
-                x: width as u32,
-                y: height as u32,
-            },
+        let limit_min = Point { x: 0, y: 0 };
+        let limit_max = Point {
+            x: width as u32,
+            y: height as u32,
         };
+        let limits = Limits::new(limit_min, limit_max);
 
         let buffer = CanvasBuffer {
             left: 0,
@@ -106,14 +102,14 @@ where
 
         // 200 in data limits => 100 in canvas limits == scale factor of 0.5
 
-        let data_span = data_limits.get_span();
-        let canvas_span = self.limits.get_span();
+        let data_span = data_limits.span();
+        let canvas_span = self.limits.span();
         let x_scale_factor = T::from(canvas_span.0) / data_span.0;
         let y_scale_factor = T::from(canvas_span.1) / data_span.1;
         Ok(series_data
             .iter()
             .map(|p| {
-                let mut p = *p - data_limits.min;
+                let mut p = *p - *data_limits.min();
                 p.x = p.x * x_scale_factor;
                 p.y = p.y * y_scale_factor;
                 Point {

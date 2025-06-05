@@ -1,4 +1,7 @@
-use std::ops::{Add, Div, Mul, Sub};
+use std::{
+    fmt::Debug,
+    ops::{Add, Div, Mul, Sub},
+};
 
 pub trait Graphable<T>:
     PartialOrd
@@ -10,6 +13,7 @@ pub trait Graphable<T>:
     + Clone
     + Copy
     + Sized
+    + Debug
 {
 }
 
@@ -23,5 +27,6 @@ impl<T> Graphable<T> for T where
         + Clone
         + Copy
         + Sized
+        + Debug
 {
 }
