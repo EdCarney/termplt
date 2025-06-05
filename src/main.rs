@@ -1,9 +1,19 @@
 use rgb::RGB8;
 use termplt::{
-    kitty_graphics::{png_imgs, rgb_imgs, rgba_imgs},
+    kitty_graphics::{
+        ctrl_seq::{PixelFormat, Transmission},
+        png_imgs, rgb_imgs, rgba_imgs,
+    },
+    plotting::{
+        canvas::{BufferType, Canvas, TerminalCanvas},
+        colors,
+        graph::Graph,
+        point::Point,
+        series::Series,
+    },
     terminal_commands::{
         csi_cmds::{self, CsiCommand},
-        images::PositioningType,
+        images::{Image, PositioningType},
         responses::TermCommand,
     },
 };
@@ -24,6 +34,26 @@ const WHITE: RGB8 = RGB8 {
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
+    let width = 100;
+    let height = 100;
+    let mut canvas =
+        TerminalCanvas::new(width, height, colors::BLACK).with_buffer(BufferType::Uniform(5));
+    let mut graph = Graph::<u32>::new();
+    let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
+
+    graph.add_series(Series::new(&points));
+    canvas.draw_data(&graph).unwrap();
+
+    let format = PixelFormat::Rgb { width, height };
+    let transmission = Transmission::Direct(canvas.get_bytes());
+    let img = Image::new(format, transmission).unwrap();
+    img.display().unwrap();
+    println!();
+    img.display_at_position(PositioningType::Centered).unwrap();
+    println!();
+}
+
+fn test_new_terminal_cmds() {
     csi_cmds::clear_screen().unwrap();
 
     rgb_imgs::print_square(50, RED).unwrap();
