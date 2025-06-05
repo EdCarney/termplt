@@ -13,8 +13,8 @@ impl<T: Graphable<T>> PointCollection<T> for Vec<Point<T>> {
 
 impl<T: Graphable<T>> PointCollection<T> for &[Point<T>] {
     fn limits(&self) -> Option<Limits<T>> {
-        // limits must have at least two points
-        if self.iter().len() < 2 {
+        // limits must have at least one point
+        if self.iter().len() == 0 {
             return None;
         }
         let first = self.first().unwrap();
@@ -196,8 +196,12 @@ mod tests {
 
     #[test]
     fn point_collection_limits_single() {
-        let p = vec![Point { x: 10, y: 20 }];
-        assert_eq!(p.limits(), None);
+        let limits = vec![Point { x: 10, y: 20 }].limits();
+        assert!(limits.is_some());
+        assert_eq!(
+            limits.unwrap(),
+            Limits::new(Point::new(10, 20), Point::new(10, 20))
+        );
     }
 
     #[test]

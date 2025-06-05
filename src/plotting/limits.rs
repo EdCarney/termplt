@@ -35,9 +35,9 @@ impl<T: Graphable<T>> Limits<T> {
     }
 
     fn validate_limit(min: &Point<T>, max: &Point<T>) {
-        if min.x >= max.x || min.y >= max.y {
+        if min.x > max.x || min.y > max.y {
             panic!(
-                "Span between {:?} and {:?} must be nonzero in both dimensions",
+                "Span between {:?} and {:?} must not be negative in any dimension",
                 min, max
             );
         }
@@ -100,7 +100,7 @@ mod tests {
         let mut limits = Limits::new(min, max);
         assert_eq!(*limits.span(), (10, 5));
 
-        limits.update_min(Point { x: 10, y: 1 });
+        limits.update_min(Point { x: 11, y: 1 });
     }
 
     #[test]
