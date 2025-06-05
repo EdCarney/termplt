@@ -63,24 +63,29 @@ where
     // TODO: calculate drawing limits considering the size of the markers (so that we don't go out
     // of bounds) and the canvas buffer
     fn draw_data(&mut self, graph: &Graph<T>) -> Result<()> {
-        for series in graph.data() {
-            let scaled_points = self.scale_data(series.data(), graph.limits())?;
-            for point in scaled_points {
-                match series.marker_style() {
-                    MarkerStyle::FilledSquare {
-                        line_style,
-                        color,
-                        size,
-                    } => {
-                        for x in point.x - size..=point.x + size {
-                            for y in point.y - size..=point.y + size {
-                                if self.limits.contains(Point { x, y }) {
-                                    self.canvas[y as usize][x as usize] = color.clone();
+        match graph.limits() {
+            None => (),
+            Some(limits) => {
+                for series in graph.data() {
+                    let scaled_points = self.scale_data(series.data(), limits)?;
+                    for point in scaled_points {
+                        match series.marker_style() {
+                            MarkerStyle::FilledSquare {
+                                line_style,
+                                color,
+                                size,
+                            } => {
+                                for x in point.x - size..=point.x + size {
+                                    for y in point.y - size..=point.y + size {
+                                        if self.limits.contains(Point { x, y }) {
+                                            self.canvas[y as usize][x as usize] = color.clone();
+                                        }
+                                    }
                                 }
                             }
+                            _ => panic!("Not implemented!"),
                         }
                     }
-                    _ => panic!("Not implemented!"),
                 }
             }
         }

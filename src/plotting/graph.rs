@@ -47,10 +47,34 @@ impl<T: Graphable<T>> Graph<T> {
         &self.data
     }
 
-    pub fn limits(&self) -> &Limits<T> {
+    pub fn limits(&self) -> Option<&Limits<T>> {
         match self.limits {
-            Some(ref limits) => limits,
-            None => panic!("No limits defined"),
+            Some(ref limits) => Some(limits),
+            None => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_graph() {
+        let g = Graph::<u32>::new();
+        assert!(g.limits().is_none());
+    }
+
+    #[test]
+    fn add_single_series_with_single_point() {
+        let mut g = Graph::new();
+        g.add_series(Series::new(&vec![Point::new(0, 0)]));
+
+        let limits = g.limits();
+        assert!(limits.is_some());
+        assert_eq!(
+            *limits.unwrap(),
+            Limits::new(Point::new(0, 0), Point::new(0, 0))
+        );
     }
 }
