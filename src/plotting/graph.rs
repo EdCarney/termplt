@@ -5,7 +5,7 @@ use super::{
     series::Series,
 };
 
-//TODO: implement items like: axis inclusion, grid lines, legends, etc.
+// TODO: implement items like: axis inclusion, grid lines, legends, etc.
 pub struct Graph<T: Graphable<T>> {
     data: Vec<Series<T>>,
     limits: Option<Limits<T>>,

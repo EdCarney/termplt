@@ -18,7 +18,7 @@ impl MarkerStyle {
     pub const fn default() -> MarkerStyle {
         Self::FilledSquare {
             line_style: None,
-            color: colors::BLACK,
+            color: colors::WHITE,
             size: 2,
         }
     }
@@ -26,7 +26,7 @@ impl MarkerStyle {
     pub const fn default_with_size(size: u32) -> MarkerStyle {
         Self::FilledSquare {
             line_style: None,
-            color: colors::BLACK,
+            color: colors::WHITE,
             size,
         }
     }
@@ -40,14 +40,14 @@ pub enum LineStyle {
 impl LineStyle {
     pub const fn default() -> LineStyle {
         Self::Solid {
-            color: colors::BLACK,
+            color: colors::WHITE,
             thickness: 2,
         }
     }
 
     pub const fn default_with_thickness(thickness: u32) -> LineStyle {
         Self::Solid {
-            color: colors::BLACK,
+            color: colors::WHITE,
             thickness,
         }
     }
