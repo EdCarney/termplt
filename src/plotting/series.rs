@@ -137,4 +137,11 @@ mod tests {
         assert_eq!(s2.data[1], Point { x: 6.25, y: 8.75 });
         assert_eq!(s2.data[2], Point { x: 7.5, y: 7.5 });
     }
+
+    #[test]
+    #[should_panic]
+    fn create_empty_series() {
+        let data: Vec<Point<f32>> = vec![];
+        Series::new(&data);
+    }
 }
