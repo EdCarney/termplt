@@ -3,7 +3,7 @@ use crate::common::Result;
 use rgb::RGB8;
 
 #[derive(Debug)]
-pub struct CanvasBuffer {
+struct CanvasBuffer {
     left: u32,
     top: u32,
     right: u32,
@@ -31,7 +31,7 @@ impl CanvasBuffer {
     }
 }
 
-trait Canvas<T: Graphable<T>> {
+pub trait Canvas<T: Graphable<T>> {
     fn draw_data(&mut self, graph: &Graph<T>) -> Result<()>;
     fn scale_data(
         &self,
@@ -72,8 +72,8 @@ impl TerminalCanvas {
         }
     }
 
-    pub fn with_buffer(mut self, buffer: CanvasBuffer) -> Self {
-        self.buffer = buffer;
+    pub fn with_buffer(mut self, buffer_type: BufferType) -> Self {
+        self.buffer = CanvasBuffer::new(buffer_type);
         self
     }
 
@@ -84,6 +84,17 @@ impl TerminalCanvas {
             self.height - self.buffer.top - 1,
         );
         Limits::new(min, max)
+    }
+
+    pub fn get_bytes(&self) -> Vec<u8> {
+        self.canvas
+            .iter()
+            .flat_map(|row| {
+                row.iter()
+                    .flat_map(|&rgb| [rgb.r, rgb.g, rgb.b])
+                    .collect::<Vec<u8>>()
+            })
+            .collect()
     }
 }
 
@@ -164,8 +175,8 @@ mod tests {
 
     #[test]
     fn single_series() {
-        let mut canvas = TerminalCanvas::new(100, 100, colors::BLACK)
-            .with_buffer(CanvasBuffer::new(BufferType::Uniform(5)));
+        let mut canvas =
+            TerminalCanvas::new(100, 100, colors::BLACK).with_buffer(BufferType::Uniform(5));
         let mut graph = Graph::<u32>::new();
         let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
 
