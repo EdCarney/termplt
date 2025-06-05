@@ -6,13 +6,13 @@ use super::{
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug)]
-pub struct Series<T: Graphable<T>> {
+pub struct Series<T: Graphable> {
     data: Vec<Point<T>>,
     marker_style: MarkerStyle,
     line_style: Option<LineStyle>,
 }
 
-impl<T: Graphable<T>> Series<T> {
+impl<T: Graphable> Series<T> {
     pub fn new(data: &[Point<T>]) -> Series<T> {
         if data.is_empty() {
             panic!("Data series cannot be empty");
@@ -38,7 +38,7 @@ impl<T: Graphable<T>> Series<T> {
     }
 }
 
-impl<T: Graphable<T>> Add<T> for Series<T> {
+impl<T: Graphable> Add<T> for Series<T> {
     type Output = Self;
 
     fn add(self, rhs: T) -> Self::Output {
@@ -47,7 +47,7 @@ impl<T: Graphable<T>> Add<T> for Series<T> {
     }
 }
 
-impl<T: Graphable<T>> Sub<T> for Series<T> {
+impl<T: Graphable> Sub<T> for Series<T> {
     type Output = Self;
 
     fn sub(self, rhs: T) -> Self::Output {
@@ -56,7 +56,7 @@ impl<T: Graphable<T>> Sub<T> for Series<T> {
     }
 }
 
-impl<T: Graphable<T>> Mul<T> for Series<T> {
+impl<T: Graphable> Mul<T> for Series<T> {
     type Output = Self;
 
     fn mul(self, rhs: T) -> Self::Output {
@@ -65,7 +65,7 @@ impl<T: Graphable<T>> Mul<T> for Series<T> {
     }
 }
 
-impl<T: Graphable<T>> Div<T> for Series<T> {
+impl<T: Graphable> Div<T> for Series<T> {
     type Output = Self;
 
     fn div(self, rhs: T) -> Self::Output {

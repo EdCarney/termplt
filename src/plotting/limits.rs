@@ -1,13 +1,13 @@
 use super::{common::Graphable, point::Point};
 
 #[derive(Debug, PartialEq)]
-pub struct Limits<T: Graphable<T>> {
+pub struct Limits<T: Graphable> {
     min: Point<T>,
     max: Point<T>,
     span: (T, T),
 }
 
-impl<T: Graphable<T>> Limits<T> {
+impl<T: Graphable> Limits<T> {
     /// Creates a new instance with the specified min/max. Requires that the max point be greater
     /// than the min point in both dimensions.
     pub fn new(min: Point<T>, max: Point<T>) -> Limits<T> {

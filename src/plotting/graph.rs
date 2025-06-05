@@ -6,12 +6,12 @@ use super::{
 };
 
 // TODO: implement items like: axis inclusion, grid lines, legends, etc.
-pub struct Graph<T: Graphable<T>> {
+pub struct Graph<T: Graphable> {
     data: Vec<Series<T>>,
     limits: Option<Limits<T>>,
 }
 
-impl<T: Graphable<T>> Graph<T> {
+impl<T: Graphable> Graph<T> {
     pub fn new() -> Graph<T> {
         Graph {
             data: vec![],

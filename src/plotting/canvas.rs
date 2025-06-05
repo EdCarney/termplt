@@ -1,4 +1,7 @@
-use super::{common::Graphable, graph::Graph, limits::Limits, point::Point, styles::MarkerStyle};
+use super::{
+    common::Graphable, graph::Graph, limits::Limits, point::Point, series::Series,
+    styles::MarkerStyle,
+};
 use crate::common::Result;
 use rgb::RGB8;
 
@@ -31,13 +34,9 @@ impl CanvasBuffer {
     }
 }
 
-pub trait Canvas<T: Graphable<T>> {
+pub trait Canvas<T: Graphable> {
     fn draw_data(&mut self, graph: &Graph<T>) -> Result<()>;
-    fn scale_data(
-        &self,
-        series_data: &[Point<T>],
-        data_limits: &Limits<T>,
-    ) -> Result<Vec<Point<u32>>>;
+    fn scale_data(&self, series: &Series<T>, data_limits: &Limits<T>) -> Result<Series<u32>>;
 }
 
 #[derive(Debug)]
@@ -100,7 +99,7 @@ impl TerminalCanvas {
 
 impl<T> Canvas<T> for TerminalCanvas
 where
-    T: Graphable<T> + From<u32> + Into<u32>,
+    T: Graphable + From<u32> + Into<u32>,
 {
     // TODO: calculate drawing limits considering the size of the markers (so that we don't go out
     // of bounds) and the canvas buffer
@@ -109,8 +108,8 @@ where
             None => (),
             Some(limits) => {
                 for series in graph.data() {
-                    let scaled_points = self.scale_data(series.data(), limits)?;
-                    for point in scaled_points {
+                    let scaled_series = self.scale_data(&series, limits)?;
+                    for point in scaled_series.data() {
                         match series.marker_style() {
                             MarkerStyle::FilledSquare {
                                 line_style,
@@ -122,6 +121,8 @@ where
                                     for y in point.y - size..=point.y + size {
                                         if limits.contains(Point { x, y }) {
                                             self.canvas[y as usize][x as usize] = color.clone();
+                                        } else {
+                                            println!("Skipping point {:?}", Point { x, y });
                                         }
                                     }
                                 }
@@ -135,11 +136,7 @@ where
         Ok(())
     }
 
-    fn scale_data(
-        &self,
-        series_data: &[Point<T>],
-        data_limits: &Limits<T>,
-    ) -> Result<Vec<Point<u32>>> {
+    fn scale_data(&self, series: &Series<T>, data_limits: &Limits<T>) -> Result<Series<u32>> {
         // subtract the data limit min from the series to make the data min the canvas origin
         // scale the data
 
@@ -148,17 +145,38 @@ where
         let canvas_limits = self.get_drawable_limits();
         let canvas_span = canvas_limits.span();
         let data_span = data_limits.span();
-        let x_scale_factor = T::from(canvas_span.0) / data_span.0;
-        let y_scale_factor = T::from(canvas_span.1) / data_span.1;
-        Ok(series_data
+
+        let data_span_x: f64 = data_span.0.into();
+        let data_span_y: f64 = data_span.1.into();
+
+        // need to add one to the canvas span since the ends of the drawable area limits are valid
+        let x_scale_factor = f64::from(canvas_span.0) / data_span_x;
+        let y_scale_factor = f64::from(canvas_span.1) / data_span_y;
+
+        println!("Drawable limits: {canvas_limits:?}");
+        println!("Scale factor: x = {x_scale_factor:?}, y = {y_scale_factor:?}");
+
+        let new_data = series
+            .data()
             .iter()
             .map(|p| {
                 let p = *p - *data_limits.min();
-                let x = canvas_limits.min().x + u32::try_from(p.x * x_scale_factor).unwrap();
-                let y = canvas_limits.min().y + u32::try_from(p.y * y_scale_factor).unwrap();
-                Point { x, y }
+
+                let x: f64 = p.x.into();
+                let y: f64 = p.y.into();
+
+                let x = x * x_scale_factor;
+                let y = y * y_scale_factor;
+
+                let x: u32 = unsafe { x.to_int_unchecked() };
+                let y: u32 = unsafe { y.to_int_unchecked() };
+
+                Point { x, y } + *canvas_limits.min()
             })
-            .collect())
+            .collect::<Vec<_>>();
+        println!("Original points: {:?}", series.data());
+        println!("Scaled points: {:?}", new_data);
+        Ok(Series::new(&new_data))
     }
 }
 

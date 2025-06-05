@@ -1,17 +1,17 @@
 use super::{common::Graphable, limits::Limits};
 use std::ops::{Add, Div, Mul, Sub};
 
-pub trait PointCollection<T: Graphable<T>> {
+pub trait PointCollection<T: Graphable> {
     fn limits(&self) -> Option<Limits<T>>;
 }
 
-impl<T: Graphable<T>> PointCollection<T> for Vec<Point<T>> {
+impl<T: Graphable> PointCollection<T> for Vec<Point<T>> {
     fn limits(&self) -> Option<Limits<T>> {
         self.as_slice().limits()
     }
 }
 
-impl<T: Graphable<T>> PointCollection<T> for &[Point<T>] {
+impl<T: Graphable> PointCollection<T> for &[Point<T>] {
     fn limits(&self) -> Option<Limits<T>> {
         // limits must have at least one point
         if self.iter().len() == 0 {
@@ -37,28 +37,18 @@ impl<T: Graphable<T>> PointCollection<T> for &[Point<T>] {
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Point<T: Graphable<T>> {
+pub struct Point<T: Graphable> {
     pub x: T,
     pub y: T,
 }
 
-impl<T: Graphable<T>> Point<T> {
+impl<T: Graphable> Point<T> {
     pub fn new(x: T, y: T) -> Point<T> {
         Point { x, y }
     }
-
-    pub fn try_into_point<U>(self) -> Result<Point<U>, U::Error>
-    where
-        U: Graphable<U> + TryFrom<T>,
-    {
-        Ok(Point {
-            x: self.x.try_into()?,
-            y: self.y.try_into()?,
-        })
-    }
 }
 
-impl<T: Graphable<T>> Add for Point<T> {
+impl<T: Graphable> Add for Point<T> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -69,7 +59,7 @@ impl<T: Graphable<T>> Add for Point<T> {
     }
 }
 
-impl<T: Graphable<T>> Sub for Point<T> {
+impl<T: Graphable> Sub for Point<T> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -80,7 +70,7 @@ impl<T: Graphable<T>> Sub for Point<T> {
     }
 }
 
-impl<T: Graphable<T>> Add<T> for Point<T> {
+impl<T: Graphable> Add<T> for Point<T> {
     type Output = Self;
 
     fn add(self, rhs: T) -> Self::Output {
@@ -91,7 +81,7 @@ impl<T: Graphable<T>> Add<T> for Point<T> {
     }
 }
 
-impl<T: Graphable<T>> Sub<T> for Point<T> {
+impl<T: Graphable> Sub<T> for Point<T> {
     type Output = Self;
 
     fn sub(self, rhs: T) -> Self::Output {
@@ -102,7 +92,7 @@ impl<T: Graphable<T>> Sub<T> for Point<T> {
     }
 }
 
-impl<T: Graphable<T>> Mul<T> for Point<T> {
+impl<T: Graphable> Mul<T> for Point<T> {
     type Output = Self;
 
     fn mul(self, rhs: T) -> Self::Output {
@@ -113,7 +103,7 @@ impl<T: Graphable<T>> Mul<T> for Point<T> {
     }
 }
 
-impl<T: Graphable<T>> Div<T> for Point<T> {
+impl<T: Graphable> Div<T> for Point<T> {
     type Output = Self;
 
     fn div(self, rhs: T) -> Self::Output {

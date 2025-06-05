@@ -3,13 +3,14 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
-pub trait Graphable<T>:
+pub trait Graphable:
     PartialOrd
+    + Into<f64>
     + PartialEq
-    + Add<Output = T>
-    + Sub<Output = T>
-    + Mul<Output = T>
-    + Div<Output = T>
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
     + Clone
     + Copy
     + Sized
@@ -17,13 +18,14 @@ pub trait Graphable<T>:
 {
 }
 
-impl<T> Graphable<T> for T where
+impl<T> Graphable for T where
     T: PartialOrd
+        + Into<f64>
         + PartialEq
-        + Add<Output = T>
-        + Sub<Output = T>
-        + Mul<Output = T>
-        + Div<Output = T>
+        + Add<Output = Self>
+        + Sub<Output = Self>
+        + Mul<Output = Self>
+        + Div<Output = Self>
         + Clone
         + Copy
         + Sized

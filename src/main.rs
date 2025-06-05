@@ -34,12 +34,12 @@ const WHITE: RGB8 = RGB8 {
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
-    let width = 100;
-    let height = 100;
+    let width = 105;
+    let height = 105;
     let mut canvas =
-        TerminalCanvas::new(width, height, colors::BLACK).with_buffer(BufferType::Uniform(5));
+        TerminalCanvas::new(width, height, colors::BLACK).with_buffer(BufferType::Uniform(2));
     let mut graph = Graph::<u32>::new();
-    let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
+    let points = (0..5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
 
     graph.add_series(Series::new(&points));
     canvas.draw_data(&graph).unwrap();
@@ -49,8 +49,8 @@ fn main() {
     let img = Image::new(format, transmission).unwrap();
     img.display().unwrap();
     println!();
-    img.display_at_position(PositioningType::Centered).unwrap();
-    println!();
+    // img.display_at_position(PositioningType::Centered).unwrap();
+    // println!();
 }
 
 fn test_new_terminal_cmds() {
