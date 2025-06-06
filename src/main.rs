@@ -1,3 +1,5 @@
+use std::f32;
+
 use rgb::RGB8;
 use termplt::{
     kitty_graphics::{
@@ -34,11 +36,27 @@ const WHITE: RGB8 = RGB8 {
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
-    let width = 200;
-    let height = 200;
-    let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
+    let width = 300;
+    let height = 300;
 
-    let bytes = TerminalCanvas::new(width, height, colors::BLACK)
+    let points = (0..=20)
+        .map(|x| Point::new(x, x * x))
+        .collect::<Vec<Point<_>>>();
+    let bytes_1 = TerminalCanvas::new(width, height, colors::BLACK)
+        .with_buffer(BufferType::Uniform(15))
+        .with_graph(Graph::new().with_series(Series::new(&points)))
+        .draw()
+        .unwrap()
+        .get_bytes();
+
+    let num_points = 100;
+    let points = (0..num_points)
+        .map(|x| {
+            let x = (x as f32) * (2. * f32::consts::PI / (num_points as f32));
+            Point::new(x, x.sin())
+        })
+        .collect::<Vec<Point<_>>>();
+    let bytes_2 = TerminalCanvas::new(width, height, colors::BLACK)
         .with_buffer(BufferType::Uniform(15))
         .with_graph(Graph::new().with_series(Series::new(&points)))
         .draw()
@@ -46,7 +64,12 @@ fn main() {
         .get_bytes();
 
     let format = PixelFormat::Rgb { width, height };
-    let transmission = Transmission::Direct(bytes);
+    let transmission = Transmission::Direct(bytes_1);
+    Image::new(format, transmission).unwrap().display().unwrap();
+    println!();
+
+    let format = PixelFormat::Rgb { width, height };
+    let transmission = Transmission::Direct(bytes_2);
     Image::new(format, transmission).unwrap().display().unwrap();
     println!();
 }

@@ -19,7 +19,7 @@ impl MarkerStyle {
         Self::FilledSquare {
             line_style: None,
             color: colors::WHITE,
-            size: 2,
+            size: 1,
         }
     }
 

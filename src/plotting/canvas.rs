@@ -161,9 +161,6 @@ where
         let x_scale_factor = f64::from(canvas_span.0) / data_span_x;
         let y_scale_factor = f64::from(canvas_span.1) / data_span_y;
 
-        println!("Drawable limits: {canvas_limits:?}");
-        println!("Scale factor: x = {x_scale_factor:?}, y = {y_scale_factor:?}");
-
         let new_data = series
             .data()
             .iter()
@@ -182,8 +179,6 @@ where
                 Point { x, y } + *canvas_limits.min()
             })
             .collect::<Vec<_>>();
-        println!("Original points: {:?}", series.data());
-        println!("Scaled points: {:?}", new_data);
         Ok(Series::new(&new_data))
     }
 
