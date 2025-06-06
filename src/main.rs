@@ -5,7 +5,7 @@ use termplt::{
         png_imgs, rgb_imgs, rgba_imgs,
     },
     plotting::{
-        canvas::{BufferType, Canvas, TerminalCanvas},
+        canvas::{BufferType, TerminalCanvas},
         colors,
         graph::Graph,
         point::Point,
@@ -34,23 +34,21 @@ const WHITE: RGB8 = RGB8 {
 const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
-    let width = 105;
-    let height = 105;
-    let mut canvas =
-        TerminalCanvas::new(width, height, colors::BLACK).with_buffer(BufferType::Uniform(2));
-    let mut graph = Graph::<u32>::new();
-    let points = (0..5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
+    let width = 200;
+    let height = 200;
+    let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
 
-    graph.add_series(Series::new(&points));
-    canvas.draw_data(&graph).unwrap();
+    let bytes = TerminalCanvas::new(width, height, colors::BLACK)
+        .with_buffer(BufferType::Uniform(15))
+        .with_graph(Graph::new().with_series(Series::new(&points)))
+        .draw()
+        .unwrap()
+        .get_bytes();
 
     let format = PixelFormat::Rgb { width, height };
-    let transmission = Transmission::Direct(canvas.get_bytes());
-    let img = Image::new(format, transmission).unwrap();
-    img.display().unwrap();
+    let transmission = Transmission::Direct(bytes);
+    Image::new(format, transmission).unwrap().display().unwrap();
     println!();
-    // img.display_at_position(PositioningType::Centered).unwrap();
-    // println!();
 }
 
 fn test_new_terminal_cmds() {

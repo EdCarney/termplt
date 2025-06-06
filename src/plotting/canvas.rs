@@ -1,5 +1,9 @@
 use super::{
-    common::Graphable, graph::Graph, limits::Limits, point::Point, series::Series,
+    common::{Drawable, Graphable},
+    graph::Graph,
+    limits::Limits,
+    point::Point,
+    series::Series,
     styles::MarkerStyle,
 };
 use crate::common::Result;
@@ -34,33 +38,34 @@ impl CanvasBuffer {
     }
 }
 
-pub trait Canvas<T: Graphable> {
-    fn draw_data(&mut self, graph: &Graph<T>) -> Result<()>;
-    fn scale_data(&self, series: &Series<T>, data_limits: &Limits<T>) -> Result<Series<u32>>;
-}
-
 #[derive(Debug)]
-pub struct TerminalCanvas {
+pub struct TerminalCanvas<T: Graphable> {
     width: u32,
     height: u32,
     background: RGB8,
     canvas: Vec<Vec<RGB8>>,
     buffer: CanvasBuffer,
+    graphs: Vec<Graph<T>>,
+    limits: Limits<u32>,
 }
 
-impl TerminalCanvas {
-    pub fn new(width: u32, height: u32, background: RGB8) -> TerminalCanvas {
+impl<T> TerminalCanvas<T>
+where
+    T: Graphable + Into<f64>,
+{
+    pub fn new(width: u32, height: u32, background: RGB8) -> TerminalCanvas<T> {
         let mut canvas = Vec::with_capacity(height as usize);
         for _ in 0..height {
             canvas.push(vec![background; width as usize]);
         }
-
         let buffer = CanvasBuffer {
             left: 0,
             top: 0,
             right: 0,
             bottom: 0,
         };
+        let limits = Limits::new(Point::new(0, 0), Point::new(width - 1, height - 1));
+        let graphs = vec![];
 
         TerminalCanvas {
             width,
@@ -68,6 +73,8 @@ impl TerminalCanvas {
             background,
             canvas,
             buffer,
+            graphs,
+            limits,
         }
     }
 
@@ -76,13 +83,12 @@ impl TerminalCanvas {
         self
     }
 
-    pub fn get_drawable_limits(&self) -> Limits<u32> {
-        let min = Point::new(self.buffer.left, self.buffer.bottom);
-        let max = Point::new(
-            self.width - self.buffer.right - 1,
-            self.height - self.buffer.top - 1,
-        );
-        Limits::new(min, max)
+    pub fn with_graph(mut self, graph: Graph<T>) -> Self {
+        if graph.data().is_empty() {
+            panic!("Cannot add empty graph");
+        }
+        self.graphs.push(graph);
+        self
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
@@ -95,53 +101,55 @@ impl TerminalCanvas {
             })
             .collect()
     }
-}
 
-impl<T> Canvas<T> for TerminalCanvas
-where
-    T: Graphable + From<u32> + Into<u32>,
-{
-    // TODO: calculate drawing limits considering the size of the markers (so that we don't go out
-    // of bounds) and the canvas buffer
-    fn draw_data(&mut self, graph: &Graph<T>) -> Result<()> {
-        match graph.limits() {
-            None => (),
-            Some(limits) => {
-                for series in graph.data() {
-                    let scaled_series = self.scale_data(&series, limits)?;
-                    for point in scaled_series.data() {
-                        match series.marker_style() {
-                            MarkerStyle::FilledSquare {
-                                line_style,
-                                color,
-                                size,
-                            } => {
-                                let limits = self.get_drawable_limits();
-                                for x in point.x - size..=point.x + size {
-                                    for y in point.y - size..=point.y + size {
-                                        if limits.contains(Point { x, y }) {
-                                            self.canvas[y as usize][x as usize] = color.clone();
-                                        } else {
-                                            println!("Skipping point {:?}", Point { x, y });
+    pub fn draw(mut self) -> Result<Self> {
+        for graph in &self.graphs {
+            match graph.limits() {
+                None => (),
+                Some(limits) => {
+                    for series in graph.data() {
+                        let scaled_series = self.scale_data(&series, limits)?;
+                        for point in scaled_series.data() {
+                            match series.marker_style() {
+                                MarkerStyle::FilledSquare {
+                                    line_style,
+                                    color,
+                                    size,
+                                } => {
+                                    for x in point.x - size..=point.x + size {
+                                        for y in point.y - size..=point.y + size {
+                                            if self.limits.contains(Point { x, y }) {
+                                                // reverse y since higher values means closer to
+                                                // the top of the canvas
+                                                let y = self.limits.max().y - y;
+                                                self.canvas[y as usize][x as usize] = color.clone();
+                                            } else {
+                                                println!("Skipping point {:?}", Point { x, y });
+                                            }
                                         }
                                     }
                                 }
+                                _ => panic!("Not implemented!"),
                             }
-                            _ => panic!("Not implemented!"),
                         }
                     }
                 }
             }
         }
-        Ok(())
+        Ok(self)
     }
 
-    fn scale_data(&self, series: &Series<T>, data_limits: &Limits<T>) -> Result<Series<u32>> {
-        // subtract the data limit min from the series to make the data min the canvas origin
-        // scale the data
+    fn set_pixel(&mut self, point: Point<u32>, color: &RGB8) {
+        if self.limits.contains(point) {
+            let x = point.x;
+            let y = self.limits.max().y - point.y;
+            self.canvas[y as usize][x as usize] = color.clone();
+        } else {
+            println!("Skipping point {:?}", point);
+        }
+    }
 
-        // 200 in data limits => 100 in canvas limits == scale factor of 0.5
-
+    pub fn scale_data(&self, series: &Series<T>, data_limits: &Limits<T>) -> Result<Series<u32>> {
         let canvas_limits = self.get_drawable_limits();
         let canvas_span = canvas_limits.span();
         let data_span = data_limits.span();
@@ -178,6 +186,39 @@ where
         println!("Scaled points: {:?}", new_data);
         Ok(Series::new(&new_data))
     }
+
+    pub fn get_drawable_limits(&self) -> Limits<u32> {
+        // set initial point from the buffer
+        let min = Point::new(self.buffer.left, self.buffer.bottom);
+        let max = Point::new(
+            self.width - self.buffer.right - 1,
+            self.height - self.buffer.top - 1,
+        );
+
+        // update min/max points based on the max marker size
+        let largest_marker_sz = self
+            .graphs
+            .iter()
+            .flat_map(|g| g.data())
+            .map(|s| {
+                u32::max(
+                    s.marker_style().bounding_width(),
+                    s.marker_style().bounding_height(),
+                )
+            })
+            .max()
+            .unwrap();
+        let min = min + largest_marker_sz;
+        let max = max - largest_marker_sz;
+
+        Limits::new(min, max)
+    }
+
+    pub fn get_absolute_limits(&self) -> Limits<u32> {
+        let min = Point::new(0, 0);
+        let max = Point::new(self.width - 1, self.height - 1);
+        Limits::new(min, max)
+    }
 }
 
 #[cfg(test)]
@@ -187,18 +228,19 @@ mod tests {
 
     #[test]
     fn empty_canvas() {
-        let mut canvas = TerminalCanvas::new(100, 100, colors::BLACK);
-        canvas.draw_data(&Graph::<u32>::new()).unwrap();
+        TerminalCanvas::new(100, 100, colors::BLACK)
+            .with_graph(Graph::<u32>::new())
+            .draw()
+            .unwrap();
     }
 
     #[test]
     fn single_series() {
-        let mut canvas =
-            TerminalCanvas::new(100, 100, colors::BLACK).with_buffer(BufferType::Uniform(5));
-        let mut graph = Graph::<u32>::new();
         let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
-
-        graph.add_series(Series::new(&points));
-        canvas.draw_data(&graph).unwrap();
+        TerminalCanvas::new(100, 100, colors::BLACK)
+            .with_buffer(BufferType::Uniform(5))
+            .with_graph(Graph::new().with_series(Series::new(&points)))
+            .draw()
+            .unwrap();
     }
 }

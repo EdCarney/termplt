@@ -6,6 +6,7 @@ use super::{
 };
 
 // TODO: implement items like: axis inclusion, grid lines, legends, etc.
+#[derive(Debug)]
 pub struct Graph<T: Graphable> {
     data: Vec<Series<T>>,
     limits: Option<Limits<T>>,
@@ -19,9 +20,10 @@ impl<T: Graphable> Graph<T> {
         }
     }
 
-    pub fn add_series(&mut self, series: Series<T>) {
+    pub fn with_series(mut self, series: Series<T>) -> Self {
         self.update_limits(series.data());
         self.data.push(series);
+        self
     }
 
     fn update_limits(&mut self, data: &[Point<T>]) {
@@ -67,8 +69,7 @@ mod tests {
 
     #[test]
     fn add_single_series_with_single_point() {
-        let mut g = Graph::new();
-        g.add_series(Series::new(&vec![Point::new(0, 0)]));
+        let g = Graph::new().with_series(Series::new(&vec![Point::new(0, 0)]));
 
         let limits = g.limits();
         assert!(limits.is_some());
@@ -80,8 +81,7 @@ mod tests {
 
     #[test]
     fn add_single_series_with_multiple_points() {
-        let mut g = Graph::new();
-        g.add_series(Series::new(&vec![
+        let g = Graph::new().with_series(Series::new(&vec![
             Point::new(0, -5),
             Point::new(10, 0),
             Point::new(-1, 15),
@@ -97,10 +97,10 @@ mod tests {
 
     #[test]
     fn add_multiple_series_with_single_points() {
-        let mut g = Graph::new();
-        g.add_series(Series::new(&vec![Point::new(0, -5)]));
-        g.add_series(Series::new(&vec![Point::new(10, 0)]));
-        g.add_series(Series::new(&vec![Point::new(-1, 15)]));
+        let g = Graph::new()
+            .with_series(Series::new(&vec![Point::new(0, -5)]))
+            .with_series(Series::new(&vec![Point::new(10, 0)]))
+            .with_series(Series::new(&vec![Point::new(-1, 15)]));
 
         let limits = g.limits();
         assert!(limits.is_some());
@@ -112,19 +112,19 @@ mod tests {
 
     #[test]
     fn add_multiple_series_with_multiple_points() {
-        let mut g = Graph::new();
-        g.add_series(Series::new(&vec![
-            Point::new(10, -5),
-            Point::new(0, -50),
-            Point::new(-1, -1),
-        ]));
-        g.add_series(Series::new(&vec![Point::new(-20, 0), Point::new(0, -5)]));
-        g.add_series(Series::new(&vec![
-            Point::new(-1, 50),
-            Point::new(2, -5),
-            Point::new(3, -5),
-            Point::new(100, -5),
-        ]));
+        let g = Graph::new()
+            .with_series(Series::new(&vec![
+                Point::new(10, -5),
+                Point::new(0, -50),
+                Point::new(-1, -1),
+            ]))
+            .with_series(Series::new(&vec![Point::new(-20, 0), Point::new(0, -5)]))
+            .with_series(Series::new(&vec![
+                Point::new(-1, 50),
+                Point::new(2, -5),
+                Point::new(3, -5),
+                Point::new(100, -5),
+            ]));
 
         let limits = g.limits();
         assert!(limits.is_some());

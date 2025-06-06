@@ -32,3 +32,8 @@ impl<T> Graphable for T where
         + Debug
 {
 }
+
+pub trait Drawable {
+    fn bounding_width(&self) -> u32;
+    fn bounding_height(&self) -> u32;
+}

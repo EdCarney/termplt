@@ -1,4 +1,4 @@
-use super::colors;
+use super::{colors, common::Drawable, limits::Limits, point::Point};
 use rgb::RGB8;
 
 #[derive(Debug, PartialEq)]
@@ -28,6 +28,36 @@ impl MarkerStyle {
             line_style: None,
             color: colors::WHITE,
             size,
+        }
+    }
+}
+
+impl Drawable for MarkerStyle {
+    fn bounding_width(&self) -> u32 {
+        match self {
+            Self::FilledSquare {
+                line_style: _,
+                color: _,
+                size,
+            } => size.clone(),
+            Self::HollowSquare {
+                line_style: _,
+                size,
+            } => size.clone(),
+        }
+    }
+
+    fn bounding_height(&self) -> u32 {
+        match self {
+            Self::FilledSquare {
+                line_style: _,
+                color: _,
+                size,
+            } => size.clone(),
+            Self::HollowSquare {
+                line_style: _,
+                size,
+            } => size.clone(),
         }
     }
 }
