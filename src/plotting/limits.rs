@@ -4,7 +4,6 @@ use super::{common::Graphable, point::Point};
 pub struct Limits<T: Graphable> {
     min: Point<T>,
     max: Point<T>,
-    span: (T, T),
 }
 
 impl<T: Graphable> Limits<T> {
@@ -12,26 +11,17 @@ impl<T: Graphable> Limits<T> {
     /// than the min point in both dimensions.
     pub fn new(min: Point<T>, max: Point<T>) -> Limits<T> {
         Self::validate_limit(&min, &max);
-        let diff = max - min;
-        Limits {
-            min,
-            max,
-            span: (diff.x, diff.y),
-        }
+        Limits { min, max }
     }
 
     pub fn update_min(&mut self, new_min: Point<T>) {
         Self::validate_limit(&new_min, &self.max);
-        let diff = self.max - new_min;
         self.min = new_min;
-        self.span = (diff.x, diff.y);
     }
 
     pub fn update_max(&mut self, new_max: Point<T>) {
         Self::validate_limit(&self.min, &new_max);
-        let diff = new_max - self.min;
         self.max = new_max;
-        self.span = (diff.x, diff.y);
     }
 
     fn validate_limit(min: &Point<T>, max: &Point<T>) {
@@ -43,8 +33,9 @@ impl<T: Graphable> Limits<T> {
         }
     }
 
-    pub fn span(&self) -> &(T, T) {
-        &self.span
+    pub fn span(&self) -> (T, T) {
+        let diff = self.max - self.min;
+        (diff.x, diff.y)
     }
 
     pub fn min(&self) -> &Point<T> {
@@ -86,10 +77,10 @@ mod tests {
         let min = Point { x: 0, y: 0 };
         let max = Point { x: 10, y: 5 };
         let mut limits = Limits::new(min, max);
-        assert_eq!(*limits.span(), (10, 5));
+        assert_eq!(limits.span(), (10, 5));
 
         limits.update_min(Point { x: 1, y: 1 });
-        assert_eq!(*limits.span(), (9, 4));
+        assert_eq!(limits.span(), (9, 4));
     }
 
     #[test]
@@ -98,7 +89,7 @@ mod tests {
         let min = Point { x: 0, y: 0 };
         let max = Point { x: 10, y: 5 };
         let mut limits = Limits::new(min, max);
-        assert_eq!(*limits.span(), (10, 5));
+        assert_eq!(limits.span(), (10, 5));
 
         limits.update_min(Point { x: 11, y: 1 });
     }
@@ -108,10 +99,10 @@ mod tests {
         let min = Point { x: 0, y: 0 };
         let max = Point { x: 10, y: 5 };
         let mut limits = Limits::new(min, max);
-        assert_eq!(*limits.span(), (10, 5));
+        assert_eq!(limits.span(), (10, 5));
 
         limits.update_max(Point { x: 15, y: 10 });
-        assert_eq!(*limits.span(), (15, 10));
+        assert_eq!(limits.span(), (15, 10));
     }
 
     #[test]
@@ -120,7 +111,7 @@ mod tests {
         let min = Point { x: 0, y: 0 };
         let max = Point { x: 10, y: 5 };
         let mut limits = Limits::new(min, max);
-        assert_eq!(*limits.span(), (10, 5));
+        assert_eq!(limits.span(), (10, 5));
 
         limits.update_max(Point { x: -1, y: 10 });
     }

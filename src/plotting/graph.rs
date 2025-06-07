@@ -55,6 +55,52 @@ impl<T: Graphable> Graph<T> {
             None => None,
         }
     }
+
+    pub fn scale<U>(&self, limits: Limits<U>, convert_fn: unsafe fn(f64) -> U) -> Graph<U>
+    where
+        T: Into<f64>,
+        U: Graphable + Into<f64>,
+    {
+        let data_limits = self.limits().expect("Cannot scale an empty graph");
+        let (data_span_x, data_span_y) = data_limits.span();
+        let data_span_x: f64 = data_span_x.into();
+        let data_span_y: f64 = data_span_y.into();
+
+        let (canvas_span_x, canvas_span_y) = limits.span();
+        let canvas_span_x: f64 = canvas_span_x.into();
+        let canvas_span_y: f64 = canvas_span_y.into();
+
+        let scaled_data = self
+            .data
+            .iter()
+            .map(|series| {
+                let scaled_data = series
+                    .data()
+                    .iter()
+                    .map(|p| {
+                        let p = *p - *data_limits.min();
+
+                        let x: f64 = p.x.into();
+                        let y: f64 = p.y.into();
+
+                        let x = x * canvas_span_x / data_span_x;
+                        let y = y * canvas_span_y / data_span_y;
+
+                        let x: U = unsafe { convert_fn(x) };
+                        let y: U = unsafe { convert_fn(y) };
+
+                        Point { x, y } + *limits.min()
+                    })
+                    .collect::<Vec<_>>();
+                Series::new(&scaled_data)
+            })
+            .collect::<Vec<_>>();
+
+        Graph {
+            data: scaled_data,
+            limits: Some(limits),
+        }
+    }
 }
 
 #[cfg(test)]

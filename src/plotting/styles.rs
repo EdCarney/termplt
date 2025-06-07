@@ -64,6 +64,7 @@ impl Drawable for MarkerStyle {
 
 #[derive(Debug, PartialEq)]
 pub enum LineStyle {
+    None,
     Solid { color: RGB8, thickness: u32 },
 }
 

@@ -9,7 +9,7 @@ use std::ops::{Add, Div, Mul, Sub};
 pub struct Series<T: Graphable> {
     data: Vec<Point<T>>,
     marker_style: MarkerStyle,
-    line_style: Option<LineStyle>,
+    line_style: LineStyle,
 }
 
 impl<T: Graphable> Series<T> {
@@ -21,7 +21,7 @@ impl<T: Graphable> Series<T> {
         Series {
             data: Vec::from(data),
             marker_style: MarkerStyle::default(),
-            line_style: None,
+            line_style: LineStyle::None,
         }
     }
 
@@ -33,8 +33,18 @@ impl<T: Graphable> Series<T> {
         &self.marker_style
     }
 
-    pub fn line_style(&self) -> &Option<LineStyle> {
+    pub fn line_style(&self) -> &LineStyle {
         &self.line_style
+    }
+
+    pub fn with_marker(mut self, marker_style: MarkerStyle) -> Self {
+        self.marker_style = marker_style;
+        self
+    }
+
+    pub fn with_line(mut self, line_style: LineStyle) -> Self {
+        self.line_style = line_style;
+        self
     }
 }
 

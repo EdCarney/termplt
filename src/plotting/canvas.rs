@@ -132,17 +132,13 @@ where
 
     pub fn draw(mut self) -> Result<Self> {
         let canvas_limits = self.get_drawable_limits();
-        let mut scaled_series = vec![];
-        if let Some(ref graph) = self.graph {
-            if let Some(limits) = graph.limits() {
-                graph.data().iter().for_each(|series| {
-                    scaled_series
-                        .push(TerminalCanvas::scale_data(&series, &canvas_limits, &limits).unwrap())
-                });
-            }
-        }
+        let scaled_graph = self
+            .graph
+            .as_ref()
+            .unwrap()
+            .scale(canvas_limits, f64::to_int_unchecked);
 
-        for series in scaled_series {
+        for series in scaled_graph.data() {
             for point in series.data() {
                 TerminalCanvas::<T>::get_marker_mask(point, series.marker_style())
                     .iter()
@@ -172,42 +168,6 @@ where
         }
     }
 
-    fn scale_data(
-        series: &Series<T>,
-        canvas_limits: &Limits<u32>,
-        data_limits: &Limits<T>,
-    ) -> Result<Series<u32>> {
-        let canvas_span = canvas_limits.span();
-        let data_span = data_limits.span();
-
-        let data_span_x: f64 = data_span.0.into();
-        let data_span_y: f64 = data_span.1.into();
-
-        // need to add one to the canvas span since the ends of the drawable area limits are valid
-        let x_scale_factor = f64::from(canvas_span.0) / data_span_x;
-        let y_scale_factor = f64::from(canvas_span.1) / data_span_y;
-
-        let new_data = series
-            .data()
-            .iter()
-            .map(|p| {
-                let p = *p - *data_limits.min();
-
-                let x: f64 = p.x.into();
-                let y: f64 = p.y.into();
-
-                let x = x * x_scale_factor;
-                let y = y * y_scale_factor;
-
-                let x: u32 = unsafe { x.to_int_unchecked() };
-                let y: u32 = unsafe { y.to_int_unchecked() };
-
-                Point { x, y } + *canvas_limits.min()
-            })
-            .collect::<Vec<_>>();
-        Ok(Series::new(&new_data))
-    }
-
     pub fn get_drawable_limits(&self) -> Limits<u32> {
         // set initial point from the buffer
         let mut min = Point::new(self.buffer.left, self.buffer.bottom);
@@ -231,10 +191,6 @@ where
         }
 
         Limits::new(min, max)
-    }
-
-    pub fn get_absolute_limits(&self) -> Limits<u32> {
-        self.limits.clone()
     }
 }
 
