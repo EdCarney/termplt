@@ -1,3 +1,5 @@
+use std::{rc::Rc, sync::Mutex};
+
 use super::{
     common::{Drawable, Graphable},
     graph::Graph,
@@ -18,6 +20,7 @@ struct CanvasBuffer {
 }
 
 pub enum BufferType {
+    None,
     Uniform(u32),
     TopBottom(u32, u32),
     LeftRight(u32, u32),
@@ -27,6 +30,7 @@ pub enum BufferType {
 impl CanvasBuffer {
     pub fn new(buffer_type: BufferType) -> CanvasBuffer {
         match buffer_type {
+            BufferType::None => CanvasBuffer::new(BufferType::Uniform(0)),
             BufferType::Uniform(x) => CanvasBuffer {
                 left: x,
                 top: x,
@@ -39,13 +43,60 @@ impl CanvasBuffer {
 }
 
 #[derive(Debug)]
+struct Canvas {
+    pixels: Vec<Vec<RGB8>>,
+    limits: Limits<u32>,
+}
+
+impl Canvas {
+    pub fn new(width: u32, height: u32, background: RGB8) -> Canvas {
+        Canvas {
+            pixels: (0..height)
+                .map(|_| vec![background; width as usize])
+                .collect(),
+            limits: Limits::new(Point::new(0, 0), Point::new(width - 1, height - 1)),
+        }
+    }
+
+    /// Sets the color for a point in the canvas. The provided point should be zero-indexed with
+    /// the lower-left corner as (0, 0) and the upper-right cornder as (width - 1, height - 1).
+    pub fn set_pixel(&mut self, point: &Point<u32>, color: &RGB8) {
+        if self.limits.contains(point) {
+            // reverse y since higher values means closer to
+            // the top of the canvas
+            let x = point.x;
+            let y = self.limits.max().y - point.y;
+            self.pixels[y as usize][x as usize] = color.clone();
+        } else {
+            println!("Skipping point {:?}", point);
+        }
+    }
+
+    /// Sets the color for multiple points in the canvas. The provided points should be zero-indexed
+    /// with the lower-left corner as (0, 0) and the upper-right cornder as (width - 1, height - 1).
+    pub fn set_pixels(&mut self, points: &[Point<u32>], color: &RGB8) {
+        for point in points {
+            self.set_pixel(point, color);
+        }
+    }
+
+    pub fn get_bytes(&self) -> Vec<u8> {
+        self.pixels
+            .iter()
+            .flat_map(|row| {
+                row.iter()
+                    .flat_map(|&rgb| [rgb.r, rgb.g, rgb.b])
+                    .collect::<Vec<u8>>()
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug)]
 pub struct TerminalCanvas<T: Graphable> {
-    width: u32,
-    height: u32,
-    background: RGB8,
-    canvas: Vec<Vec<RGB8>>,
+    canvas: Canvas,
     buffer: CanvasBuffer,
-    graphs: Vec<Graph<T>>,
+    graph: Option<Graph<T>>,
     limits: Limits<u32>,
 }
 
@@ -54,27 +105,11 @@ where
     T: Graphable + Into<f64>,
 {
     pub fn new(width: u32, height: u32, background: RGB8) -> TerminalCanvas<T> {
-        let mut canvas = Vec::with_capacity(height as usize);
-        for _ in 0..height {
-            canvas.push(vec![background; width as usize]);
-        }
-        let buffer = CanvasBuffer {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        let limits = Limits::new(Point::new(0, 0), Point::new(width - 1, height - 1));
-        let graphs = vec![];
-
         TerminalCanvas {
-            width,
-            height,
-            background,
-            canvas,
-            buffer,
-            graphs,
-            limits,
+            canvas: Canvas::new(width, height, background),
+            buffer: CanvasBuffer::new(BufferType::None),
+            graph: None,
+            limits: Limits::new(Point::new(0, 0), Point::new(width - 1, height - 1)),
         }
     }
 
@@ -87,70 +122,61 @@ where
         if graph.data().is_empty() {
             panic!("Cannot add empty graph");
         }
-        self.graphs.push(graph);
+        self.graph = Some(graph);
         self
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
-        self.canvas
-            .iter()
-            .flat_map(|row| {
-                row.iter()
-                    .flat_map(|&rgb| [rgb.r, rgb.g, rgb.b])
-                    .collect::<Vec<u8>>()
-            })
-            .collect()
+        self.canvas.get_bytes()
     }
 
     pub fn draw(mut self) -> Result<Self> {
-        for graph in &self.graphs {
-            match graph.limits() {
-                None => (),
-                Some(limits) => {
-                    for series in graph.data() {
-                        let scaled_series = self.scale_data(&series, limits)?;
-                        for point in scaled_series.data() {
-                            match series.marker_style() {
-                                MarkerStyle::FilledSquare {
-                                    line_style,
-                                    color,
-                                    size,
-                                } => {
-                                    for x in point.x - size..=point.x + size {
-                                        for y in point.y - size..=point.y + size {
-                                            if self.limits.contains(Point { x, y }) {
-                                                // reverse y since higher values means closer to
-                                                // the top of the canvas
-                                                let y = self.limits.max().y - y;
-                                                self.canvas[y as usize][x as usize] = color.clone();
-                                            } else {
-                                                println!("Skipping point {:?}", Point { x, y });
-                                            }
-                                        }
-                                    }
-                                }
-                                _ => panic!("Not implemented!"),
-                            }
-                        }
-                    }
-                }
+        let canvas_limits = self.get_drawable_limits();
+        let mut scaled_series = vec![];
+        if let Some(ref graph) = self.graph {
+            if let Some(limits) = graph.limits() {
+                graph.data().iter().for_each(|series| {
+                    scaled_series
+                        .push(TerminalCanvas::scale_data(&series, &canvas_limits, &limits).unwrap())
+                });
             }
         }
+
+        for series in scaled_series {
+            for point in series.data() {
+                TerminalCanvas::<T>::get_marker_mask(point, series.marker_style())
+                    .iter()
+                    .for_each(|x| self.canvas.set_pixels(&x.0, &x.1));
+            }
+        }
+
         Ok(self)
     }
 
-    fn set_pixel(&mut self, point: Point<u32>, color: &RGB8) {
-        if self.limits.contains(point) {
-            let x = point.x;
-            let y = self.limits.max().y - point.y;
-            self.canvas[y as usize][x as usize] = color.clone();
-        } else {
-            println!("Skipping point {:?}", point);
+    fn get_marker_mask(
+        center: &Point<u32>,
+        marker_style: &MarkerStyle,
+    ) -> Vec<(Vec<Point<u32>>, RGB8)> {
+        match marker_style {
+            MarkerStyle::FilledSquare {
+                line_style,
+                color,
+                size,
+            } => {
+                let mask = (center.x - size..=center.x + size)
+                    .flat_map(|x| (center.y - size..=center.y + size).map(move |y| Point { x, y }))
+                    .collect();
+                vec![(mask, color.clone())]
+            }
+            _ => panic!("Not implemented!"),
         }
     }
 
-    pub fn scale_data(&self, series: &Series<T>, data_limits: &Limits<T>) -> Result<Series<u32>> {
-        let canvas_limits = self.get_drawable_limits();
+    fn scale_data(
+        series: &Series<T>,
+        canvas_limits: &Limits<u32>,
+        data_limits: &Limits<T>,
+    ) -> Result<Series<u32>> {
         let canvas_span = canvas_limits.span();
         let data_span = data_limits.span();
 
@@ -184,35 +210,31 @@ where
 
     pub fn get_drawable_limits(&self) -> Limits<u32> {
         // set initial point from the buffer
-        let min = Point::new(self.buffer.left, self.buffer.bottom);
-        let max = Point::new(
-            self.width - self.buffer.right - 1,
-            self.height - self.buffer.top - 1,
-        );
+        let mut min = Point::new(self.buffer.left, self.buffer.bottom);
+        let mut max = self.limits.max().clone() - Point::new(self.buffer.right, self.buffer.top);
 
         // update min/max points based on the max marker size
-        let largest_marker_sz = self
-            .graphs
-            .iter()
-            .flat_map(|g| g.data())
-            .map(|s| {
-                u32::max(
-                    s.marker_style().bounding_width(),
-                    s.marker_style().bounding_height(),
-                )
-            })
-            .max()
-            .unwrap();
-        let min = min + largest_marker_sz;
-        let max = max - largest_marker_sz;
+        if let Some(ref graph) = self.graph {
+            let largest_marker_sz = graph
+                .data()
+                .iter()
+                .map(|s| {
+                    u32::max(
+                        s.marker_style().bounding_width(),
+                        s.marker_style().bounding_height(),
+                    )
+                })
+                .max()
+                .unwrap();
+            min = min + largest_marker_sz;
+            max = max - largest_marker_sz;
+        }
 
         Limits::new(min, max)
     }
 
     pub fn get_absolute_limits(&self) -> Limits<u32> {
-        let min = Point::new(0, 0);
-        let max = Point::new(self.width - 1, self.height - 1);
-        Limits::new(min, max)
+        self.limits.clone()
     }
 }
 
@@ -222,6 +244,7 @@ mod tests {
     use crate::plotting::{colors, series::Series};
 
     #[test]
+    #[should_panic]
     fn empty_canvas() {
         TerminalCanvas::new(100, 100, colors::BLACK)
             .with_graph(Graph::<u32>::new())

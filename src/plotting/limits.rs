@@ -1,6 +1,6 @@
 use super::{common::Graphable, point::Point};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Limits<T: Graphable> {
     min: Point<T>,
     max: Point<T>,
@@ -56,7 +56,7 @@ impl<T: Graphable> Limits<T> {
     }
 
     /// Validates whether the provided point exists within the limit.
-    pub fn contains(&self, point: Point<T>) -> bool {
+    pub fn contains(&self, point: &Point<T>) -> bool {
         (self.min.x..=self.max.x).contains(&point.x) && (self.min.y..=self.max.y).contains(&point.y)
     }
 }
@@ -133,7 +133,7 @@ mod tests {
 
         for x in 0..=10 {
             for y in 0..=5 {
-                assert!(limits.contains(Point { x, y }));
+                assert!(limits.contains(&Point { x, y }));
             }
         }
     }
@@ -144,9 +144,9 @@ mod tests {
         let max = Point { x: 10, y: 5 };
         let limits = Limits::new(min, max);
 
-        assert!(!limits.contains(Point { x: -1, y: 1 }));
-        assert!(!limits.contains(Point { x: 1, y: -1 }));
-        assert!(!limits.contains(Point { x: 11, y: 4 }));
-        assert!(!limits.contains(Point { x: 9, y: 6 }));
+        assert!(!limits.contains(&Point { x: -1, y: 1 }));
+        assert!(!limits.contains(&Point { x: 1, y: -1 }));
+        assert!(!limits.contains(&Point { x: 11, y: 4 }));
+        assert!(!limits.contains(&Point { x: 9, y: 6 }));
     }
 }
