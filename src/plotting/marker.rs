@@ -7,7 +7,7 @@ use super::{
 use crate::common::Result;
 use rgb::RGB8;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum MarkerStyle {
     FilledSquare { size: u32, color: RGB8 },
     HollowSquare { size: u32, color: RGB8 },

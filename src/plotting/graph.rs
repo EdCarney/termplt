@@ -96,7 +96,7 @@ impl<T: Graphable> Graph<T> {
                         Point { x, y } + *limits.min()
                     })
                     .collect::<Vec<_>>();
-                Series::new(&scaled_data)
+                series.clone_with(&scaled_data)
             })
             .collect::<Vec<_>>();
 

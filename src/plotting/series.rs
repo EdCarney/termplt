@@ -27,6 +27,14 @@ impl<T: Graphable> Series<T> {
         }
     }
 
+    pub fn clone_with<U: Graphable>(&self, data: &[Point<U>]) -> Series<U> {
+        Series {
+            data: Vec::from(data),
+            marker_style: self.marker_style.clone(),
+            line_style: self.line_style.clone(),
+        }
+    }
+
     pub fn data(&self) -> &[Point<T>] {
         &self.data
     }
