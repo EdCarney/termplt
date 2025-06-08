@@ -3,6 +3,12 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
+use rgb::RGB8;
+
+use crate::common::Result;
+
+use super::point::Point;
+
 pub trait Graphable:
     PartialOrd
     + Into<f64>
@@ -33,7 +39,13 @@ impl<T> Graphable for T where
 {
 }
 
+pub struct MaskPoints {
+    pub points: Vec<Point<u32>>,
+    pub color: RGB8,
+}
+
 pub trait Drawable {
     fn bounding_width(&self) -> u32;
     fn bounding_height(&self) -> u32;
+    fn get_mask(&self) -> Result<Vec<MaskPoints>>;
 }

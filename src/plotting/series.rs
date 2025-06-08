@@ -1,15 +1,17 @@
 use super::{
-    common::Graphable,
-    point::Point,
-    styles::{LineStyle, MarkerStyle},
+    common::{Drawable, Graphable, MaskPoints},
+    line::{Line, LinePositioning, LineStyle},
+    marker::{Marker, MarkerStyle},
+    point::{Point, PointCollection},
 };
+use crate::common::Result;
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug)]
 pub struct Series<T: Graphable> {
     data: Vec<Point<T>>,
     marker_style: MarkerStyle,
-    line_style: LineStyle,
+    line_style: Option<LineStyle>,
 }
 
 impl<T: Graphable> Series<T> {
@@ -21,7 +23,15 @@ impl<T: Graphable> Series<T> {
         Series {
             data: Vec::from(data),
             marker_style: MarkerStyle::default(),
-            line_style: LineStyle::None,
+            line_style: None,
+        }
+    }
+
+    pub fn clone_with<U: Graphable>(&self, data: &[Point<U>]) -> Series<U> {
+        Series {
+            data: Vec::from(data),
+            marker_style: self.marker_style.clone(),
+            line_style: self.line_style.clone(),
         }
     }
 
@@ -33,18 +43,58 @@ impl<T: Graphable> Series<T> {
         &self.marker_style
     }
 
-    pub fn line_style(&self) -> &LineStyle {
+    pub fn line_style(&self) -> &Option<LineStyle> {
         &self.line_style
     }
 
-    pub fn with_marker(mut self, marker_style: MarkerStyle) -> Self {
+    pub fn with_marker_style(mut self, marker_style: MarkerStyle) -> Self {
         self.marker_style = marker_style;
         self
     }
 
-    pub fn with_line(mut self, line_style: LineStyle) -> Self {
-        self.line_style = line_style;
+    pub fn with_line_style(mut self, line_style: LineStyle) -> Self {
+        self.line_style = Some(line_style);
         self
+    }
+}
+
+impl Drawable for Series<u32> {
+    fn bounding_width(&self) -> u32 {
+        self.data().limits().unwrap().span().0
+    }
+
+    fn bounding_height(&self) -> u32 {
+        self.data().limits().unwrap().span().1
+    }
+
+    fn get_mask(&self) -> Result<Vec<MaskPoints>> {
+        let mut mask_points = self
+            .data()
+            .iter()
+            .flat_map(|&p| {
+                Marker::new(p.clone(), self.marker_style.clone())
+                    .get_mask()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        // add lines if line styling is present
+        if let Some(line_style) = &self.line_style {
+            let mut lines = Vec::<Line>::with_capacity(self.data.len());
+            for i in 0..self.data.len() - 1 {
+                let start = self.data[i];
+                let end = self.data[i + 1];
+                let pos = LinePositioning::BetweenPoints { start, end };
+                lines.push(Line::new(pos, line_style.clone()));
+            }
+            let line_mask_points = lines
+                .iter()
+                .flat_map(|line| line.get_mask().unwrap())
+                .collect::<Vec<_>>();
+            mask_points.extend(line_mask_points);
+        };
+
+        Ok(mask_points)
     }
 }
 

@@ -10,6 +10,7 @@ use termplt::{
         canvas::{BufferType, TerminalCanvas},
         colors,
         graph::Graph,
+        marker::MarkerStyle,
         point::Point,
         series::Series,
     },
@@ -42,9 +43,17 @@ fn main() {
     let points = (0..=20)
         .map(|x| Point::new(x, x * x))
         .collect::<Vec<Point<_>>>();
-    let bytes_1 = TerminalCanvas::new(width, height, colors::BLACK)
+
+    let bytes_1 = TerminalCanvas::new(width + 100, height + 100, colors::WHITE)
         .with_buffer(BufferType::Uniform(15))
-        .with_graph(Graph::new().with_series(Series::new(&points)))
+        .with_graph(
+            Graph::new().with_series(Series::new(&points).with_marker_style(
+                MarkerStyle::HollowSquare {
+                    size: 5,
+                    color: colors::BLACK,
+                },
+            )),
+        )
         .draw()
         .unwrap()
         .get_bytes();
@@ -63,7 +72,10 @@ fn main() {
         .unwrap()
         .get_bytes();
 
-    let format = PixelFormat::Rgb { width, height };
+    let format = PixelFormat::Rgb {
+        width: width + 100,
+        height: height + 100,
+    };
     let transmission = Transmission::Direct(bytes_1);
     Image::new(format, transmission).unwrap().display().unwrap();
     println!();
