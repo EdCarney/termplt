@@ -3,6 +3,7 @@ pub mod colors;
 pub mod common;
 pub mod graph;
 pub mod limits;
+pub mod line;
+pub mod marker;
 pub mod point;
 pub mod series;
-pub mod styles;

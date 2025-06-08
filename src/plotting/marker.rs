@@ -1,4 +1,10 @@
-use super::{colors, common::Drawable, limits::Limits, point::Point};
+use super::{
+    colors,
+    common::{DrawPositioning, Drawable, MaskPoints},
+    line::LineStyle,
+    point::Point,
+};
+use crate::common::Result;
 use rgb::RGB8;
 
 #[derive(Debug, PartialEq)]
@@ -19,7 +25,7 @@ impl MarkerStyle {
         Self::FilledSquare {
             line_style: None,
             color: colors::WHITE,
-            size: 1,
+            size: 0,
         }
     }
 
@@ -60,26 +66,29 @@ impl Drawable for MarkerStyle {
             } => size.clone(),
         }
     }
-}
 
-#[derive(Debug, PartialEq)]
-pub enum LineStyle {
-    None,
-    Solid { color: RGB8, thickness: u32 },
-}
-
-impl LineStyle {
-    pub const fn default() -> LineStyle {
-        Self::Solid {
-            color: colors::WHITE,
-            thickness: 2,
-        }
-    }
-
-    pub const fn default_with_thickness(thickness: u32) -> LineStyle {
-        Self::Solid {
-            color: colors::WHITE,
-            thickness,
-        }
+    fn get_mask(&self, pos: DrawPositioning) -> Result<Vec<MaskPoints>> {
+        let mask_points = match pos {
+            DrawPositioning::CenteredAt(center) => match self {
+                MarkerStyle::FilledSquare {
+                    line_style,
+                    color,
+                    size,
+                } => {
+                    let points = (center.x - size..=center.x + size)
+                        .flat_map(|x| {
+                            (center.y - size..=center.y + size).map(move |y| Point { x, y })
+                        })
+                        .collect::<Vec<Point<u32>>>();
+                    vec![MaskPoints {
+                        points,
+                        color: color.clone(),
+                    }]
+                }
+                _ => panic!("Not implemented!"),
+            },
+            _ => panic!("Not implemented!"),
+        };
+        Ok(mask_points)
     }
 }

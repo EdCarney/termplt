@@ -1,12 +1,12 @@
 use std::{rc::Rc, sync::Mutex};
 
 use super::{
-    common::{Drawable, Graphable},
+    common::{DrawPositioning, Drawable, Graphable},
     graph::Graph,
     limits::Limits,
+    marker::MarkerStyle,
     point::Point,
     series::Series,
-    styles::MarkerStyle,
 };
 use crate::common::Result;
 use rgb::RGB8;
@@ -140,9 +140,11 @@ where
 
         for series in scaled_graph.data() {
             for point in series.data() {
-                TerminalCanvas::<T>::get_marker_mask(point, series.marker_style())
+                series
+                    .marker_style()
+                    .get_mask(DrawPositioning::CenteredAt(point.clone()))?
                     .iter()
-                    .for_each(|x| self.canvas.set_pixels(&x.0, &x.1));
+                    .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
             }
         }
 

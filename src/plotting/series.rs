@@ -1,8 +1,4 @@
-use super::{
-    common::Graphable,
-    point::Point,
-    styles::{LineStyle, MarkerStyle},
-};
+use super::{common::Graphable, line::LineStyle, marker::MarkerStyle, point::Point};
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug)]
