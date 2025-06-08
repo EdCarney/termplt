@@ -44,13 +44,13 @@ fn main() {
         .map(|x| Point::new(x, x * x))
         .collect::<Vec<Point<_>>>();
 
-    let bytes_1 = TerminalCanvas::new(width + 100, height + 100, colors::BLACK)
+    let bytes_1 = TerminalCanvas::new(width + 100, height + 100, colors::WHITE)
         .with_buffer(BufferType::Uniform(15))
         .with_graph(
             Graph::new().with_series(Series::new(&points).with_marker_style(
                 MarkerStyle::HollowSquare {
                     size: 5,
-                    color: colors::WHITE,
+                    color: colors::BLACK,
                 },
             )),
         )
