@@ -42,6 +42,27 @@ pub struct Point<T: Graphable> {
     pub y: T,
 }
 
+impl<T> Point<T>
+where
+    T: Graphable + Into<u32>,
+{
+    /// Generates the set of points between the start and end (inclusive).
+    pub fn range(from: &Point<T>, to: &Point<T>) -> Vec<Point<u32>> {
+        let from_x: u32 = from.x.into();
+        let from_y: u32 = from.y.into();
+        let to_x: u32 = to.x.into();
+        let to_y: u32 = to.y.into();
+        (from_x..=to_x)
+            .flat_map(|x| (from_y..=to_y).map(move |y| Point::new(x, y)))
+            .collect()
+    }
+
+    /// Generates the set of points between the limits min/max (inclusive).
+    pub fn limit_range(limits: Limits<T>) -> Vec<Point<u32>> {
+        Point::<T>::range(limits.min(), limits.max())
+    }
+}
+
 impl<T: Graphable> Point<T> {
     pub fn new(x: T, y: T) -> Point<T> {
         Point { x, y }

@@ -1,15 +1,18 @@
 use super::{
-    common::Graphable,
+    common::{Drawable, Graphable, MaskPoints},
     limits::Limits,
+    line::{Line, LineStyle},
     point::{Point, PointCollection},
     series::Series,
 };
+use crate::common::Result;
 
 // TODO: implement items like: axis inclusion, grid lines, legends, etc.
 #[derive(Debug)]
 pub struct Graph<T: Graphable> {
     data: Vec<Series<T>>,
     limits: Option<Limits<T>>,
+    //xy_axes: (Option<Line>, Option<Line>),
 }
 
 impl<T: Graphable> Graph<T> {
@@ -17,6 +20,7 @@ impl<T: Graphable> Graph<T> {
         Graph {
             data: vec![],
             limits: None,
+            //xy_axes: (None, None),
         }
     }
 
@@ -100,6 +104,28 @@ impl<T: Graphable> Graph<T> {
             data: scaled_data,
             limits: Some(limits),
         }
+    }
+}
+
+impl Drawable for Graph<u32> {
+    fn bounding_width(&self) -> u32 {
+        self.limits().unwrap().span().0
+    }
+
+    fn bounding_height(&self) -> u32 {
+        self.limits().unwrap().span().1
+    }
+
+    fn get_mask(&self) -> Result<Vec<MaskPoints>> {
+        let mut mask_points = self
+            .data()
+            .iter()
+            .flat_map(|series| series.get_mask().unwrap())
+            .collect::<Vec<_>>();
+
+        // add axes if they are defined
+
+        Ok(mask_points)
     }
 }
 

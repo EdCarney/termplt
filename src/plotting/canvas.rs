@@ -1,12 +1,9 @@
-use std::{rc::Rc, sync::Mutex};
-
 use super::{
-    common::{DrawPositioning, Drawable, Graphable},
+    common::{Drawable, Graphable},
     graph::Graph,
     limits::Limits,
     marker::MarkerStyle,
     point::Point,
-    series::Series,
 };
 use crate::common::Result;
 use rgb::RGB8;
@@ -132,42 +129,15 @@ where
 
     pub fn draw(mut self) -> Result<Self> {
         let canvas_limits = self.get_drawable_limits();
-        let scaled_graph = self
-            .graph
+        self.graph
             .as_ref()
             .unwrap()
-            .scale(canvas_limits, f64::to_int_unchecked);
-
-        for series in scaled_graph.data() {
-            for point in series.data() {
-                series
-                    .marker_style()
-                    .get_mask(DrawPositioning::CenteredAt(point.clone()))?
-                    .iter()
-                    .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
-            }
-        }
+            .scale(canvas_limits, f64::to_int_unchecked)
+            .get_mask()?
+            .iter()
+            .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
 
         Ok(self)
-    }
-
-    fn get_marker_mask(
-        center: &Point<u32>,
-        marker_style: &MarkerStyle,
-    ) -> Vec<(Vec<Point<u32>>, RGB8)> {
-        match marker_style {
-            MarkerStyle::FilledSquare {
-                line_style,
-                color,
-                size,
-            } => {
-                let mask = (center.x - size..=center.x + size)
-                    .flat_map(|x| (center.y - size..=center.y + size).map(move |y| Point { x, y }))
-                    .collect();
-                vec![(mask, color.clone())]
-            }
-            _ => panic!("Not implemented!"),
-        }
     }
 
     pub fn get_drawable_limits(&self) -> Limits<u32> {
@@ -180,12 +150,7 @@ where
             let largest_marker_sz = graph
                 .data()
                 .iter()
-                .map(|s| {
-                    u32::max(
-                        s.marker_style().bounding_width(),
-                        s.marker_style().bounding_height(),
-                    )
-                })
+                .map(|s| s.marker_style().size())
                 .max()
                 .unwrap();
             min = min + largest_marker_sz;
