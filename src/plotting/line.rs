@@ -1,6 +1,6 @@
 use super::{
     colors,
-    common::{Drawable, MaskPoints},
+    common::{Drawable, Graphable, MaskPoints},
     limits::Limits,
     point::Point,
 };
@@ -55,25 +55,25 @@ impl LineStyle {
     }
 }
 
-#[derive(Debug)]
-pub enum LinePositioning {
-    Horizontal { start: Point<u32>, length: u32 },
-    Vertical { start: Point<u32>, length: u32 },
-    BetweenPoints { start: Point<u32>, end: Point<u32> },
+#[derive(Debug, Clone)]
+pub enum LinePositioning<T: Graphable> {
+    Horizontal { start: Point<T>, length: T },
+    Vertical { start: Point<T>, length: T },
+    BetweenPoints { start: Point<T>, end: Point<T> },
 }
 
-#[derive(Debug)]
-pub struct Line {
+#[derive(Debug, Clone)]
+pub struct Line<T: Graphable> {
     style: LineStyle,
-    positioning: LinePositioning,
+    positioning: LinePositioning<T>,
 }
 
-impl Line {
-    pub fn new(positioning: LinePositioning, style: LineStyle) -> Line {
+impl<T: Graphable> Line<T> {
+    pub fn new(positioning: LinePositioning<T>, style: LineStyle) -> Line<T> {
         Line { style, positioning }
     }
 
-    pub fn default(positioning: LinePositioning) -> Line {
+    pub fn default(positioning: LinePositioning<T>) -> Line<T> {
         Line {
             style: LineStyle::default(),
             positioning,
@@ -81,7 +81,7 @@ impl Line {
     }
 
     /// Gets bounding limits for the line.
-    pub fn limits(&self) -> Limits<u32> {
+    pub fn limits(&self) -> Limits<T> {
         let thickness = self.style.thickness();
         let (from, to) = match self.positioning {
             LinePositioning::Horizontal { start, length } => {

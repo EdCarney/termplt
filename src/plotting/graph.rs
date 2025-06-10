@@ -11,53 +11,61 @@ use crate::common::Result;
 #[derive(Debug)]
 pub struct Graph<T: Graphable> {
     data: Vec<Series<T>>,
-    limits: Option<Limits<T>>,
-    //xy_axes: (Option<Line>, Option<Line>),
+    x_axis: Option<Line>,
+    y_axis: Option<Line>,
 }
 
 impl<T: Graphable> Graph<T> {
     pub fn new() -> Graph<T> {
         Graph {
             data: vec![],
-            limits: None,
-            //xy_axes: (None, None),
+            x_axis: None,
+            y_axis: None,
         }
     }
 
     pub fn with_series(mut self, series: Series<T>) -> Self {
-        self.update_limits(series.data());
         self.data.push(series);
         self
-    }
-
-    fn update_limits(&mut self, data: &[Point<T>]) {
-        match data.limits() {
-            None => (),
-            Some(data_limits) => {
-                self.limits = match self.limits {
-                    None => data.limits(),
-                    Some(ref current_limits) => [
-                        *current_limits.min(),
-                        *data_limits.min(),
-                        *current_limits.max(),
-                        *data_limits.max(),
-                    ]
-                    .as_slice()
-                    .limits(),
-                }
-            }
-        }
     }
 
     pub fn data(&self) -> &[Series<T>] {
         &self.data
     }
 
-    pub fn limits(&self) -> Option<&Limits<T>> {
-        match self.limits {
-            Some(ref limits) => Some(limits),
-            None => None,
+    pub fn limits(&self) -> Option<Limits<u32>> {
+        let data_limits = self
+            .data
+            .iter()
+            .flat_map(|series| series.data().to_vec())
+            .map(|p| {
+                let x: f64 = p.x.into();
+                let y: f64 = p.y.into();
+                Point { x, y }
+            })
+            .collect::<Vec<Point<_>>>()
+            .as_slice()
+            .limits()?;
+
+        let mut min_x: u32 = unsafe { data_limits.min().x.to_int_unchecked() };
+        let mut min_y: u32 = unsafe { data_limits.min().y.to_int_unchecked() };
+        let mut max_x: u32 = unsafe { data_limits.max().x.to_int_unchecked() };
+        let mut max_y: u32 = unsafe { data_limits.max().y.to_int_unchecked() };
+
+        if let Some(x_axis) = &self.x_axis {
+            min_x = x_axis.limits().min().x;
+            max_x = x_axis.limits().max().x;
         }
+
+        if let Some(y_axis) = &self.y_axis {
+            min_y = y_axis.limits().min().y;
+            max_y = y_axis.limits().max().y;
+        }
+
+        Some(Limits::new(
+            Point::new(min_x, min_y),
+            Point::new(max_x, max_y),
+        ))
     }
 
     pub fn scale<U>(&self, limits: Limits<U>, convert_fn: unsafe fn(f64) -> U) -> Graph<U>
@@ -82,10 +90,8 @@ impl<T: Graphable> Graph<T> {
                     .data()
                     .iter()
                     .map(|p| {
-                        let p = *p - *data_limits.min();
-
-                        let x: f64 = p.x.into();
-                        let y: f64 = p.y.into();
+                        let x: f64 = p.x.into() - (data_limits.min().x as f64);
+                        let y: f64 = p.y.into() - (data_limits.min().y as f64);
 
                         let x = x * canvas_span_x / data_span_x;
                         let y = y * canvas_span_y / data_span_y;
@@ -102,7 +108,8 @@ impl<T: Graphable> Graph<T> {
 
         Graph {
             data: scaled_data,
-            limits: Some(limits),
+            x_axis: self.x_axis.clone(),
+            y_axis: self.y_axis.clone(),
         }
     }
 }
@@ -146,7 +153,7 @@ mod tests {
         let limits = g.limits();
         assert!(limits.is_some());
         assert_eq!(
-            *limits.unwrap(),
+            limits.unwrap(),
             Limits::new(Point::new(0, 0), Point::new(0, 0))
         );
     }
@@ -162,7 +169,7 @@ mod tests {
         let limits = g.limits();
         assert!(limits.is_some());
         assert_eq!(
-            *limits.unwrap(),
+            limits.unwrap(),
             Limits::new(Point::new(-1, -5), Point::new(10, 15))
         );
     }
@@ -177,7 +184,7 @@ mod tests {
         let limits = g.limits();
         assert!(limits.is_some());
         assert_eq!(
-            *limits.unwrap(),
+            limits.unwrap(),
             Limits::new(Point::new(-1, -5), Point::new(10, 15))
         );
     }
