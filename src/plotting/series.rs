@@ -1,5 +1,7 @@
+use image::Limits;
+
 use super::{
-    common::{Drawable, Graphable, MaskPoints},
+    common::{Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints},
     line::{Line, LinePositioning, LineStyle},
     marker::{Marker, MarkerStyle},
     point::{Point, PointCollection},
@@ -14,6 +16,24 @@ pub struct Series<T: Graphable> {
     line_style: Option<LineStyle>,
 }
 
+impl<T: Graphable, U: Graphable> Convertable<U> for Series<T> {
+    type ConvertTo = Series<U>;
+    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+        let data = self
+            .data
+            .iter()
+            .map(|&p| p.convert_to(convert_fn))
+            .collect::<Vec<_>>();
+        let marker_style = self.marker_style.clone();
+        let line_style = self.line_style.clone();
+        Series {
+            data,
+            marker_style,
+            line_style,
+        }
+    }
+}
+
 impl<T: Graphable> Series<T> {
     pub fn new(data: &[Point<T>]) -> Series<T> {
         if data.is_empty() {
@@ -24,14 +44,6 @@ impl<T: Graphable> Series<T> {
             data: Vec::from(data),
             marker_style: MarkerStyle::default(),
             line_style: None,
-        }
-    }
-
-    pub fn clone_with<U: Graphable>(&self, data: &[Point<U>]) -> Series<U> {
-        Series {
-            data: Vec::from(data),
-            marker_style: self.marker_style.clone(),
-            line_style: self.line_style.clone(),
         }
     }
 
@@ -56,15 +68,39 @@ impl<T: Graphable> Series<T> {
         self.line_style = Some(line_style);
         self
     }
+
+    pub fn shift(mut self, point: Point<T>) -> Series<T> {
+        self.data = self.data.iter().map(|&p| p + point).collect::<Vec<_>>();
+        self
+    }
+
+    pub fn scale(mut self, x_factor: f64, y_factor: f64) -> Series<f64> {
+        let scaled_data = self
+            .convert_to_f64()
+            .data()
+            .iter()
+            .map(|&p| {
+                let x = p.x * x_factor;
+                let y = p.y * y_factor;
+                Point { x, y }
+            })
+            .collect::<Vec<_>>();
+
+        Series {
+            data: scaled_data,
+            line_style: self.line_style.take(),
+            marker_style: self.marker_style,
+        }
+    }
 }
 
-impl Drawable for Series<u32> {
+impl<T: IntConvertable + Graphable> Drawable for Series<T> {
     fn bounding_width(&self) -> u32 {
-        self.data().limits().unwrap().span().0
+        self.data().limits().unwrap().convert_to_u32().span().0
     }
 
     fn bounding_height(&self) -> u32 {
-        self.data().limits().unwrap().span().1
+        self.data().limits().unwrap().convert_to_u32().span().1
     }
 
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
@@ -72,7 +108,7 @@ impl Drawable for Series<u32> {
             .data()
             .iter()
             .flat_map(|&p| {
-                Marker::new(p.clone(), self.marker_style.clone())
+                Marker::new(p.convert_to_u32(), self.marker_style.clone())
                     .get_mask()
                     .unwrap()
             })
@@ -80,12 +116,12 @@ impl Drawable for Series<u32> {
 
         // add lines if line styling is present
         if let Some(line_style) = &self.line_style {
-            let mut lines = Vec::<Line>::with_capacity(self.data.len());
+            let mut lines = Vec::<Line<u32>>::with_capacity(self.data.len());
             for i in 0..self.data.len() - 1 {
                 let start = self.data[i];
                 let end = self.data[i + 1];
                 let pos = LinePositioning::BetweenPoints { start, end };
-                lines.push(Line::new(pos, line_style.clone()));
+                lines.push(Line::new(pos.convert_to_u32(), line_style.clone()));
             }
             let line_mask_points = lines
                 .iter()

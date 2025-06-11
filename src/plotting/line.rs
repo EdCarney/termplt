@@ -1,6 +1,6 @@
 use super::{
     colors,
-    common::{Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints},
+    common::{Convertable, Drawable, Graphable, IntConvertable, MaskPoints},
     limits::Limits,
     point::Point,
 };
@@ -63,25 +63,25 @@ pub enum LinePositioning<T: Graphable> {
 }
 
 impl<T: Graphable> LinePositioning<T> {
-    pub fn limits(&self) -> Limits<f64> {
-        let (from, to) = match &self {
+    pub fn limits(&self) -> Limits<T> {
+        let (min, max) = match self {
             LinePositioning::Horizontal { start, length } => {
-                let from = start - Point::new(0., thickness);
-                let to = start + Point::new(length, thickness);
-                (from, to)
+                let start = start.clone();
+                let end = Point::new(start.x + *length, start.y);
+                (start, end)
             }
             LinePositioning::Vertical { start, length } => {
-                let from = start - Point::new(thickness, 0.);
-                let to = start + Point::new(thickness, length);
-                (from, to)
+                let start = start.clone();
+                let end = Point::new(start.x, start.y + *length);
+                (start, end)
             }
             LinePositioning::BetweenPoints { start, end } => {
                 // for thickness b/w points, assume that the thickness will not go outside the
                 // limits defined by the two points
-                (start, end)
+                (start.clone(), end.clone())
             }
         };
-        Limits::new(from, to)
+        Limits::new(min, max)
     }
 }
 
@@ -142,33 +142,20 @@ impl<T: Graphable> Line<T> {
     pub fn positioning(&self) -> &LinePositioning<T> {
         &self.positioning
     }
+}
 
+impl<T: IntConvertable + Graphable> Line<T> {
     /// Gets bounding limits for the line.
-    pub fn limits(&self) -> Limits<f64> {
-        let thickness = self.style.thickness().convert_to_f64();
-        let (from, to) = match self.positioning.convert_to_f64() {
-            LinePositioning::Horizontal { start, length } => {
-                let from = start - Point::new(0., thickness);
-                let to = start + Point::new(length, thickness);
-                (from, to)
-            }
-            LinePositioning::Vertical { start, length } => {
-                let from = start - Point::new(thickness, 0.);
-                let to = start + Point::new(thickness, length);
-                (from, to)
-            }
-            LinePositioning::BetweenPoints { start, end } => {
-                // for thickness b/w points, assume that the thickness will not go outside the
-                // limits defined by the two points
-                (start, end)
-            }
-        };
-        Limits::new(from, to)
+    pub fn limits(&self) -> Limits<u32> {
+        let limits = self.positioning.limits().convert_to_u32();
+        let min = *limits.min() - self.style.thickness();
+        let max = *limits.max() + self.style.thickness();
+        Limits::new(min, max)
     }
 
     // Gets the full point set between the start and end of the line. Note that this does not
     // take into account empy space for dashed lines.
-    fn full_points(&self) -> Vec<Point<u32>> {
+    pub fn full_points(&self) -> Vec<Point<u32>> {
         match self.positioning {
             LinePositioning::Vertical {
                 start: _,
@@ -177,7 +164,7 @@ impl<T: Graphable> Line<T> {
             | LinePositioning::Horizontal {
                 start: _,
                 length: _,
-            } => Point::<u32>::limit_range(self.limits().convert_to_u32()),
+            } => Point::limit_range(self.limits()),
             LinePositioning::BetweenPoints { start, end } => {
                 todo!()
             }
@@ -185,7 +172,7 @@ impl<T: Graphable> Line<T> {
     }
 }
 
-impl<T: Graphable> Drawable for Line<T> {
+impl Drawable for Line<u32> {
     fn bounding_height(&self) -> u32 {
         let limits = self.limits();
         (*limits.max() - *limits.min()).convert_to_u32().y

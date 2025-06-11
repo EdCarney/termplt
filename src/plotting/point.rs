@@ -1,11 +1,8 @@
 use super::{
-    common::{Convertable, Graphable},
+    common::{Convertable, Graphable, IntConvertable},
     limits::Limits,
 };
-use std::{
-    convert,
-    ops::{Add, Div, Mul, Sub},
-};
+use std::ops::{Add, Div, Mul, Sub};
 
 pub trait PointCollection<T: Graphable> {
     fn limits(&self) -> Option<Limits<T>>;
@@ -59,16 +56,14 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Point<T> {
 
 impl<T> Point<T>
 where
-    T: Graphable + Into<u32>,
+    T: Graphable + IntConvertable,
 {
     /// Generates the set of points between the start and end (inclusive).
     pub fn range(from: &Point<T>, to: &Point<T>) -> Vec<Point<u32>> {
-        let from_x: u32 = from.x.into();
-        let from_y: u32 = from.y.into();
-        let to_x: u32 = to.x.into();
-        let to_y: u32 = to.y.into();
-        (from_x..=to_x)
-            .flat_map(|x| (from_y..=to_y).map(move |y| Point::new(x, y)))
+        let from = from.convert_to_u32();
+        let to = to.convert_to_u32();
+        (from.x..=to.x)
+            .flat_map(|x| (from.y..=to.y).map(move |y| Point::new(x, y)))
             .collect()
     }
 
