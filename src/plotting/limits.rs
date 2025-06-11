@@ -1,9 +1,22 @@
-use super::{common::Graphable, point::Point};
+use super::{
+    common::{Convertable, Graphable},
+    point::Point,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Limits<T: Graphable> {
     min: Point<T>,
     max: Point<T>,
+}
+
+impl<T: Graphable, U: Graphable> Convertable<U> for Limits<T> {
+    type ConvertTo = Limits<U>;
+    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+        Limits {
+            min: self.min().convert_to(convert_fn),
+            max: self.min().convert_to(convert_fn),
+        }
+    }
 }
 
 impl<T: Graphable> Limits<T> {

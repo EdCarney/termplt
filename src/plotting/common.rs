@@ -49,3 +49,36 @@ pub trait Drawable {
     fn bounding_height(&self) -> u32;
     fn get_mask(&self) -> Result<Vec<MaskPoints>>;
 }
+
+pub trait Convertable<U> {
+    type ConvertTo;
+    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo;
+}
+
+impl<T: Graphable, U: Graphable> Convertable<U> for T {
+    type ConvertTo = U;
+    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+        let value: f64 = self.clone().into();
+        unsafe { convert_fn(value) }
+    }
+}
+
+pub trait IntConvertable: Convertable<u32> {
+    fn convert_to_u32(&self) -> Self::ConvertTo;
+}
+
+impl<T: Convertable<u32>> IntConvertable for T {
+    fn convert_to_u32(&self) -> Self::ConvertTo {
+        self.convert_to(f64::to_int_unchecked)
+    }
+}
+
+pub trait FloatConvertable: Convertable<f64> {
+    fn convert_to_f64(&self) -> Self::ConvertTo;
+}
+
+impl<T: Convertable<f64>> FloatConvertable for T {
+    fn convert_to_f64(&self) -> Self::ConvertTo {
+        self.convert_to(f64::from)
+    }
+}

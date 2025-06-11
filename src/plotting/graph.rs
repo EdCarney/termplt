@@ -1,5 +1,5 @@
 use super::{
-    common::{Drawable, Graphable, MaskPoints},
+    common::{Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints},
     limits::Limits,
     line::{Line, LineStyle},
     point::{Point, PointCollection},
@@ -11,8 +11,8 @@ use crate::common::Result;
 #[derive(Debug)]
 pub struct Graph<T: Graphable> {
     data: Vec<Series<T>>,
-    x_axis: Option<Line>,
-    y_axis: Option<Line>,
+    x_axis: Option<Line<T>>,
+    y_axis: Option<Line<T>>,
 }
 
 impl<T: Graphable> Graph<T> {
@@ -53,13 +53,15 @@ impl<T: Graphable> Graph<T> {
         let mut max_y: u32 = unsafe { data_limits.max().y.to_int_unchecked() };
 
         if let Some(x_axis) = &self.x_axis {
-            min_x = x_axis.limits().min().x;
-            max_x = x_axis.limits().max().x;
+            let limits = x_axis.limits().convert_to_u32();
+            min_x = limits.min().x;
+            max_x = limits.max().x;
         }
 
         if let Some(y_axis) = &self.y_axis {
-            min_y = y_axis.limits().min().y;
-            max_y = y_axis.limits().max().y;
+            let limits = y_axis.limits().convert_to_u32();
+            min_y = limits.min().y;
+            max_y = limits.max().y;
         }
 
         Some(Limits::new(
@@ -68,10 +70,7 @@ impl<T: Graphable> Graph<T> {
         ))
     }
 
-    pub fn scale<U>(&self, limits: Limits<U>, convert_fn: unsafe fn(f64) -> U) -> Graph<U>
-    where
-        T: Into<f64>,
-        U: Graphable + Into<f64>,
+    pub fn scale<U: Graphable>(&self, limits: Limits<U>, convert_fn: unsafe fn(f64) -> U) -> Graph<U>
     {
         let data_limits = self.limits().expect("Cannot scale an empty graph");
         let (data_span_x, data_span_y) = data_limits.span();
@@ -105,6 +104,11 @@ impl<T: Graphable> Graph<T> {
                 series.clone_with(&scaled_data)
             })
             .collect::<Vec<_>>();
+
+        let x_axis = match self.x_axis {
+            None => None,
+            Some(line) => Some(line.convert_to_f64().convert_to(convert_fn))
+        }
 
         Graph {
             data: scaled_data,

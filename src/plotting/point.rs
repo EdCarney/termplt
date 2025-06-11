@@ -1,5 +1,11 @@
-use super::{common::Graphable, limits::Limits};
-use std::ops::{Add, Div, Mul, Sub};
+use super::{
+    common::{Convertable, Graphable},
+    limits::Limits,
+};
+use std::{
+    convert,
+    ops::{Add, Div, Mul, Sub},
+};
 
 pub trait PointCollection<T: Graphable> {
     fn limits(&self) -> Option<Limits<T>>;
@@ -40,6 +46,15 @@ impl<T: Graphable> PointCollection<T> for &[Point<T>] {
 pub struct Point<T: Graphable> {
     pub x: T,
     pub y: T,
+}
+
+impl<T: Graphable, U: Graphable> Convertable<U> for Point<T> {
+    type ConvertTo = Point<U>;
+    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+        let x = self.x.convert_to(convert_fn);
+        let y = self.y.convert_to(convert_fn);
+        Point { x, y }
+    }
 }
 
 impl<T> Point<T>
