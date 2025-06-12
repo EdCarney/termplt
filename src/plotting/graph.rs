@@ -160,18 +160,28 @@ where
 {
     type ScaleTo = Graph<f64>;
     fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
-        let old_limits = old_limits.convert_to_f64();
-        let new_limits = new_limits.convert_to_f64();
+        let old_limits_f64 = old_limits.convert_to_f64();
+        let new_limits_f64 = new_limits.convert_to_f64();
 
         let mut scaled_graph = self.convert_to_f64();
 
-        scaled_graph = scaled_graph.shift_by(*old_limits.min() * -1.);
+        scaled_graph = scaled_graph.shift_by(*old_limits_f64.min() * -1.);
         scaled_graph.data = scaled_graph
             .data
             .into_iter()
-            .map(|series| series.scale_to(&old_limits, &new_limits))
+            .map(|series| series.scale_to(&old_limits_f64, &new_limits_f64))
             .collect::<Vec<_>>();
-        scaled_graph = scaled_graph.shift_by(*new_limits.min());
+        scaled_graph = scaled_graph.shift_by(*new_limits_f64.min());
+
+        scaled_graph.x_axis = match self.x_axis {
+            Some(x_axis) => Some(x_axis.scale_to(old_limits, new_limits)),
+            None => None,
+        };
+
+        scaled_graph.y_axis = match self.y_axis {
+            Some(y_axis) => Some(y_axis.scale_to(old_limits, new_limits)),
+            None => None,
+        };
 
         scaled_graph
     }
@@ -187,6 +197,17 @@ where
             .into_iter()
             .map(|series| series.shift_by(amount))
             .collect::<Vec<_>>();
+
+        self.x_axis = match self.x_axis {
+            Some(x_axis) => Some(x_axis.shift_by(amount)),
+            None => None,
+        };
+
+        self.y_axis = match self.y_axis {
+            Some(y_axis) => Some(y_axis.shift_by(amount)),
+            None => None,
+        };
+
         self
     }
 }

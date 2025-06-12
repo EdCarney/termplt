@@ -45,7 +45,7 @@ fn main() {
                     500,
                     LineStyle::Solid {
                         color: colors::BLACK,
-                        thickness: 1,
+                        thickness: 3,
                     },
                 ),
         )
