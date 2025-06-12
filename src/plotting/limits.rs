@@ -1,5 +1,5 @@
 use super::{
-    common::{Convertable, Graphable},
+    common::{Convertable, FloatConvertable, Graphable, Scalable, Shiftable},
     point::Point,
 };
 
@@ -62,6 +62,30 @@ impl<T: Graphable> Limits<T> {
     /// Validates whether the provided point exists within the limit.
     pub fn contains(&self, point: &Point<T>) -> bool {
         (self.min.x..=self.max.x).contains(&point.x) && (self.min.y..=self.max.y).contains(&point.y)
+    }
+}
+
+impl<T, U> Scalable<T, U> for Limits<T>
+where
+    T: FloatConvertable + Graphable,
+    U: FloatConvertable + Graphable,
+{
+    type ScaleTo = Limits<f64>;
+    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
+        let min = self.min.scale_to(old_limits, new_limits);
+        let max = self.max.scale_to(old_limits, new_limits);
+        Limits { min, max }
+    }
+}
+
+impl<T> Shiftable<T> for Limits<T>
+where
+    T: FloatConvertable + Graphable,
+{
+    fn shift_by(self, amount: Point<T>) -> Self {
+        let min = self.min + amount;
+        let max = self.max + amount;
+        Limits { min, max }
     }
 }
 

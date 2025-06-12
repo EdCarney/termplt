@@ -1,6 +1,9 @@
 use super::{
     colors,
-    common::{Convertable, Drawable, Graphable, MaskPoints, UIntConvertable},
+    common::{
+        Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, Scalable, Shiftable,
+        UIntConvertable,
+    },
     limits::Limits,
     point::Point,
 };
@@ -111,27 +114,28 @@ impl<T: Graphable, U: Graphable> Convertable<U> for LinePositioning<T> {
 #[derive(Debug, Clone)]
 pub struct Line<T: Graphable> {
     style: LineStyle,
-    positioning: LinePositioning<T>,
+    limits: Limits<T>,
 }
 
 impl<T: Graphable, U: Graphable> Convertable<U> for Line<T> {
     type ConvertTo = Line<U>;
     fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
         let style = self.style().clone();
-        let positioning = self.positioning.convert_to(convert_fn);
-        Line { style, positioning }
+        let limits = self.limits.convert_to(convert_fn);
+        Line { style, limits }
     }
 }
 
 impl<T: Graphable> Line<T> {
     pub fn new(positioning: LinePositioning<T>, style: LineStyle) -> Line<T> {
-        Line { style, positioning }
+        let limits = positioning.limits();
+        Line { style, limits }
     }
 
     pub fn default(positioning: LinePositioning<T>) -> Line<T> {
         Line {
             style: LineStyle::default(),
-            positioning,
+            limits: positioning.limits(),
         }
     }
 
@@ -140,14 +144,38 @@ impl<T: Graphable> Line<T> {
     }
 
     pub fn limits(&self) -> Limits<T> {
-        self.positioning.limits()
+        self.limits.clone()
+    }
+}
+
+impl<T, U> Scalable<T, U> for Line<T>
+where
+    T: FloatConvertable + Graphable,
+    U: FloatConvertable + Graphable,
+{
+    type ScaleTo = Line<f64>;
+    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
+        let limits = self.limits.scale_to(old_limits, new_limits);
+        let style = self.style;
+        Line { limits, style }
+    }
+}
+
+impl<T> Shiftable<T> for Line<T>
+where
+    T: FloatConvertable + Graphable,
+{
+    fn shift_by(self, amount: Point<T>) -> Self {
+        let limits = self.limits.shift_by(amount);
+        let style = self.style;
+        Line { limits, style }
     }
 }
 
 impl<T: UIntConvertable + Graphable> Line<T> {
     /// Gets bounding limits for the line.
     pub fn drawable_limits(&self) -> Limits<u32> {
-        let limits = self.positioning.limits().convert_to_u32();
+        let limits = self.limits.convert_to_u32();
         let min = *limits.min() - self.style.thickness();
         let max = *limits.max() + self.style.thickness();
         Limits::new(min, max)
@@ -156,19 +184,7 @@ impl<T: UIntConvertable + Graphable> Line<T> {
     // Gets the full point set between the start and end of the line. Note that this does not
     // take into account empy space for dashed lines.
     pub fn full_drawable_points(&self) -> Vec<Point<u32>> {
-        match self.positioning {
-            LinePositioning::Vertical {
-                start: _,
-                length: _,
-            }
-            | LinePositioning::Horizontal {
-                start: _,
-                length: _,
-            } => Point::limit_range(self.drawable_limits()),
-            LinePositioning::BetweenPoints { start, end } => {
-                todo!()
-            }
-        }
+        Point::limit_range(self.limits.clone())
     }
 }
 
