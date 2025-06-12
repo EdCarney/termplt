@@ -14,7 +14,7 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Limits<T> {
     fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
         Limits {
             min: self.min().convert_to(convert_fn),
-            max: self.min().convert_to(convert_fn),
+            max: self.max().convert_to(convert_fn),
         }
     }
 }

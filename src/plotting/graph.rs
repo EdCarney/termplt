@@ -1,7 +1,7 @@
 use super::{
     common::{Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, UIntConvertable},
     limits::Limits,
-    line::{Line, LineStyle},
+    line::Line,
     point::{Point, PointCollection},
     series::Series,
 };
@@ -68,14 +68,14 @@ impl<T: Graphable> Graph<T> {
             .limits()
     }
 
-    pub fn scale(mut self, limits: Limits<T>) -> Graph<f64> {
+    pub fn scale(&self, limits: Limits<f64>) -> Graph<f64> {
         let old_limits = self
             .limits()
             .expect("Cannot scale an empty graph")
             .convert_to_f64();
         let (old_span_x, old_span_y) = old_limits.span();
 
-        let new_limits = limits.convert_to_f64();
+        let new_limits = limits;
         let (new_span_x, new_span_y) = new_limits.span();
 
         let x_factor = new_span_x / old_span_x;
@@ -93,12 +93,12 @@ impl<T: Graphable> Graph<T> {
             })
             .collect::<Vec<_>>();
 
-        let x_axis = match self.x_axis.take() {
+        let x_axis = match &self.x_axis {
             None => None,
             Some(line) => Some(line.convert_to_f64()),
         };
 
-        let y_axis = match self.y_axis.take() {
+        let y_axis = match &self.y_axis {
             None => None,
             Some(line) => Some(line.convert_to_f64()),
         };

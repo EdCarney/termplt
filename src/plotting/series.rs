@@ -1,5 +1,3 @@
-use image::Limits;
-
 use super::{
     common::{Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, UIntConvertable},
     line::{Line, LinePositioning, LineStyle},

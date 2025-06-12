@@ -2,7 +2,6 @@ use super::{
     common::{Drawable, FloatConvertable, Graphable},
     graph::Graph,
     limits::Limits,
-    marker::MarkerStyle,
     point::Point,
 };
 use crate::common::Result;
@@ -132,7 +131,6 @@ where
         self.graph
             .as_ref()
             .unwrap()
-            .convert_to_f64()
             .scale(canvas_limits)
             .get_mask()?
             .iter()
