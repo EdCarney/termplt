@@ -1,8 +1,7 @@
 use super::{
-    common::{Drawable, Graphable},
+    common::{Drawable, FloatConvertable, Graphable},
     graph::Graph,
     limits::Limits,
-    marker::MarkerStyle,
     point::Point,
 };
 use crate::common::Result;
@@ -128,11 +127,11 @@ where
     }
 
     pub fn draw(mut self) -> Result<Self> {
-        let canvas_limits = self.get_drawable_limits();
+        let canvas_limits = self.get_drawable_limits().convert_to_f64();
         self.graph
             .as_ref()
             .unwrap()
-            .scale(canvas_limits, f64::to_int_unchecked)
+            .scale(canvas_limits)
             .get_mask()?
             .iter()
             .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));

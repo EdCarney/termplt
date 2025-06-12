@@ -70,7 +70,7 @@ mod tests {
     fn encode_1_byte() {
         let text = b"M";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
-        let enc_text = str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
+        let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
         assert_eq!(enc_text.len(), 2, "1 byte should be 2 base64 values");
         assert_eq!(enc_text, "TQ");
     }
@@ -79,7 +79,7 @@ mod tests {
     fn encode_2_bytes() {
         let text = b"Ma";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
-        let enc_text = str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
+        let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
         assert_eq!(enc_text.len(), 3, "2 bytes should be 3 base64 values");
         assert_eq!(enc_text, "TWE");
     }
@@ -88,7 +88,7 @@ mod tests {
     fn encode_3_bytes() {
         let text = b"Man";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
-        let enc_text = str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
+        let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
         assert_eq!(enc_text.len(), 4, "3 bytes should be 4 base64 values");
         assert_eq!(enc_text, "TWFu");
     }
