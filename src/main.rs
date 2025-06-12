@@ -23,16 +23,16 @@ fn main() {
     let width = 300;
     let height = 300;
 
-    let points = (0..=20)
-        .map(|x| Point::new(x, x * x))
+    let points = (-50..=50)
+        .map(|x| Point::new(x, x * x * x))
         .collect::<Vec<Point<_>>>();
 
-    let bytes_1 = TerminalCanvas::new(width + 100, height + 100, colors::WHITE)
-        .with_buffer(BufferType::Uniform(15))
+    let bytes_1 = TerminalCanvas::new(width + 200, height + 200, colors::WHITE)
+        .with_buffer(BufferType::Uniform(10))
         .with_graph(
             Graph::new().with_series(Series::new(&points).with_marker_style(
                 MarkerStyle::HollowSquare {
-                    size: 5,
+                    size: 1,
                     color: colors::BLACK,
                 },
             )),
@@ -56,8 +56,8 @@ fn main() {
         .get_bytes();
 
     let format = PixelFormat::Rgb {
-        width: width + 100,
-        height: height + 100,
+        width: width + 200,
+        height: height + 200,
     };
     let transmission = Transmission::Direct(bytes_1);
     Image::new(format, transmission).unwrap().display().unwrap();
