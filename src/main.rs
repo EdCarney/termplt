@@ -1,6 +1,4 @@
 use std::f32;
-
-use rgb::RGB8;
 use termplt::{
     kitty_graphics::{
         ctrl_seq::{PixelFormat, Transmission},
@@ -20,21 +18,6 @@ use termplt::{
         responses::TermCommand,
     },
 };
-
-const RED: RGB8 = RGB8 { r: 255, g: 0, b: 0 };
-const GREEN: RGB8 = RGB8 { r: 0, g: 255, b: 0 };
-const BLUE: RGB8 = RGB8 { r: 0, g: 0, b: 255 };
-const YELLOW: RGB8 = RGB8 {
-    r: 255,
-    g: 255,
-    b: 0,
-};
-const WHITE: RGB8 = RGB8 {
-    r: 255,
-    g: 255,
-    b: 255,
-};
-const BLACK: RGB8 = RGB8 { r: 0, g: 0, b: 0 };
 
 fn main() {
     let width = 300;
@@ -89,11 +72,11 @@ fn main() {
 fn test_new_terminal_cmds() {
     csi_cmds::clear_screen().unwrap();
 
-    rgb_imgs::print_square(50, RED).unwrap();
+    rgb_imgs::print_square(50, colors::RED).unwrap();
     println!();
 
     let position = PositioningType::ExactPixel { x: 10, y: 10 };
-    rgb_imgs::print_square_at(50, GREEN, position).unwrap();
+    rgb_imgs::print_square_at(50, colors::GREEN, position).unwrap();
     println!();
 
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
@@ -102,7 +85,7 @@ fn test_new_terminal_cmds() {
     println!();
 
     let position = PositioningType::Centered;
-    rgb_imgs::print_square_at(50, YELLOW, position).unwrap();
+    rgb_imgs::print_square_at(50, colors::YELLOW, position).unwrap();
     println!();
 
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
@@ -121,11 +104,11 @@ fn test_new_terminal_cmds() {
 
 fn test_cursor_positioning() {
     let res_before_1 = CsiCommand::new("6n", "R").execute_with_response().unwrap();
-    rgba_imgs::print_square(100, GREEN.with_alpha(25)).unwrap();
+    rgba_imgs::print_square(100, colors::GREEN.with_alpha(25)).unwrap();
     let res_after_1 = CsiCommand::new("6n", "R").execute_with_response().unwrap();
 
     let res_before_2 = CsiCommand::new("6n", "R").execute_with_response().unwrap();
-    rgba_imgs::print_square(100, GREEN.with_alpha(25)).unwrap();
+    rgba_imgs::print_square(100, colors::GREEN.with_alpha(25)).unwrap();
     let res_after_2 = CsiCommand::new("6n", "R").execute_with_response().unwrap();
     println!();
     println!("Before: {res_before_1}, After: {res_after_1}");
@@ -135,14 +118,14 @@ fn test_cursor_positioning() {
 fn test_printin() {
     let img_path = "/home/edcarney/wallpapers/pixel-night-city.png";
 
-    rgba_imgs::print_square(50, GREEN.with_alpha(25)).unwrap();
-    rgba_imgs::print_square(50, GREEN.with_alpha(50)).unwrap();
-    rgba_imgs::print_square(50, GREEN.with_alpha(100)).unwrap();
-    rgba_imgs::print_square(50, GREEN.with_alpha(200)).unwrap();
-    rgba_imgs::print_square(50, GREEN.with_alpha(u8::MAX)).unwrap();
+    rgba_imgs::print_square(50, colors::GREEN.with_alpha(25)).unwrap();
+    rgba_imgs::print_square(50, colors::GREEN.with_alpha(50)).unwrap();
+    rgba_imgs::print_square(50, colors::GREEN.with_alpha(100)).unwrap();
+    rgba_imgs::print_square(50, colors::GREEN.with_alpha(200)).unwrap();
+    rgba_imgs::print_square(50, colors::GREEN.with_alpha(u8::MAX)).unwrap();
     println!();
 
-    rgb_imgs::print_square(200, WHITE).unwrap();
+    rgb_imgs::print_square(200, colors::WHITE).unwrap();
     println!();
 
     png_imgs::print_bounded_img(img_path, 100, 25).unwrap();
