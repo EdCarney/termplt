@@ -87,5 +87,12 @@ where
     U: FloatConvertable + Graphable,
 {
     type ScaleTo;
-    fn scale_to(&self, old_limits: Limits<T>, new_limits: Limits<U>) -> Self::ScaleTo;
+    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo;
+}
+
+pub trait Shiftable<T>
+where
+    T: FloatConvertable + Graphable,
+{
+    fn shift_by(self, amount: Point<T>) -> Self;
 }

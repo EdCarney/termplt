@@ -1,5 +1,9 @@
 use super::{
-    common::{Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, UIntConvertable},
+    common::{
+        Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, Scalable, Shiftable,
+        UIntConvertable,
+    },
+    limits::Limits,
     line::{Line, LinePositioning, LineStyle},
     marker::{Marker, MarkerStyle},
     point::{Point, PointCollection},
@@ -66,30 +70,6 @@ impl<T: Graphable> Series<T> {
         self.line_style = Some(line_style);
         self
     }
-
-    pub fn shift(mut self, point: Point<T>) -> Series<T> {
-        self.data = self.data.iter().map(|&p| p + point).collect::<Vec<_>>();
-        self
-    }
-
-    pub fn scale(mut self, x_factor: f64, y_factor: f64) -> Series<f64> {
-        let scaled_data = self
-            .convert_to_f64()
-            .data()
-            .iter()
-            .map(|&p| {
-                let x = p.x * x_factor;
-                let y = p.y * y_factor;
-                Point { x, y }
-            })
-            .collect::<Vec<_>>();
-
-        Series {
-            data: scaled_data,
-            line_style: self.line_style.take(),
-            marker_style: self.marker_style,
-        }
-    }
 }
 
 impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
@@ -132,6 +112,37 @@ impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
     }
 }
 
+impl<T, U> Scalable<T, U> for Series<T>
+where
+    T: FloatConvertable + Graphable,
+    U: FloatConvertable + Graphable,
+{
+    type ScaleTo = Series<f64>;
+    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
+        let scaled_data = self
+            .data
+            .iter()
+            .map(|p| p.scale_to(old_limits, new_limits))
+            .collect::<Vec<_>>();
+
+        Series {
+            data: scaled_data,
+            line_style: self.line_style,
+            marker_style: self.marker_style,
+        }
+    }
+}
+
+impl<T> Shiftable<T> for Series<T>
+where
+    T: FloatConvertable + Graphable,
+{
+    fn shift_by(mut self, amount: Point<T>) -> Self {
+        self.data = self.data.iter().map(|&p| p + amount).collect::<Vec<_>>();
+        self
+    }
+}
+
 impl<T: Graphable> Add<T> for Series<T> {
     type Output = Self;
 
@@ -164,6 +175,24 @@ impl<T: Graphable> Div<T> for Series<T> {
 
     fn div(self, rhs: T) -> Self::Output {
         let data: Vec<Point<T>> = self.data.into_iter().map(|p| p / rhs).collect();
+        Series::new(&data)
+    }
+}
+
+impl<T: Graphable> Add<Point<T>> for Series<T> {
+    type Output = Self;
+
+    fn add(self, rhs: Point<T>) -> Self::Output {
+        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p + rhs).collect();
+        Series::new(&data)
+    }
+}
+
+impl<T: Graphable> Sub<Point<T>> for Series<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: Point<T>) -> Self::Output {
+        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p - rhs).collect();
         Series::new(&data)
     }
 }

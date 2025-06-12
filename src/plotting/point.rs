@@ -1,5 +1,5 @@
 use super::{
-    common::{Convertable, Graphable, UIntConvertable},
+    common::{Convertable, FloatConvertable, Graphable, Scalable, Shiftable, UIntConvertable},
     limits::Limits,
 };
 use std::ops::{Add, Div, Mul, Sub};
@@ -70,6 +70,41 @@ where
     /// Generates the set of points between the limits min/max (inclusive).
     pub fn limit_range(limits: Limits<T>) -> Vec<Point<u32>> {
         Point::<T>::range(limits.min(), limits.max())
+    }
+}
+
+impl<T, U> Scalable<T, U> for Point<T>
+where
+    T: FloatConvertable + Graphable,
+    U: FloatConvertable + Graphable,
+{
+    type ScaleTo = Point<f64>;
+    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
+        let old_limits = old_limits.convert_to_f64();
+        let new_limits = new_limits.convert_to_f64();
+
+        let (old_span_x, old_span_y) = old_limits.span();
+        let (new_span_x, new_span_y) = new_limits.span();
+
+        let x_factor = new_span_x / old_span_x;
+        let y_factor = new_span_y / old_span_y;
+
+        let x: f64 = self.x.into();
+        let y: f64 = self.y.into();
+
+        Point {
+            x: x * x_factor,
+            y: y * y_factor,
+        }
+    }
+}
+
+impl<T> Shiftable<T> for Point<T>
+where
+    T: FloatConvertable + Graphable,
+{
+    fn shift_by(self, amount: Point<T>) -> Self {
+        self + amount
     }
 }
 

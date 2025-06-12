@@ -1,6 +1,7 @@
 use super::{
     common::{
-        Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, Scalable, UIntConvertable,
+        Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, Scalable, Shiftable,
+        UIntConvertable,
     },
     limits::Limits,
     line::{Line, LinePositioning, LineStyle},
@@ -86,9 +87,9 @@ impl<T: Graphable> Graph<T> {
             .limits()
     }
 
-    pub fn scale(&self, new_limits: Limits<f64>) -> Graph<f64> {
+    pub fn scale(self, new_limits: Limits<f64>) -> Graph<f64> {
         let old_limits = self.limits().expect("Cannot scale an empty graph");
-        self.scale_to(old_limits, new_limits)
+        self.scale_to(&old_limits, &new_limits)
     }
 }
 
@@ -158,43 +159,35 @@ where
     U: FloatConvertable + Graphable,
 {
     type ScaleTo = Graph<f64>;
-    fn scale_to(&self, old_limits: Limits<T>, new_limits: Limits<U>) -> Self::ScaleTo {
+    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
         let old_limits = old_limits.convert_to_f64();
         let new_limits = new_limits.convert_to_f64();
 
-        let (old_span_x, old_span_y) = old_limits.span();
-        let (new_span_x, new_span_y) = new_limits.span();
+        let mut scaled_graph = self.convert_to_f64();
 
-        let x_factor = new_span_x / old_span_x;
-        let y_factor = new_span_y / old_span_y;
-
-        let data = self
+        scaled_graph = scaled_graph.shift_by(*old_limits.min() * -1.);
+        scaled_graph.data = scaled_graph
             .data
-            .iter()
-            .map(|series| {
-                series
-                    .convert_to_f64()
-                    .shift(*old_limits.min() * -1.)
-                    .scale(x_factor, y_factor)
-                    .shift(*new_limits.min())
-            })
+            .into_iter()
+            .map(|series| series.scale_to(&old_limits, &new_limits))
             .collect::<Vec<_>>();
+        scaled_graph = scaled_graph.shift_by(*new_limits.min());
 
-        let x_axis = match &self.x_axis {
-            None => None,
-            Some(line) => Some(line.convert_to_f64()),
-        };
+        scaled_graph
+    }
+}
 
-        let y_axis = match &self.y_axis {
-            None => None,
-            Some(line) => Some(line.convert_to_f64()),
-        };
-
-        Graph {
-            data,
-            x_axis,
-            y_axis,
-        }
+impl<T> Shiftable<T> for Graph<T>
+where
+    T: FloatConvertable + Graphable,
+{
+    fn shift_by(mut self, amount: Point<T>) -> Self {
+        self.data = self
+            .data
+            .into_iter()
+            .map(|series| series.shift_by(amount))
+            .collect::<Vec<_>>();
+        self
     }
 }
 

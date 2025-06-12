@@ -126,10 +126,11 @@ where
         self.canvas.get_bytes()
     }
 
+    // Consumes the graph and draws it on the canvas.
     pub fn draw(mut self) -> Result<Self> {
         let canvas_limits = self.get_drawable_limits().convert_to_f64();
         self.graph
-            .as_ref()
+            .take()
             .unwrap()
             .scale(canvas_limits)
             .get_mask()?
