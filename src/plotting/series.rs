@@ -1,7 +1,7 @@
 use image::Limits;
 
 use super::{
-    common::{Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints},
+    common::{Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, UIntConvertable},
     line::{Line, LinePositioning, LineStyle},
     marker::{Marker, MarkerStyle},
     point::{Point, PointCollection},
@@ -94,7 +94,7 @@ impl<T: Graphable> Series<T> {
     }
 }
 
-impl<T: IntConvertable + Graphable> Drawable for Series<T> {
+impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
     fn bounding_width(&self) -> u32 {
         self.data().limits().unwrap().convert_to_u32().span().0
     }

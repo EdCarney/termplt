@@ -63,11 +63,11 @@ impl<T: Graphable, U: Graphable> Convertable<U> for T {
     }
 }
 
-pub trait IntConvertable: Convertable<u32> {
+pub trait UIntConvertable: Convertable<u32> {
     fn convert_to_u32(&self) -> Self::ConvertTo;
 }
 
-impl<T: Convertable<u32>> IntConvertable for T {
+impl<T: Convertable<u32>> UIntConvertable for T {
     fn convert_to_u32(&self) -> Self::ConvertTo {
         self.convert_to(f64::to_int_unchecked)
     }

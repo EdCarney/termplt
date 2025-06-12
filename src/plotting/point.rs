@@ -1,5 +1,5 @@
 use super::{
-    common::{Convertable, Graphable, IntConvertable},
+    common::{Convertable, Graphable, UIntConvertable},
     limits::Limits,
 };
 use std::ops::{Add, Div, Mul, Sub};
@@ -56,7 +56,7 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Point<T> {
 
 impl<T> Point<T>
 where
-    T: Graphable + IntConvertable,
+    T: Graphable + UIntConvertable,
 {
     /// Generates the set of points between the start and end (inclusive).
     pub fn range(from: &Point<T>, to: &Point<T>) -> Vec<Point<u32>> {

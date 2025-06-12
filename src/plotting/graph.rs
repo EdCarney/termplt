@@ -1,5 +1,5 @@
 use super::{
-    common::{Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints},
+    common::{Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, UIntConvertable},
     limits::Limits,
     line::{Line, LineStyle},
     point::{Point, PointCollection},
@@ -60,54 +60,26 @@ impl<T: Graphable> Graph<T> {
     }
 
     pub fn limits(&self) -> Option<Limits<T>> {
-        let data_limits = self
-            .data
+        self.data
             .iter()
             .flat_map(|series| series.data().to_vec())
-            .map(|p| {
-                let x: f64 = p.x.into();
-                let y: f64 = p.y.into();
-                Point { x, y }
-            })
             .collect::<Vec<Point<_>>>()
             .as_slice()
-            .limits()?;
-
-        let mut min_x: u32 = unsafe { data_limits.min().x.to_int_unchecked() };
-        let mut min_y: u32 = unsafe { data_limits.min().y.to_int_unchecked() };
-        let mut max_x: u32 = unsafe { data_limits.max().x.to_int_unchecked() };
-        let mut max_y: u32 = unsafe { data_limits.max().y.to_int_unchecked() };
-
-        if let Some(x_axis) = &self.x_axis {
-            let limits = x_axis.limits().convert_to_u32();
-            min_x = limits.min().x;
-            max_x = limits.max().x;
-        }
-
-        if let Some(y_axis) = &self.y_axis {
-            let limits = y_axis.limits().convert_to_u32();
-            min_y = limits.min().y;
-            max_y = limits.max().y;
-        }
-
-        Some(Limits::new(
-            Point::new(min_x, min_y),
-            Point::new(max_x, max_y),
-        ))
+            .limits()
     }
 
-    pub fn scale(self, limits: Limits<T>) -> Graph<f64> {
-        let data_limits = self
+    pub fn scale(mut self, limits: Limits<T>) -> Graph<f64> {
+        let old_limits = self
             .limits()
             .expect("Cannot scale an empty graph")
             .convert_to_f64();
-        let (data_span_x, data_span_y) = data_limits.span();
+        let (old_span_x, old_span_y) = old_limits.span();
 
-        let canvas_limits = limits.convert_to_f64();
-        let (canvas_span_x, canvas_span_y) = canvas_limits.span();
+        let new_limits = limits.convert_to_f64();
+        let (new_span_x, new_span_y) = new_limits.span();
 
-        let x_factor = canvas_span_x / data_span_x;
-        let y_factor = canvas_span_y / data_span_y;
+        let x_factor = new_span_x / old_span_x;
+        let y_factor = new_span_y / old_span_y;
 
         let data = self
             .data
@@ -115,18 +87,18 @@ impl<T: Graphable> Graph<T> {
             .map(|series| {
                 series
                     .convert_to_f64()
-                    .shift(*data_limits.min() * -1.)
+                    .shift(*old_limits.min() * -1.)
                     .scale(x_factor, y_factor)
-                    .shift(*canvas_limits.min())
+                    .shift(*new_limits.min())
             })
             .collect::<Vec<_>>();
 
-        let x_axis = match self.x_axis {
+        let x_axis = match self.x_axis.take() {
             None => None,
             Some(line) => Some(line.convert_to_f64()),
         };
 
-        let y_axis = match self.y_axis {
+        let y_axis = match self.y_axis.take() {
             None => None,
             Some(line) => Some(line.convert_to_f64()),
         };
@@ -139,13 +111,48 @@ impl<T: Graphable> Graph<T> {
     }
 }
 
-impl<T: Graphable + IntConvertable> Drawable for Graph<T> {
+impl<T: UIntConvertable + Graphable> Graph<T> {
+    pub fn drawable_limits(&self) -> Option<Limits<u32>> {
+        let data_limits = self
+            .data
+            .iter()
+            .flat_map(|series| series.data().to_vec())
+            .collect::<Vec<Point<_>>>()
+            .as_slice()
+            .limits()?
+            .convert_to_u32();
+
+        let mut min_x = data_limits.min().x;
+        let mut min_y = data_limits.min().y;
+        let mut max_x = data_limits.max().x;
+        let mut max_y = data_limits.max().y;
+
+        if let Some(x_axis) = &self.x_axis {
+            let limits = x_axis.drawable_limits();
+            min_x = limits.min().x;
+            max_x = limits.max().x;
+        }
+
+        if let Some(y_axis) = &self.y_axis {
+            let limits = y_axis.drawable_limits().convert_to_u32();
+            min_y = limits.min().y;
+            max_y = limits.max().y;
+        }
+
+        Some(Limits::new(
+            Point::new(min_x, min_y),
+            Point::new(max_x, max_y),
+        ))
+    }
+}
+
+impl<T: UIntConvertable + Graphable> Drawable for Graph<T> {
     fn bounding_width(&self) -> u32 {
-        self.limits().unwrap().span().0
+        self.drawable_limits().unwrap().span().0
     }
 
     fn bounding_height(&self) -> u32 {
-        self.limits().unwrap().span().1
+        self.drawable_limits().unwrap().span().1
     }
 
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
@@ -233,7 +240,7 @@ mod tests {
         let limits = g.limits();
         assert!(limits.is_some());
         assert_eq!(
-            *limits.unwrap(),
+            limits.unwrap(),
             Limits::new(Point::new(-20, -50), Point::new(100, 50))
         );
     }

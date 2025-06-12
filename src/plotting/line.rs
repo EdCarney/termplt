@@ -1,6 +1,6 @@
 use super::{
     colors,
-    common::{Convertable, Drawable, Graphable, IntConvertable, MaskPoints},
+    common::{Convertable, Drawable, Graphable, MaskPoints, UIntConvertable},
     limits::Limits,
     point::Point,
 };
@@ -118,7 +118,7 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Line<T> {
     type ConvertTo = Line<U>;
     fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
         let style = self.style().clone();
-        let positioning = self.positioning().convert_to(convert_fn);
+        let positioning = self.positioning.convert_to(convert_fn);
         Line { style, positioning }
     }
 }
@@ -139,14 +139,14 @@ impl<T: Graphable> Line<T> {
         &self.style
     }
 
-    pub fn positioning(&self) -> &LinePositioning<T> {
-        &self.positioning
+    pub fn limits(&self) -> Limits<T> {
+        self.positioning.limits()
     }
 }
 
-impl<T: IntConvertable + Graphable> Line<T> {
+impl<T: UIntConvertable + Graphable> Line<T> {
     /// Gets bounding limits for the line.
-    pub fn limits(&self) -> Limits<u32> {
+    pub fn drawable_limits(&self) -> Limits<u32> {
         let limits = self.positioning.limits().convert_to_u32();
         let min = *limits.min() - self.style.thickness();
         let max = *limits.max() + self.style.thickness();
@@ -155,7 +155,7 @@ impl<T: IntConvertable + Graphable> Line<T> {
 
     // Gets the full point set between the start and end of the line. Note that this does not
     // take into account empy space for dashed lines.
-    pub fn full_points(&self) -> Vec<Point<u32>> {
+    pub fn full_drawable_points(&self) -> Vec<Point<u32>> {
         match self.positioning {
             LinePositioning::Vertical {
                 start: _,
@@ -164,7 +164,7 @@ impl<T: IntConvertable + Graphable> Line<T> {
             | LinePositioning::Horizontal {
                 start: _,
                 length: _,
-            } => Point::limit_range(self.limits()),
+            } => Point::limit_range(self.drawable_limits()),
             LinePositioning::BetweenPoints { start, end } => {
                 todo!()
             }
@@ -174,12 +174,12 @@ impl<T: IntConvertable + Graphable> Line<T> {
 
 impl Drawable for Line<u32> {
     fn bounding_height(&self) -> u32 {
-        let limits = self.limits();
+        let limits = self.drawable_limits();
         (*limits.max() - *limits.min()).convert_to_u32().y
     }
 
     fn bounding_width(&self) -> u32 {
-        let limits = self.limits();
+        let limits = self.drawable_limits();
         (*limits.max() - *limits.min()).convert_to_u32().x
     }
 
@@ -190,7 +190,7 @@ impl Drawable for Line<u32> {
                 thickness: _,
             } => {
                 vec![MaskPoints {
-                    points: self.full_points(),
+                    points: self.full_drawable_points(),
                     color: color.clone(),
                 }]
             }
