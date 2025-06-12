@@ -1,13 +1,10 @@
+use super::{limits::Limits, point::Point};
+use crate::common::Result;
+use rgb::RGB8;
 use std::{
     fmt::Debug,
     ops::{Add, Div, Mul, Sub},
 };
-
-use rgb::RGB8;
-
-use crate::common::Result;
-
-use super::point::Point;
 
 pub trait Graphable:
     PartialOrd
@@ -39,6 +36,7 @@ impl<T> Graphable for T where
 {
 }
 
+#[derive(Debug)]
 pub struct MaskPoints {
     pub points: Vec<Point<u32>>,
     pub color: RGB8,
@@ -81,4 +79,13 @@ impl<T: Convertable<f64>> FloatConvertable for T {
     fn convert_to_f64(&self) -> Self::ConvertTo {
         self.convert_to(f64::from)
     }
+}
+
+pub trait Scalable<T, U>
+where
+    T: FloatConvertable + Graphable,
+    U: FloatConvertable + Graphable,
+{
+    type ScaleTo;
+    fn scale_to(&self, old_limits: Limits<T>, new_limits: Limits<U>) -> Self::ScaleTo;
 }

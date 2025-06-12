@@ -172,7 +172,7 @@ impl<T: UIntConvertable + Graphable> Line<T> {
     }
 }
 
-impl Drawable for Line<u32> {
+impl<T: UIntConvertable + Graphable> Drawable for Line<T> {
     fn bounding_height(&self) -> u32 {
         let limits = self.drawable_limits();
         (*limits.max() - *limits.min()).convert_to_u32().y
@@ -199,6 +199,7 @@ impl Drawable for Line<u32> {
                 thickness: _,
             } => todo!(),
         };
+        println!("Line mask points: {mask_points:?}");
         Ok(mask_points)
     }
 }

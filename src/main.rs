@@ -8,6 +8,7 @@ use termplt::{
         canvas::{BufferType, TerminalCanvas},
         colors,
         graph::Graph,
+        line::LineStyle,
         marker::MarkerStyle,
         point::Point,
         series::Series,
@@ -30,12 +31,23 @@ fn main() {
     let bytes_1 = TerminalCanvas::new(width + 200, height + 200, colors::WHITE)
         .with_buffer(BufferType::Uniform(10))
         .with_graph(
-            Graph::new().with_series(Series::new(&points).with_marker_style(
-                MarkerStyle::HollowSquare {
-                    size: 1,
-                    color: colors::BLACK,
-                },
-            )),
+            Graph::new()
+                .with_series(
+                    Series::new(&points).with_marker_style(MarkerStyle::HollowSquare {
+                        size: 1,
+                        color: colors::BLACK,
+                    }),
+                )
+                .with_axes(
+                    -50,
+                    50,
+                    0,
+                    500,
+                    LineStyle::Solid {
+                        color: colors::BLACK,
+                        thickness: 1,
+                    },
+                ),
         )
         .draw()
         .unwrap()

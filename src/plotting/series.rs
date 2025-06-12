@@ -94,11 +94,11 @@ impl<T: Graphable> Series<T> {
 
 impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
     fn bounding_width(&self) -> u32 {
-        self.data().limits().unwrap().convert_to_u32().span().0
+        self.data().limits().unwrap().convert_to_u32().span().0 + self.marker_style.size() * 2
     }
 
     fn bounding_height(&self) -> u32 {
-        self.data().limits().unwrap().convert_to_u32().span().1
+        self.data().limits().unwrap().convert_to_u32().span().1 + self.marker_style.size() * 2
     }
 
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {

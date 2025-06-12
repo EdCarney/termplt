@@ -1,7 +1,9 @@
 use super::{
-    common::{Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, UIntConvertable},
+    common::{
+        Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, Scalable, UIntConvertable,
+    },
     limits::Limits,
-    line::Line,
+    line::{Line, LinePositioning, LineStyle},
     point::{Point, PointCollection},
     series::Series,
 };
@@ -55,6 +57,22 @@ impl<T: Graphable> Graph<T> {
         self
     }
 
+    pub fn with_axes(mut self, x_min: T, x_max: T, y_min: T, y_max: T, style: LineStyle) -> Self {
+        self.x_axis = Some(Line::new(
+            LinePositioning::Horizontal {
+                start: Point::new(y_min, x_min),
+                length: x_max - x_min,
+            },
+            style,
+        ));
+        self
+    }
+
+    pub fn with_y_axis(mut self, y_axis: Line<T>) -> Self {
+        self.y_axis = Some(y_axis);
+        self
+    }
+
     pub fn data(&self) -> &[Series<T>] {
         &self.data
     }
@@ -68,46 +86,9 @@ impl<T: Graphable> Graph<T> {
             .limits()
     }
 
-    pub fn scale(&self, limits: Limits<f64>) -> Graph<f64> {
-        let old_limits = self
-            .limits()
-            .expect("Cannot scale an empty graph")
-            .convert_to_f64();
-        let (old_span_x, old_span_y) = old_limits.span();
-
-        let new_limits = limits;
-        let (new_span_x, new_span_y) = new_limits.span();
-
-        let x_factor = new_span_x / old_span_x;
-        let y_factor = new_span_y / old_span_y;
-
-        let data = self
-            .data
-            .iter()
-            .map(|series| {
-                series
-                    .convert_to_f64()
-                    .shift(*old_limits.min() * -1.)
-                    .scale(x_factor, y_factor)
-                    .shift(*new_limits.min())
-            })
-            .collect::<Vec<_>>();
-
-        let x_axis = match &self.x_axis {
-            None => None,
-            Some(line) => Some(line.convert_to_f64()),
-        };
-
-        let y_axis = match &self.y_axis {
-            None => None,
-            Some(line) => Some(line.convert_to_f64()),
-        };
-
-        Graph {
-            data,
-            x_axis,
-            y_axis,
-        }
+    pub fn scale(&self, new_limits: Limits<f64>) -> Graph<f64> {
+        let old_limits = self.limits().expect("Cannot scale an empty graph");
+        self.scale_to(old_limits, new_limits)
     }
 }
 
@@ -163,8 +144,57 @@ impl<T: UIntConvertable + Graphable> Drawable for Graph<T> {
             .collect::<Vec<_>>();
 
         // add axes if they are defined
+        if let Some(x_axis) = &self.x_axis {
+            mask_points.extend(x_axis.get_mask()?);
+        }
 
         Ok(mask_points)
+    }
+}
+
+impl<T, U> Scalable<T, U> for Graph<T>
+where
+    T: FloatConvertable + Graphable,
+    U: FloatConvertable + Graphable,
+{
+    type ScaleTo = Graph<f64>;
+    fn scale_to(&self, old_limits: Limits<T>, new_limits: Limits<U>) -> Self::ScaleTo {
+        let old_limits = old_limits.convert_to_f64();
+        let new_limits = new_limits.convert_to_f64();
+
+        let (old_span_x, old_span_y) = old_limits.span();
+        let (new_span_x, new_span_y) = new_limits.span();
+
+        let x_factor = new_span_x / old_span_x;
+        let y_factor = new_span_y / old_span_y;
+
+        let data = self
+            .data
+            .iter()
+            .map(|series| {
+                series
+                    .convert_to_f64()
+                    .shift(*old_limits.min() * -1.)
+                    .scale(x_factor, y_factor)
+                    .shift(*new_limits.min())
+            })
+            .collect::<Vec<_>>();
+
+        let x_axis = match &self.x_axis {
+            None => None,
+            Some(line) => Some(line.convert_to_f64()),
+        };
+
+        let y_axis = match &self.y_axis {
+            None => None,
+            Some(line) => Some(line.convert_to_f64()),
+        };
+
+        Graph {
+            data,
+            x_axis,
+            y_axis,
+        }
     }
 }
 
