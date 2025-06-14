@@ -270,14 +270,6 @@ impl<T: UIntConvertable + Graphable> Graph<T> {
 }
 
 impl<T: UIntConvertable + Graphable> Drawable for Graph<T> {
-    fn bounding_width(&self) -> u32 {
-        self.drawable_limits().unwrap().span().0
-    }
-
-    fn bounding_height(&self) -> u32 {
-        self.drawable_limits().unwrap().span().1
-    }
-
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mut mask_points = self
             .data()

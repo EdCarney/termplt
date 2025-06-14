@@ -173,7 +173,7 @@ where
 }
 
 impl<T: UIntConvertable + Graphable> Line<T> {
-    /// Gets bounding limits for the line.
+    /// Gets drawable limits for the line.
     pub fn drawable_limits(&self) -> Limits<u32> {
         let limits = self.limits.convert_to_u32();
         let min = *limits.min() - self.style.thickness();
@@ -189,16 +189,6 @@ impl<T: UIntConvertable + Graphable> Line<T> {
 }
 
 impl<T: UIntConvertable + Graphable> Drawable for Line<T> {
-    fn bounding_height(&self) -> u32 {
-        let limits = self.drawable_limits();
-        (*limits.max() - *limits.min()).convert_to_u32().y
-    }
-
-    fn bounding_width(&self) -> u32 {
-        let limits = self.drawable_limits();
-        (*limits.max() - *limits.min()).convert_to_u32().x
-    }
-
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mask_points = match self.style {
             LineStyle::Solid {

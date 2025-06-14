@@ -40,18 +40,9 @@ fn main() {
                 )
                 .with_axes(Axes::XY(LineStyle::Solid {
                     color: colors::BLACK,
-                    thickness: 3,
-                })),
-            // .with_limits(
-            //     -50,
-            //     50,
-            //     -125_000,
-            //     500,
-            //     LineStyle::Solid {
-            //         color: colors::BLACK,
-            //         thickness: 3,
-            //     },
-            // ),
+                    thickness: 1, // TODO: implement thickness
+                }))
+                .with_x_limits(-50, 50),
         )
         .draw()
         .unwrap()

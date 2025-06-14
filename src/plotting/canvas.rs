@@ -157,6 +157,8 @@ where
             max = max - largest_marker_sz;
         }
 
+        // TODO: also update to take into account axis thickness
+
         Limits::new(min, max)
     }
 }

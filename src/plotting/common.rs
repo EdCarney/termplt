@@ -43,8 +43,6 @@ pub struct MaskPoints {
 }
 
 pub trait Drawable {
-    fn bounding_width(&self) -> u32;
-    fn bounding_height(&self) -> u32;
     fn get_mask(&self) -> Result<Vec<MaskPoints>>;
 }
 

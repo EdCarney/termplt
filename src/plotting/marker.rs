@@ -55,14 +55,6 @@ impl Marker {
 }
 
 impl Drawable for Marker {
-    fn bounding_width(&self) -> u32 {
-        self.style.size()
-    }
-
-    fn bounding_height(&self) -> u32 {
-        self.style.size()
-    }
-
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mask_points = match self.style {
             MarkerStyle::FilledSquare { color, size: _ } => {
