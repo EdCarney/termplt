@@ -183,12 +183,40 @@ impl<T: Graphable> Graph<T> {
     }
 
     pub fn limits(&self) -> Option<Limits<T>> {
-        self.data
+        let mut limits = self
+            .data
             .iter()
             .flat_map(|series| series.data().to_vec())
             .collect::<Vec<Point<_>>>()
             .as_slice()
-            .limits()
+            .limits()?;
+
+        // explicit limits override data limits
+        if let Some(graph_limits) = &self.graph_limits {
+            match graph_limits {
+                GraphLimits::XOnly {
+                    min: x_min,
+                    max: x_max,
+                } => {
+                    let min = Point::new(*x_min, limits.min().y);
+                    let max = Point::new(*x_max, limits.max().y);
+                    limits = Limits::new(min, max);
+                }
+                GraphLimits::YOnly {
+                    min: y_min,
+                    max: y_max,
+                } => {
+                    let min = Point::new(limits.min().x, *y_min);
+                    let max = Point::new(limits.max().x, *y_max);
+                    limits = Limits::new(min, max);
+                }
+                GraphLimits::XY { min, max } => {
+                    limits = Limits::new(*min, *max);
+                }
+            }
+        }
+
+        Some(limits)
     }
 
     pub fn scale(self, new_limits: Limits<f64>) -> Graph<f64> {
@@ -258,7 +286,10 @@ impl<T: UIntConvertable + Graphable> Drawable for Graph<T> {
             .collect::<Vec<_>>();
 
         // add axes if they are defined
-        if let Some(x_axis) = &self.x_axis {
+        if let Some(axes) = &self.axes {
+            match axes {
+                Axes::XOnly(line_style) => {}
+            }
             mask_points.extend(x_axis.get_mask()?);
         }
 
@@ -289,25 +320,12 @@ where
             .collect::<Vec<_>>();
         scaled_graph = scaled_graph.shift_by(new_limit_shift);
 
-        scaled_graph.x_axis = match self.x_axis {
-            Some(ax) => {
-                let mut ax = ax.convert_to_f64().shift_by(old_limit_shift);
-                ax = ax.scale_to(&old_limits_f64, &new_limits_f64);
-                ax = ax.shift_by(new_limit_shift);
-                Some(ax)
-            }
+        scaled_graph.graph_limits = match self.graph_limits {
+            Some(graph_limits) => Some(graph_limits.scale_to(old_limits, new_limits)),
             None => None,
         };
 
-        scaled_graph.y_axis = match self.y_axis {
-            Some(ax) => {
-                let mut ax = ax.convert_to_f64().shift_by(old_limit_shift);
-                ax = ax.scale_to(&old_limits_f64, &new_limits_f64);
-                ax = ax.shift_by(new_limit_shift);
-                Some(ax)
-            }
-            None => None,
-        };
+        scaled_graph.axes = self.axes.clone();
 
         scaled_graph
     }
@@ -325,12 +343,7 @@ where
             .collect::<Vec<_>>();
 
         self.graph_limits = match self.graph_limits {
-            Some(graph_limits) => Some(x_axis.shift_by(amount)),
-            None => None,
-        };
-
-        self.y_axis = match self.y_axis {
-            Some(y_axis) => Some(y_axis.shift_by(amount)),
+            Some(graph_limits) => Some(graph_limits.shift_by(amount)),
             None => None,
         };
 

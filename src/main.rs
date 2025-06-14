@@ -38,7 +38,7 @@ fn main() {
                         color: colors::BLACK,
                     }),
                 )
-                .with_axes(
+                .with_limits(
                     -50,
                     50,
                     -125_000,
