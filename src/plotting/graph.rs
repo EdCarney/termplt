@@ -61,7 +61,7 @@ impl<T: Graphable> Graph<T> {
     pub fn with_axes(mut self, x_min: T, x_max: T, y_min: T, y_max: T, style: LineStyle) -> Self {
         self.x_axis = Some(Line::new(
             LinePositioning::Horizontal {
-                start: Point::new(y_min, x_min),
+                start: Point::new(x_min, y_min),
                 length: x_max - x_min,
             },
             style,
@@ -116,7 +116,7 @@ impl<T: UIntConvertable + Graphable> Graph<T> {
         }
 
         if let Some(y_axis) = &self.y_axis {
-            let limits = y_axis.drawable_limits().convert_to_u32();
+            let limits = y_axis.drawable_limits();
             min_y = limits.min().y;
             max_y = limits.max().y;
         }
@@ -163,23 +163,36 @@ where
         let old_limits_f64 = old_limits.convert_to_f64();
         let new_limits_f64 = new_limits.convert_to_f64();
 
+        let old_limit_shift = *old_limits_f64.min() * -1.;
+        let new_limit_shift = *new_limits_f64.min();
+
         let mut scaled_graph = self.convert_to_f64();
 
-        scaled_graph = scaled_graph.shift_by(*old_limits_f64.min() * -1.);
+        scaled_graph = scaled_graph.shift_by(old_limit_shift);
         scaled_graph.data = scaled_graph
             .data
             .into_iter()
             .map(|series| series.scale_to(&old_limits_f64, &new_limits_f64))
             .collect::<Vec<_>>();
-        scaled_graph = scaled_graph.shift_by(*new_limits_f64.min());
+        scaled_graph = scaled_graph.shift_by(new_limit_shift);
 
         scaled_graph.x_axis = match self.x_axis {
-            Some(x_axis) => Some(x_axis.scale_to(old_limits, new_limits)),
+            Some(ax) => {
+                let mut ax = ax.convert_to_f64().shift_by(old_limit_shift);
+                ax = ax.scale_to(&old_limits_f64, &new_limits_f64);
+                ax = ax.shift_by(new_limit_shift);
+                Some(ax)
+            }
             None => None,
         };
 
         scaled_graph.y_axis = match self.y_axis {
-            Some(y_axis) => Some(y_axis.scale_to(old_limits, new_limits)),
+            Some(ax) => {
+                let mut ax = ax.convert_to_f64().shift_by(old_limit_shift);
+                ax = ax.scale_to(&old_limits_f64, &new_limits_f64);
+                ax = ax.shift_by(new_limit_shift);
+                Some(ax)
+            }
             None => None,
         };
 

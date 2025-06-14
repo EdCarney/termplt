@@ -41,7 +41,7 @@ fn main() {
                 .with_axes(
                     -50,
                     50,
-                    0,
+                    -125_000,
                     500,
                     LineStyle::Solid {
                         color: colors::BLACK,
