@@ -10,12 +10,101 @@ use super::{
 };
 use crate::common::Result;
 
+#[derive(Debug, Clone)]
+pub enum Axes {
+    XOnly(LineStyle),
+    YOnly(LineStyle),
+    XY(LineStyle),
+}
+
+#[derive(Debug, Clone)]
+enum GraphLimits<T: FloatConvertable + Graphable> {
+    XOnly { min: T, max: T },
+    YOnly { min: T, max: T },
+    XY { min: Point<T>, max: Point<T> },
+}
+
+impl<T> Shiftable<T> for GraphLimits<T>
+where
+    T: FloatConvertable + Graphable,
+{
+    fn shift_by(self, amount: Point<T>) -> Self {
+        match self {
+            Self::XOnly { min, max } => Self::XOnly {
+                min: min + amount.x,
+                max: max + amount.x,
+            },
+            Self::YOnly { min, max } => Self::YOnly {
+                min: min + amount.y,
+                max: max + amount.y,
+            },
+            Self::XY { min, max } => Self::XY {
+                min: min + amount,
+                max: max + amount,
+            },
+        }
+    }
+}
+
+impl<T, U> Scalable<T, U> for GraphLimits<T>
+where
+    T: FloatConvertable + Graphable,
+    U: FloatConvertable + Graphable,
+{
+    type ScaleTo = GraphLimits<f64>;
+    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
+        let old_limits = old_limits.convert_to_f64();
+        let new_limits = new_limits.convert_to_f64();
+
+        let (old_span_x, old_span_y) = old_limits.span();
+        let (new_span_x, new_span_y) = new_limits.span();
+
+        let x_factor = new_span_x / old_span_x;
+        let y_factor = new_span_y / old_span_y;
+
+        match self.convert_to_f64() {
+            GraphLimits::XOnly { min, max } => GraphLimits::XOnly {
+                min: min * x_factor,
+                max: max * x_factor,
+            },
+            GraphLimits::YOnly { min, max } => GraphLimits::YOnly {
+                min: min * y_factor,
+                max: max * y_factor,
+            },
+            GraphLimits::XY { min, max } => GraphLimits::XY {
+                min: min.scale_to(&old_limits, &new_limits),
+                max: max.scale_to(&old_limits, &new_limits),
+            },
+        }
+    }
+}
+
+impl<T: Graphable, U: Graphable> Convertable<U> for GraphLimits<T> {
+    type ConvertTo = GraphLimits<U>;
+    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+        match &self {
+            Self::XOnly { min, max } => GraphLimits::XOnly {
+                min: min.convert_to(convert_fn),
+                max: max.convert_to(convert_fn),
+            },
+            Self::YOnly { min, max } => GraphLimits::YOnly {
+                min: min.convert_to(convert_fn),
+                max: max.convert_to(convert_fn),
+            },
+            Self::XY { min, max } => GraphLimits::XY {
+                min: min.convert_to(convert_fn),
+                max: max.convert_to(convert_fn),
+            },
+        }
+    }
+}
+
 // TODO: implement items like: axis inclusion, grid lines, legends, etc.
 #[derive(Debug)]
-pub struct Graph<T: Graphable> {
+pub struct Graph<T: Graphable + FloatConvertable> {
     data: Vec<Series<T>>,
-    x_axis: Option<Line<T>>,
-    y_axis: Option<Line<T>>,
+    graph_limits: Option<GraphLimits<T>>,
+    axes: Option<Axes>,
 }
 
 impl<T: Graphable, U: Graphable> Convertable<U> for Graph<T> {
@@ -26,20 +115,19 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Graph<T> {
             .iter()
             .map(|series| series.convert_to(convert_fn))
             .collect::<Vec<_>>();
-        let x_axis = if let Some(value) = &self.x_axis {
+
+        let graph_limits = if let Some(value) = &self.graph_limits {
             Some(value.convert_to(convert_fn))
         } else {
             None
         };
-        let y_axis = if let Some(value) = &self.y_axis {
-            Some(value.convert_to(convert_fn))
-        } else {
-            None
-        };
+
+        let axes = self.axes.clone();
+
         Graph {
             data,
-            x_axis,
-            y_axis,
+            graph_limits,
+            axes,
         }
     }
 }
@@ -48,8 +136,8 @@ impl<T: Graphable> Graph<T> {
     pub fn new() -> Graph<T> {
         Graph {
             data: vec![],
-            x_axis: None,
-            y_axis: None,
+            graph_limits: None,
+            axes: None,
         }
     }
 
@@ -58,19 +146,35 @@ impl<T: Graphable> Graph<T> {
         self
     }
 
-    pub fn with_axes(mut self, x_min: T, x_max: T, y_min: T, y_max: T, style: LineStyle) -> Self {
-        self.x_axis = Some(Line::new(
-            LinePositioning::Horizontal {
-                start: Point::new(x_min, y_min),
-                length: x_max - x_min,
-            },
-            style,
-        ));
+    pub fn with_axes(mut self, axes: Axes) -> Self {
+        self.axes = Some(axes);
         self
     }
 
-    pub fn with_y_axis(mut self, y_axis: Line<T>) -> Self {
-        self.y_axis = Some(y_axis);
+    pub fn with_x_limits(mut self, min: T, max: T) -> Self {
+        let graph_limits = match self.graph_limits {
+            None => GraphLimits::XOnly { min, max },
+            Some(cur_lim) => match cur_lim {
+                GraphLimits::XOnly { .. } => GraphLimits::XOnly { min, max },
+                GraphLimits::YOnly {
+                    min: y_min,
+                    max: y_max,
+                } => {
+                    let min = Point::new(min, y_min);
+                    let max = Point::new(max, y_max);
+                    GraphLimits::XY { min, max }
+                }
+                GraphLimits::XY {
+                    min: min_p,
+                    max: max_p,
+                } => {
+                    let min = Point::new(min, min_p.y);
+                    let max = Point::new(max, max_p.y);
+                    GraphLimits::XY { min, max }
+                }
+            },
+        };
+        self.graph_limits = Some(graph_limits);
         self
     }
 
@@ -109,16 +213,25 @@ impl<T: UIntConvertable + Graphable> Graph<T> {
         let mut max_x = data_limits.max().x;
         let mut max_y = data_limits.max().y;
 
-        if let Some(x_axis) = &self.x_axis {
-            let limits = x_axis.drawable_limits();
-            min_x = limits.min().x;
-            max_x = limits.max().x;
-        }
-
-        if let Some(y_axis) = &self.y_axis {
-            let limits = y_axis.drawable_limits();
-            min_y = limits.min().y;
-            max_y = limits.max().y;
+        if let Some(graph_limits) = &self.graph_limits {
+            match graph_limits {
+                GraphLimits::XOnly { min, max } => {
+                    min_x = min.convert_to_f64().convert_to_u32();
+                    max_x = max.convert_to_f64().convert_to_u32();
+                }
+                GraphLimits::YOnly { min, max } => {
+                    min_y = min.convert_to_f64().convert_to_u32();
+                    max_y = max.convert_to_f64().convert_to_u32();
+                }
+                GraphLimits::XY { min, max } => {
+                    let min = min.convert_to_f64().convert_to_u32();
+                    let max = max.convert_to_f64().convert_to_u32();
+                    min_x = min.x;
+                    min_y = min.y;
+                    max_x = max.x;
+                    max_y = max.y;
+                }
+            }
         }
 
         Some(Limits::new(
@@ -211,8 +324,8 @@ where
             .map(|series| series.shift_by(amount))
             .collect::<Vec<_>>();
 
-        self.x_axis = match self.x_axis {
-            Some(x_axis) => Some(x_axis.shift_by(amount)),
+        self.graph_limits = match self.graph_limits {
+            Some(graph_limits) => Some(x_axis.shift_by(amount)),
             None => None,
         };
 
