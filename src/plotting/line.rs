@@ -10,7 +10,7 @@ use super::{
 use crate::common::Result;
 use rgb::RGB8;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum LineStyle {
     Solid { color: RGB8, thickness: u32 },
     Dashed { color: RGB8, thickness: u32 },

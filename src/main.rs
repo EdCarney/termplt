@@ -7,7 +7,7 @@ use termplt::{
     plotting::{
         canvas::{BufferType, TerminalCanvas},
         colors,
-        graph::Graph,
+        graph::{Axes, Graph},
         line::LineStyle,
         marker::MarkerStyle,
         point::Point,
@@ -38,16 +38,20 @@ fn main() {
                         color: colors::BLACK,
                     }),
                 )
-                .with_limits(
-                    -50,
-                    50,
-                    -125_000,
-                    500,
-                    LineStyle::Solid {
-                        color: colors::BLACK,
-                        thickness: 3,
-                    },
-                ),
+                .with_axes(Axes::XY(LineStyle::Solid {
+                    color: colors::BLACK,
+                    thickness: 3,
+                })),
+            // .with_limits(
+            //     -50,
+            //     50,
+            //     -125_000,
+            //     500,
+            //     LineStyle::Solid {
+            //         color: colors::BLACK,
+            //         thickness: 3,
+            //     },
+            // ),
         )
         .draw()
         .unwrap()
