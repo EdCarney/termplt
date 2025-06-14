@@ -182,6 +182,10 @@ impl<T: Graphable> Graph<T> {
         &self.data
     }
 
+    pub fn axes(&self) -> Option<Axes> {
+        self.axes.clone()
+    }
+
     pub fn limits(&self) -> Option<Limits<T>> {
         let mut limits = self
             .data
@@ -222,50 +226,6 @@ impl<T: Graphable> Graph<T> {
     pub fn scale(self, new_limits: Limits<f64>) -> Graph<f64> {
         let old_limits = self.limits().expect("Cannot scale an empty graph");
         self.scale_to(&old_limits, &new_limits)
-    }
-}
-
-impl<T: UIntConvertable + Graphable> Graph<T> {
-    pub fn drawable_limits(&self) -> Option<Limits<u32>> {
-        let data_limits = self
-            .data
-            .iter()
-            .flat_map(|series| series.data().to_vec())
-            .collect::<Vec<Point<_>>>()
-            .as_slice()
-            .limits()?
-            .convert_to_u32();
-
-        let mut min_x = data_limits.min().x;
-        let mut min_y = data_limits.min().y;
-        let mut max_x = data_limits.max().x;
-        let mut max_y = data_limits.max().y;
-
-        if let Some(graph_limits) = &self.graph_limits {
-            match graph_limits {
-                GraphLimits::XOnly { min, max } => {
-                    min_x = min.convert_to_f64().convert_to_u32();
-                    max_x = max.convert_to_f64().convert_to_u32();
-                }
-                GraphLimits::YOnly { min, max } => {
-                    min_y = min.convert_to_f64().convert_to_u32();
-                    max_y = max.convert_to_f64().convert_to_u32();
-                }
-                GraphLimits::XY { min, max } => {
-                    let min = min.convert_to_f64().convert_to_u32();
-                    let max = max.convert_to_f64().convert_to_u32();
-                    min_x = min.x;
-                    min_y = min.y;
-                    max_x = max.x;
-                    max_y = max.y;
-                }
-            }
-        }
-
-        Some(Limits::new(
-            Point::new(min_x, min_y),
-            Point::new(max_x, max_y),
-        ))
     }
 }
 

@@ -41,8 +41,8 @@ fn main() {
                 .with_axes(Axes::XY(LineStyle::Solid {
                     color: colors::BLACK,
                     thickness: 1, // TODO: implement thickness
-                }))
-                .with_x_limits(-50, 50),
+                })), //.with_x_limits(-50, 50), // TODO: fix this; looks like an issue with conversion to
+                     // u32 somewhere
         )
         .draw()
         .unwrap()

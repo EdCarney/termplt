@@ -1,8 +1,9 @@
 use super::{
     common::{Drawable, FloatConvertable, Graphable},
-    graph::Graph,
+    graph::{Axes, Graph},
     limits::Limits,
     point::Point,
+    series::Series,
 };
 use crate::common::Result;
 use rgb::RGB8;
@@ -98,7 +99,7 @@ pub struct TerminalCanvas<T: Graphable> {
 
 impl<T> TerminalCanvas<T>
 where
-    T: Graphable + Into<f64>,
+    T: Graphable + FloatConvertable,
 {
     pub fn new(width: u32, height: u32, background: RGB8) -> TerminalCanvas<T> {
         TerminalCanvas {
@@ -145,19 +146,33 @@ where
         let mut min = Point::new(self.buffer.left, self.buffer.bottom);
         let mut max = self.limits.max().clone() - Point::new(self.buffer.right, self.buffer.top);
 
-        // update min/max points based on the max marker size
-        if let Some(ref graph) = self.graph {
+        if let Some(graph) = &self.graph {
             let largest_marker_sz = graph
                 .data()
                 .iter()
                 .map(|s| s.marker_style().size())
                 .max()
                 .unwrap();
-            min = min + largest_marker_sz;
-            max = max - largest_marker_sz;
-        }
 
-        // TODO: also update to take into account axis thickness
+            // axes thickness in x/y pixels
+            let axes_thickness = match graph.axes() {
+                Some(axes) => match axes {
+                    Axes::XOnly(line_style) => (0, line_style.thickness()),
+                    Axes::YOnly(line_style) => (line_style.thickness(), 0),
+                    Axes::XY(line_style) => (line_style.thickness(), line_style.thickness()),
+                },
+                None => (0, 0),
+            };
+
+            // use the larger of marker/axes to set bounderies
+            let min_x = min.x + u32::max(largest_marker_sz, axes_thickness.0);
+            let min_y = min.y + u32::max(largest_marker_sz, axes_thickness.1);
+            let max_x = max.x - u32::max(largest_marker_sz, axes_thickness.0);
+            let max_y = max.y - u32::max(largest_marker_sz, axes_thickness.1);
+
+            min = Point::new(min_x, min_y);
+            max = Point::new(max_x, max_y);
+        }
 
         Limits::new(min, max)
     }
