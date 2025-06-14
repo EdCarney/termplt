@@ -215,7 +215,6 @@ impl<T: UIntConvertable + Graphable> Drawable for Line<T> {
                 thickness: _,
             } => todo!(),
         };
-        println!("Line mask points: {mask_points:?}");
         Ok(mask_points)
     }
 }
