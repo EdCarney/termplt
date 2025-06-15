@@ -178,6 +178,33 @@ impl<T: Graphable> Graph<T> {
         self
     }
 
+    pub fn with_y_limits(mut self, min: T, max: T) -> Self {
+        let graph_limits = match self.graph_limits {
+            None => GraphLimits::YOnly { min, max },
+            Some(cur_lim) => match cur_lim {
+                GraphLimits::YOnly { .. } => GraphLimits::YOnly { min, max },
+                GraphLimits::XOnly {
+                    min: x_min,
+                    max: x_max,
+                } => {
+                    let min = Point::new(x_min, min);
+                    let max = Point::new(x_max, max);
+                    GraphLimits::XY { min, max }
+                }
+                GraphLimits::XY {
+                    min: min_p,
+                    max: max_p,
+                } => {
+                    let min = Point::new(min_p.x, min);
+                    let max = Point::new(max_p.x, max);
+                    GraphLimits::XY { min, max }
+                }
+            },
+        };
+        self.graph_limits = Some(graph_limits);
+        self
+    }
+
     pub fn data(&self) -> &[Series<T>] {
         &self.data
     }
