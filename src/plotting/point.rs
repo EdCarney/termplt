@@ -108,9 +108,17 @@ where
     }
 }
 
-impl<T: Graphable> Point<T> {
+impl<T> Point<T>
+where
+    T: FloatConvertable + Graphable,
+{
     pub fn new(x: T, y: T) -> Point<T> {
         Point { x, y }
+    }
+
+    pub fn dist(&self, other: &Point<T>) -> f64 {
+        let diff = (*self - *other).convert_to_f64();
+        f64::sqrt(diff.x.powi(2) + diff.y.powi(2))
     }
 }
 

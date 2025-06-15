@@ -34,7 +34,7 @@ fn main() {
             Graph::new()
                 .with_series(
                     Series::new(&points).with_marker_style(MarkerStyle::HollowSquare {
-                        size: 1,
+                        size: 3,
                         color: colors::BLACK,
                     }),
                 )

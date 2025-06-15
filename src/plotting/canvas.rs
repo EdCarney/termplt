@@ -157,9 +157,11 @@ where
             // axes thickness in x/y pixels
             let axes_thickness = match graph.axes() {
                 Some(axes) => match axes {
-                    Axes::XOnly(line_style) => (0, line_style.thickness()),
-                    Axes::YOnly(line_style) => (line_style.thickness(), 0),
-                    Axes::XY(line_style) => (line_style.thickness(), line_style.thickness()),
+                    Axes::XOnly(line_style) => (0, 2 * line_style.thickness()),
+                    Axes::YOnly(line_style) => (2 * line_style.thickness(), 0),
+                    Axes::XY(line_style) => {
+                        (2 * line_style.thickness(), 2 * line_style.thickness())
+                    }
                 },
                 None => (0, 0),
             };

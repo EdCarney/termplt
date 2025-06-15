@@ -69,6 +69,16 @@ impl<T: Convertable<u32>> UIntConvertable for T {
     }
 }
 
+pub trait IntConvertable: Convertable<i32> {
+    fn convert_to_i32(&self) -> Self::ConvertTo;
+}
+
+impl<T: Convertable<i32>> IntConvertable for T {
+    fn convert_to_i32(&self) -> Self::ConvertTo {
+        self.convert_to(f64::to_int_unchecked)
+    }
+}
+
 pub trait FloatConvertable: Convertable<f64> {
     fn convert_to_f64(&self) -> Self::ConvertTo;
 }
