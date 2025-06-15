@@ -230,7 +230,6 @@ impl<T: Graphable> Graph<T> {
                     min: x_min,
                     max: x_max,
                 } => {
-                    println!("using x-axis limits: {x_min:?} to {x_max:?}");
                     let min = Point::new(*x_min, limits.min().y);
                     let max = Point::new(*x_max, limits.max().y);
                     limits = Limits::new(min, max);
@@ -249,7 +248,6 @@ impl<T: Graphable> Graph<T> {
             }
         }
 
-        println!("Graph limits are {limits:?}");
         Some(limits)
     }
 
@@ -280,8 +278,6 @@ impl<T: Graphable> Graph<T> {
                 .limits()
                 .expect("No valid points lie in specified graph limits");
         }
-
-        println!("scaling graph from {old_limits:?} to {new_limits:?}");
         self.scale_to(&old_limits, &new_limits)
     }
 }
@@ -295,7 +291,6 @@ impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
             .collect::<Vec<_>>();
 
         // add axes if they are defined
-        println!("getting mask");
         let limits = self.limits().unwrap().convert_to_f64();
         let (limit_span_x, limit_span_y) = limits.span();
         if let Some(axes) = &self.axes {

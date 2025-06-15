@@ -42,8 +42,8 @@ fn main() {
                     color: colors::BLACK,
                     thickness: 1,
                 }))
-                .with_x_limits(-25, 50), // TODO: fix this; looks like an issue with conversion to
-                                         // u32 somewhere
+                .with_x_limits(-50, 50)
+                .with_y_limits(-100_000, 300_000),
         )
         .draw()
         .unwrap()
