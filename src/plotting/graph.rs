@@ -238,33 +238,46 @@ impl<T: UIntConvertable + Graphable> Drawable for Graph<T> {
             .collect::<Vec<_>>();
 
         // add axes if they are defined
-        let limits = self.limits().unwrap();
+        let limits = self.limits().unwrap().convert_to_f64();
         let (limit_span_x, limit_span_y) = limits.span();
         if let Some(axes) = &self.axes {
+            // thickness is applied in both directions from the line center, so shift the start of
+            // the line in the appropriate direction to ensure it will not go into the data area
             let line_mask = match axes {
                 Axes::XOnly(line_style) => {
-                    let pos = LinePositioning::Horizontal {
-                        start: *limits.min(),
-                        length: limit_span_x,
-                    };
+                    let start = Point::new(
+                        limits.min().x,
+                        limits.min().y - line_style.thickness().convert_to_f64(),
+                    );
+                    let length = limit_span_x;
+                    let pos = LinePositioning::Horizontal { start, length };
                     Line::new(pos, *line_style).get_mask()?
                 }
                 Axes::YOnly(line_style) => {
-                    let pos = LinePositioning::Vertical {
-                        start: *limits.min(),
-                        length: limit_span_y,
-                    };
+                    let start = Point::new(
+                        limits.min().x - line_style.thickness().convert_to_f64(),
+                        limits.min().y,
+                    );
+                    let length = limit_span_y;
+                    let pos = LinePositioning::Vertical { start, length };
                     Line::new(pos, *line_style).get_mask()?
                 }
                 Axes::XY(line_style) => {
                     let pos_x = LinePositioning::Horizontal {
-                        start: *limits.min(),
+                        start: Point::new(
+                            limits.min().x,
+                            limits.min().y - line_style.thickness().convert_to_f64(),
+                        ),
                         length: limit_span_x,
                     };
                     let pos_y = LinePositioning::Vertical {
-                        start: *limits.min(),
+                        start: Point::new(
+                            limits.min().x - line_style.thickness().convert_to_f64(),
+                            limits.min().y,
+                        ),
                         length: limit_span_y,
                     };
+
                     let mut mask = Line::new(pos_x, *line_style).get_mask()?;
                     mask.extend(Line::new(pos_y, *line_style).get_mask()?);
                     mask
