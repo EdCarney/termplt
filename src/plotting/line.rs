@@ -226,6 +226,8 @@ impl<T: IntConvertable + Graphable> Line<T> {
 
 impl<T: IntConvertable + Graphable> Drawable for Line<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
+        println!("Getting mask for line: {self:?}");
+
         let shift_point_fn = match self.positioning {
             LinePositioning::Vertical { .. } => |amount: i32| Point::new(amount, 0),
             LinePositioning::Horizontal { .. } => |amount: i32| Point::new(0, amount),

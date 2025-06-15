@@ -1,7 +1,7 @@
 use super::{
     common::{
-        Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, Scalable, Shiftable,
-        UIntConvertable,
+        Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints, Scalable,
+        Shiftable,
     },
     limits::Limits,
     line::{Line, LinePositioning, LineStyle},
@@ -202,6 +202,7 @@ impl<T: Graphable> Graph<T> {
                     min: x_min,
                     max: x_max,
                 } => {
+                    println!("using x-axis limits: {x_min:?} to {x_max:?}");
                     let min = Point::new(*x_min, limits.min().y);
                     let max = Point::new(*x_max, limits.max().y);
                     limits = Limits::new(min, max);
@@ -220,16 +221,18 @@ impl<T: Graphable> Graph<T> {
             }
         }
 
+        println!("Graph limits are {limits:?}");
         Some(limits)
     }
 
     pub fn scale(self, new_limits: Limits<f64>) -> Graph<f64> {
         let old_limits = self.limits().expect("Cannot scale an empty graph");
+        println!("scaling graph from {old_limits:?} to {new_limits:?}");
         self.scale_to(&old_limits, &new_limits)
     }
 }
 
-impl<T: UIntConvertable + Graphable> Drawable for Graph<T> {
+impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mut mask_points = self
             .data()
@@ -238,6 +241,7 @@ impl<T: UIntConvertable + Graphable> Drawable for Graph<T> {
             .collect::<Vec<_>>();
 
         // add axes if they are defined
+        println!("getting mask");
         let limits = self.limits().unwrap().convert_to_f64();
         let (limit_span_x, limit_span_y) = limits.span();
         if let Some(axes) = &self.axes {
@@ -314,7 +318,13 @@ where
         scaled_graph = scaled_graph.shift_by(new_limit_shift);
 
         scaled_graph.graph_limits = match self.graph_limits {
-            Some(graph_limits) => Some(graph_limits.scale_to(old_limits, new_limits)),
+            Some(graph_limits) => {
+                let mut limits = graph_limits.convert_to_f64();
+                limits = limits.shift_by(old_limit_shift);
+                limits = limits.scale_to(&old_limits_f64, &new_limits_f64);
+                limits = limits.shift_by(new_limit_shift);
+                Some(limits)
+            }
             None => None,
         };
 
