@@ -62,7 +62,7 @@ where
         let x_factor = new_span_x / old_span_x;
         let y_factor = new_span_y / old_span_y;
 
-        match self.convert_to_f64() {
+        let scaled_limits = match self.convert_to_f64() {
             GraphLimits::XOnly { min, max } => GraphLimits::XOnly {
                 min: min * x_factor,
                 max: max * x_factor,
@@ -75,7 +75,8 @@ where
                 min: min.scale_to(&old_limits, &new_limits),
                 max: max.scale_to(&old_limits, &new_limits),
             },
-        }
+        };
+        scaled_limits
     }
 }
 
@@ -252,8 +253,34 @@ impl<T: Graphable> Graph<T> {
         Some(limits)
     }
 
-    pub fn scale(self, new_limits: Limits<f64>) -> Graph<f64> {
-        let old_limits = self.limits().expect("Cannot scale an empty graph");
+    pub fn scale(mut self, new_limits: Limits<f64>) -> Graph<f64> {
+        let mut old_limits = self.limits().expect("Cannot scale an empty graph");
+
+        // if there are explicit limits set; remove any points that don't lie within those limits
+        if let Some(_) = self.graph_limits {
+            self.data = self
+                .data
+                .iter()
+                .map(|series| {
+                    let mut filtered_data = Vec::new();
+                    for p in series.data() {
+                        if old_limits.contains(p) {
+                            filtered_data.push(*p);
+                        } else {
+                            println!("WARN: point {p:?} outside of old limits {old_limits:?}");
+                        }
+                    }
+                    series.clone_with(&filtered_data)
+                })
+                .collect::<Vec<_>>();
+
+            // if any points were removed we need to update the limits, since the overall data set
+            // limits may have changed
+            old_limits = self
+                .limits()
+                .expect("No valid points lie in specified graph limits");
+        }
+
         println!("scaling graph from {old_limits:?} to {new_limits:?}");
         self.scale_to(&old_limits, &new_limits)
     }

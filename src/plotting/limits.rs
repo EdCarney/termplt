@@ -2,6 +2,7 @@ use super::{
     common::{Convertable, FloatConvertable, Graphable, Scalable, Shiftable},
     point::Point,
 };
+use crate::common::Result;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Limits<T: Graphable> {

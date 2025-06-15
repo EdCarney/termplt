@@ -6,7 +6,7 @@ use super::{
     limits::Limits,
     line::{Line, LinePositioning, LineStyle},
     marker::{Marker, MarkerStyle},
-    point::{Point, PointCollection},
+    point::Point,
 };
 use crate::common::Result;
 use std::ops::{Add, Div, Mul, Sub};
@@ -26,13 +26,7 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Series<T> {
             .iter()
             .map(|&p| p.convert_to(convert_fn))
             .collect::<Vec<_>>();
-        let marker_style = self.marker_style.clone();
-        let line_style = self.line_style.clone();
-        Series {
-            data,
-            marker_style,
-            line_style,
-        }
+        self.clone_with(&data)
     }
 }
 
@@ -46,6 +40,16 @@ impl<T: Graphable> Series<T> {
             data: Vec::from(data),
             marker_style: MarkerStyle::default(),
             line_style: None,
+        }
+    }
+
+    pub fn clone_with<U: Graphable>(&self, data: &[Point<U>]) -> Series<U> {
+        let marker_style = self.marker_style.clone();
+        let line_style = self.line_style.clone();
+        Series {
+            data: Vec::from(data),
+            marker_style,
+            line_style,
         }
     }
 
@@ -117,11 +121,7 @@ where
             .map(|p| p.scale_to(old_limits, new_limits))
             .collect::<Vec<_>>();
 
-        Series {
-            data: scaled_data,
-            line_style: self.line_style,
-            marker_style: self.marker_style,
-        }
+        self.clone_with(&scaled_data)
     }
 }
 

@@ -42,7 +42,7 @@ fn main() {
                     color: colors::BLACK,
                     thickness: 1,
                 }))
-                .with_x_limits(-50, 50), // TODO: fix this; looks like an issue with conversion to
+                .with_x_limits(-25, 50), // TODO: fix this; looks like an issue with conversion to
                                          // u32 somewhere
         )
         .draw()

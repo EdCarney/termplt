@@ -122,11 +122,12 @@ where
         let start = *limits.min();
         let end = *limits.max();
         let length = end.dist(&start);
-        match self {
+        let scaled_pos = match self {
             LinePositioning::Vertical { .. } => LinePositioning::Vertical { start, length },
             LinePositioning::Horizontal { .. } => LinePositioning::Horizontal { start, length },
             LinePositioning::BetweenPoints { .. } => LinePositioning::BetweenPoints { start, end },
-        }
+        };
+        scaled_pos
     }
 }
 

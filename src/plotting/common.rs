@@ -2,7 +2,8 @@ use super::{limits::Limits, point::Point};
 use crate::common::Result;
 use rgb::RGB8;
 use std::{
-    fmt::Debug,
+    error::Error,
+    fmt::{self, Debug, Display},
     ops::{Add, Div, Mul, Sub},
 };
 
