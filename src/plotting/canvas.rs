@@ -3,7 +3,6 @@ use super::{
     graph::{Axes, Graph},
     limits::Limits,
     point::Point,
-    series::Series,
 };
 use crate::common::Result;
 use rgb::RGB8;

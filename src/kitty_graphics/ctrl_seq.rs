@@ -20,6 +20,7 @@ impl CtrlSeq for Transmission {
     }
 }
 
+#[derive(Clone)]
 pub enum PixelFormat {
     Png,
     PngBounded { rows: u32, cols: u32 },

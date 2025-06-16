@@ -3,8 +3,10 @@ use super::{
         Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints, Scalable,
         Shiftable,
     },
+    graph_limits::GraphLimits,
     limits::Limits,
-    line::{Line, LinePositioning, LineStyle},
+    line::{Line, LineStyle},
+    line_positioning::LinePositioning,
     point::{Point, PointCollection},
     series::Series,
 };
@@ -17,91 +19,8 @@ pub enum Axes {
     XY(LineStyle),
 }
 
+// TODO: implement items like: grid lines, legends, etc.
 #[derive(Debug, Clone)]
-enum GraphLimits<T: FloatConvertable + Graphable> {
-    XOnly { min: T, max: T },
-    YOnly { min: T, max: T },
-    XY { min: Point<T>, max: Point<T> },
-}
-
-impl<T> Shiftable<T> for GraphLimits<T>
-where
-    T: FloatConvertable + Graphable,
-{
-    fn shift_by(self, amount: Point<T>) -> Self {
-        match self {
-            Self::XOnly { min, max } => Self::XOnly {
-                min: min + amount.x,
-                max: max + amount.x,
-            },
-            Self::YOnly { min, max } => Self::YOnly {
-                min: min + amount.y,
-                max: max + amount.y,
-            },
-            Self::XY { min, max } => Self::XY {
-                min: min + amount,
-                max: max + amount,
-            },
-        }
-    }
-}
-
-impl<T, U> Scalable<T, U> for GraphLimits<T>
-where
-    T: FloatConvertable + Graphable,
-    U: FloatConvertable + Graphable,
-{
-    type ScaleTo = GraphLimits<f64>;
-    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
-        let old_limits = old_limits.convert_to_f64();
-        let new_limits = new_limits.convert_to_f64();
-
-        let (old_span_x, old_span_y) = old_limits.span();
-        let (new_span_x, new_span_y) = new_limits.span();
-
-        let x_factor = new_span_x / old_span_x;
-        let y_factor = new_span_y / old_span_y;
-
-        let scaled_limits = match self.convert_to_f64() {
-            GraphLimits::XOnly { min, max } => GraphLimits::XOnly {
-                min: min * x_factor,
-                max: max * x_factor,
-            },
-            GraphLimits::YOnly { min, max } => GraphLimits::YOnly {
-                min: min * y_factor,
-                max: max * y_factor,
-            },
-            GraphLimits::XY { min, max } => GraphLimits::XY {
-                min: min.scale_to(&old_limits, &new_limits),
-                max: max.scale_to(&old_limits, &new_limits),
-            },
-        };
-        scaled_limits
-    }
-}
-
-impl<T: Graphable, U: Graphable> Convertable<U> for GraphLimits<T> {
-    type ConvertTo = GraphLimits<U>;
-    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
-        match &self {
-            Self::XOnly { min, max } => GraphLimits::XOnly {
-                min: min.convert_to(convert_fn),
-                max: max.convert_to(convert_fn),
-            },
-            Self::YOnly { min, max } => GraphLimits::YOnly {
-                min: min.convert_to(convert_fn),
-                max: max.convert_to(convert_fn),
-            },
-            Self::XY { min, max } => GraphLimits::XY {
-                min: min.convert_to(convert_fn),
-                max: max.convert_to(convert_fn),
-            },
-        }
-    }
-}
-
-// TODO: implement items like: axis inclusion, grid lines, legends, etc.
-#[derive(Debug)]
 pub struct Graph<T: Graphable + FloatConvertable> {
     data: Vec<Series<T>>,
     graph_limits: Option<GraphLimits<T>>,
@@ -251,12 +170,13 @@ impl<T: Graphable> Graph<T> {
         Some(limits)
     }
 
-    pub fn scale(mut self, new_limits: Limits<f64>) -> Graph<f64> {
-        let mut old_limits = self.limits().expect("Cannot scale an empty graph");
+    pub fn scale(self, new_limits: Limits<f64>) -> Graph<f64> {
+        let mut scaled_graph = self.clone();
 
+        let mut old_limits = self.limits().expect("Cannot scale an empty graph");
         // if there are explicit limits set; remove any points that don't lie within those limits
         if let Some(_) = self.graph_limits {
-            self.data = self
+            scaled_graph.data = scaled_graph
                 .data
                 .iter()
                 .map(|series| {
@@ -274,11 +194,11 @@ impl<T: Graphable> Graph<T> {
 
             // if any points were removed we need to update the limits, since the overall data set
             // limits may have changed
-            old_limits = self
+            old_limits = scaled_graph
                 .limits()
                 .expect("No valid points lie in specified graph limits");
         }
-        self.scale_to(&old_limits, &new_limits)
+        scaled_graph.scale_to(&old_limits, &new_limits)
     }
 }
 

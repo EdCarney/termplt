@@ -4,14 +4,15 @@ use super::{
         UIntConvertable,
     },
     limits::Limits,
-    line::{Line, LinePositioning, LineStyle},
+    line::{Line, LineStyle},
+    line_positioning::LinePositioning,
     marker::{Marker, MarkerStyle},
     point::Point,
 };
 use crate::common::Result;
 use std::ops::{Add, Div, Mul, Sub};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Series<T: Graphable> {
     data: Vec<Point<T>>,
     marker_style: MarkerStyle,

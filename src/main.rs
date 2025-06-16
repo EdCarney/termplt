@@ -21,58 +21,87 @@ use termplt::{
 };
 
 fn main() {
-    let width = 300;
-    let height = 300;
-
-    let points = (-50..=50)
+    let points_x3 = (-50..=50)
         .map(|x| Point::new(x, x * x * x))
         .collect::<Vec<Point<_>>>();
 
-    let bytes_1 = TerminalCanvas::new(width + 200, height + 200, colors::WHITE)
-        .with_buffer(BufferType::Uniform(10))
-        .with_graph(
-            Graph::new()
-                .with_series(
-                    Series::new(&points).with_marker_style(MarkerStyle::HollowSquare {
-                        size: 3,
-                        color: colors::BLACK,
-                    }),
-                )
-                .with_axes(Axes::XY(LineStyle::Solid {
-                    color: colors::BLACK,
-                    thickness: 1,
-                }))
-                .with_x_limits(-50, 50)
-                .with_y_limits(-100_000, 300_000),
-        )
-        .draw()
-        .unwrap()
-        .get_bytes();
+    draw_graph_style_1(&points_x3, None, None);
+    draw_graph_style_1(&points_x3, None, Some((-20_000, 20_000)));
+    draw_graph_style_1(&points_x3, Some((-60, 60)), None);
+    draw_graph_style_1(&points_x3, Some((-60, 60)), Some((-20_000, 20_000)));
 
     let num_points = 100;
-    let points = (0..num_points)
+    let points_sin = (0..=num_points)
         .map(|x| {
             let x = (x as f32) * (2. * f32::consts::PI / (num_points as f32));
             Point::new(x, x.sin())
         })
         .collect::<Vec<Point<_>>>();
-    let bytes_2 = TerminalCanvas::new(width, height, colors::BLACK)
+    draw_graph_style_2(&points_sin);
+}
+
+fn draw_graph_style_1(
+    data: &[Point<i32>],
+    x_lim_maybe: Option<(i32, i32)>,
+    y_lim_maybe: Option<(i32, i32)>,
+) {
+    let width = 500;
+    let height = 500;
+    let mut graph = Graph::new()
+        .with_series(
+            Series::new(data).with_marker_style(MarkerStyle::HollowSquare {
+                size: 3,
+                color: colors::BLACK,
+            }),
+        )
+        .with_axes(Axes::XY(LineStyle::Solid {
+            color: colors::BLACK,
+            thickness: 1,
+        }));
+
+    if let Some((min, max)) = x_lim_maybe {
+        graph = graph.with_x_limits(min, max);
+    }
+
+    if let Some((min, max)) = y_lim_maybe {
+        graph = graph.with_y_limits(min, max);
+    }
+
+    let bytes = TerminalCanvas::new(width, height, colors::WHITE)
+        .with_buffer(BufferType::Uniform(10))
+        .with_graph(graph)
+        .draw()
+        .unwrap()
+        .get_bytes();
+    Image::new(
+        PixelFormat::Rgb { width, height },
+        Transmission::Direct(bytes),
+    )
+    .unwrap()
+    .display()
+    .unwrap();
+    println!();
+}
+
+fn draw_graph_style_2(data: &[Point<f32>]) {
+    let width = 300;
+    let height = 300;
+    let bytes = TerminalCanvas::new(width, height, colors::BLACK)
         .with_buffer(BufferType::Uniform(15))
-        .with_graph(Graph::new().with_series(Series::new(&points)))
+        .with_graph(
+            Graph::new()
+                .with_series(Series::new(data))
+                .with_axes(Axes::XY(LineStyle::Solid {
+                    color: colors::GHOST_WHITE,
+                    thickness: 0,
+                })),
+        )
         .draw()
         .unwrap()
         .get_bytes();
 
-    let format = PixelFormat::Rgb {
-        width: width + 200,
-        height: height + 200,
-    };
-    let transmission = Transmission::Direct(bytes_1);
-    Image::new(format, transmission).unwrap().display().unwrap();
-    println!();
-
     let format = PixelFormat::Rgb { width, height };
-    let transmission = Transmission::Direct(bytes_2);
+    let transmission = Transmission::Direct(bytes);
     Image::new(format, transmission).unwrap().display().unwrap();
     println!();
 }
