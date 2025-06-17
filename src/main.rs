@@ -7,7 +7,7 @@ use termplt::{
     plotting::{
         canvas::{BufferType, TerminalCanvas},
         colors,
-        graph::{Axes, Graph},
+        graph::{Axes, Graph, GridLines},
         line::LineStyle,
         marker::MarkerStyle,
         point::Point,
@@ -26,9 +26,7 @@ fn main() {
         .collect::<Vec<Point<_>>>();
 
     draw_graph_style_1(&points_x3, None, None);
-    draw_graph_style_1(&points_x3, None, Some((-20_000, 20_000)));
     draw_graph_style_1(&points_x3, Some((-60, 60)), None);
-    draw_graph_style_1(&points_x3, Some((-60, 60)), Some((-20_000, 20_000)));
 
     let num_points = 100;
     let points_sin = (0..=num_points)
@@ -57,6 +55,10 @@ fn draw_graph_style_1(
         .with_axes(Axes::XY(LineStyle::Solid {
             color: colors::BLACK,
             thickness: 1,
+        }))
+        .with_grid_lines(GridLines::XY(LineStyle::Solid {
+            color: colors::BLACK,
+            thickness: 0,
         }));
 
     if let Some((min, max)) = x_lim_maybe {

@@ -19,12 +19,125 @@ pub enum Axes {
     XY(LineStyle),
 }
 
+impl Axes {
+    pub fn get_mask<T: FloatConvertable + Graphable>(
+        &self,
+        limits: Limits<T>,
+    ) -> Result<Vec<MaskPoints>> {
+        let limits = limits.convert_to_f64();
+        let (limit_span_x, limit_span_y) = limits.span();
+
+        // thickness is applied in both directions from the line center, so shift the start of
+        // the line in the appropriate direction to ensure it will not go into the data area
+        match self {
+            Axes::XOnly(line_style) => {
+                let start = Point::new(
+                    limits.min().x,
+                    limits.min().y - line_style.thickness().convert_to_f64(),
+                );
+                let length = limit_span_x;
+                let pos = LinePositioning::Horizontal { start, length };
+                Line::new(pos, *line_style).get_mask()
+            }
+            Axes::YOnly(line_style) => {
+                let start = Point::new(
+                    limits.min().x - line_style.thickness().convert_to_f64(),
+                    limits.min().y,
+                );
+                let length = limit_span_y;
+                let pos = LinePositioning::Vertical { start, length };
+                Line::new(pos, *line_style).get_mask()
+            }
+            Axes::XY(line_style) => {
+                let pos_x = LinePositioning::Horizontal {
+                    start: Point::new(
+                        limits.min().x,
+                        limits.min().y - line_style.thickness().convert_to_f64(),
+                    ),
+                    length: limit_span_x,
+                };
+                let pos_y = LinePositioning::Vertical {
+                    start: Point::new(
+                        limits.min().x - line_style.thickness().convert_to_f64(),
+                        limits.min().y,
+                    ),
+                    length: limit_span_y,
+                };
+
+                let mut mask = Line::new(pos_x, *line_style).get_mask()?;
+                mask.extend(Line::new(pos_y, *line_style).get_mask()?);
+                Ok(mask)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum GridLines {
+    XOnly(LineStyle),
+    YOnly(LineStyle),
+    XY(LineStyle),
+}
+
+impl GridLines {
+    pub fn get_mask<T: FloatConvertable + Graphable>(
+        &self,
+        limits: Limits<T>,
+    ) -> Result<Vec<MaskPoints>> {
+        let limits = limits.convert_to_f64();
+        let (limit_span_x, limit_span_y) = limits.span();
+
+        // assume 10 sections; [num lines] = [num sections] - 1
+        let mut mask_points = Vec::new();
+        let num_sections = 10;
+        let interval_x = limit_span_x / num_sections.convert_to_f64();
+        let interval_y = limit_span_y / num_sections.convert_to_f64();
+
+        for i in 1..num_sections {
+            match self {
+                GridLines::XOnly(line_style) => {
+                    // start at 1 to skip the first line
+                    let pos = LinePositioning::Horizontal {
+                        start: Point::new(limits.min().x, interval_y * i as f64),
+                        length: limit_span_x,
+                    };
+                    mask_points.extend(Line::new(pos, *line_style).get_mask()?);
+                }
+                GridLines::YOnly(line_style) => {
+                    // start at 1 to skip the first line
+                    let pos = LinePositioning::Vertical {
+                        start: Point::new(interval_x * i as f64, limits.min().y),
+                        length: limit_span_y,
+                    };
+                    mask_points.extend(Line::new(pos, *line_style).get_mask()?);
+                }
+                GridLines::XY(line_style) => {
+                    let pos_horz = LinePositioning::Horizontal {
+                        start: Point::new(limits.min().x, interval_y * i as f64),
+                        length: limit_span_x,
+                    };
+
+                    let pos_vert = LinePositioning::Vertical {
+                        start: Point::new(interval_x * i as f64, limits.min().y),
+                        length: limit_span_y,
+                    };
+
+                    mask_points.extend(Line::new(pos_horz, *line_style).get_mask()?);
+                    mask_points.extend(Line::new(pos_vert, *line_style).get_mask()?);
+                }
+            }
+        }
+        Ok(mask_points)
+    }
+}
+
 // TODO: implement items like: grid lines, legends, etc.
 #[derive(Debug, Clone)]
 pub struct Graph<T: Graphable + FloatConvertable> {
     data: Vec<Series<T>>,
     graph_limits: Option<GraphLimits<T>>,
     axes: Option<Axes>,
+    grid_lines: Option<GridLines>,
 }
 
 impl<T: Graphable, U: Graphable> Convertable<U> for Graph<T> {
@@ -43,11 +156,13 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Graph<T> {
         };
 
         let axes = self.axes.clone();
+        let grid_lines = self.grid_lines.clone();
 
         Graph {
             data,
             graph_limits,
             axes,
+            grid_lines,
         }
     }
 }
@@ -58,6 +173,7 @@ impl<T: Graphable> Graph<T> {
             data: vec![],
             graph_limits: None,
             axes: None,
+            grid_lines: None,
         }
     }
 
@@ -68,6 +184,11 @@ impl<T: Graphable> Graph<T> {
 
     pub fn with_axes(mut self, axes: Axes) -> Self {
         self.axes = Some(axes);
+        self
+    }
+
+    pub fn with_grid_lines(mut self, grid_lines: GridLines) -> Self {
+        self.grid_lines = Some(grid_lines);
         self
     }
 
@@ -211,52 +332,15 @@ impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
             .collect::<Vec<_>>();
 
         // add axes if they are defined
-        let limits = self.limits().unwrap().convert_to_f64();
-        let (limit_span_x, limit_span_y) = limits.span();
         if let Some(axes) = &self.axes {
-            // thickness is applied in both directions from the line center, so shift the start of
-            // the line in the appropriate direction to ensure it will not go into the data area
-            let line_mask = match axes {
-                Axes::XOnly(line_style) => {
-                    let start = Point::new(
-                        limits.min().x,
-                        limits.min().y - line_style.thickness().convert_to_f64(),
-                    );
-                    let length = limit_span_x;
-                    let pos = LinePositioning::Horizontal { start, length };
-                    Line::new(pos, *line_style).get_mask()?
-                }
-                Axes::YOnly(line_style) => {
-                    let start = Point::new(
-                        limits.min().x - line_style.thickness().convert_to_f64(),
-                        limits.min().y,
-                    );
-                    let length = limit_span_y;
-                    let pos = LinePositioning::Vertical { start, length };
-                    Line::new(pos, *line_style).get_mask()?
-                }
-                Axes::XY(line_style) => {
-                    let pos_x = LinePositioning::Horizontal {
-                        start: Point::new(
-                            limits.min().x,
-                            limits.min().y - line_style.thickness().convert_to_f64(),
-                        ),
-                        length: limit_span_x,
-                    };
-                    let pos_y = LinePositioning::Vertical {
-                        start: Point::new(
-                            limits.min().x - line_style.thickness().convert_to_f64(),
-                            limits.min().y,
-                        ),
-                        length: limit_span_y,
-                    };
+            let limits = self.limits().unwrap();
+            mask_points.extend(axes.get_mask(limits)?);
+        }
 
-                    let mut mask = Line::new(pos_x, *line_style).get_mask()?;
-                    mask.extend(Line::new(pos_y, *line_style).get_mask()?);
-                    mask
-                }
-            };
-            mask_points.extend(line_mask);
+        // add grid lines if they are defined
+        if let Some(grid_lines) = &self.grid_lines {
+            let limits = self.limits().unwrap();
+            mask_points.extend(grid_lines.get_mask(limits)?);
         }
 
         Ok(mask_points)
