@@ -21,11 +21,14 @@ use termplt::{
 };
 
 fn main() {
+    let points_x2 = (-50..=50)
+        .map(|x| Point::new(x, x * x))
+        .collect::<Vec<Point<_>>>();
     let points_x3 = (-50..=50)
         .map(|x| Point::new(x, x * x * x))
         .collect::<Vec<Point<_>>>();
 
-    draw_graph_style_1(&points_x3, None, None);
+    draw_graph_style_1(&points_x2, None, None);
     draw_graph_style_1(&points_x3, Some((-60, 60)), None);
 
     let num_points = 100;
@@ -86,15 +89,30 @@ fn draw_graph_style_1(
 }
 
 fn draw_graph_style_2(data: &[Point<f32>]) {
-    let width = 300;
-    let height = 300;
+    let width = 500;
+    let height = 500;
     let bytes = TerminalCanvas::new(width, height, colors::BLACK)
         .with_buffer(BufferType::Uniform(15))
         .with_graph(
             Graph::new()
-                .with_series(Series::new(data))
+                .with_series(
+                    Series::new(data).with_marker_style(MarkerStyle::FilledSquare {
+                        size: 1,
+                        color: colors::RED,
+                    }),
+                )
+                .with_series(
+                    Series::new(data).with_marker_style(MarkerStyle::FilledSquare {
+                        size: 1,
+                        color: colors::BLUE,
+                    }) + Point::new(f32::consts::PI / 4.0, 0.),
+                )
                 .with_axes(Axes::XY(LineStyle::Solid {
                     color: colors::GHOST_WHITE,
+                    thickness: 0,
+                }))
+                .with_grid_lines(GridLines::XY(LineStyle::Solid {
+                    color: colors::GRAY,
                     thickness: 0,
                 })),
         )
