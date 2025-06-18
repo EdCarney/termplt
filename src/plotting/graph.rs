@@ -93,7 +93,7 @@ impl GridLines {
         let interval_x = limit_span_x / num_sections.convert_to_f64();
         let interval_y = limit_span_y / num_sections.convert_to_f64();
 
-        for i in 1..num_sections {
+        for i in 1..=num_sections {
             match self {
                 GridLines::XOnly(line_style) => {
                     // start at 1 to skip the first line
