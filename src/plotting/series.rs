@@ -140,8 +140,8 @@ impl<T: Graphable> Add<T> for Series<T> {
     type Output = Self;
 
     fn add(self, rhs: T) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p + rhs).collect();
-        Series::new(&data)
+        let data: Vec<Point<T>> = self.data.iter().map(|&p| p + rhs).collect();
+        self.clone_with(&data)
     }
 }
 
@@ -149,8 +149,8 @@ impl<T: Graphable> Sub<T> for Series<T> {
     type Output = Self;
 
     fn sub(self, rhs: T) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p - rhs).collect();
-        Series::new(&data)
+        let data: Vec<Point<T>> = self.data.iter().map(|&p| p - rhs).collect();
+        self.clone_with(&data)
     }
 }
 
@@ -158,8 +158,8 @@ impl<T: Graphable> Mul<T> for Series<T> {
     type Output = Self;
 
     fn mul(self, rhs: T) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p * rhs).collect();
-        Series::new(&data)
+        let data: Vec<Point<T>> = self.data.iter().map(|&p| p * rhs).collect();
+        self.clone_with(&data)
     }
 }
 
@@ -167,8 +167,8 @@ impl<T: Graphable> Div<T> for Series<T> {
     type Output = Self;
 
     fn div(self, rhs: T) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p / rhs).collect();
-        Series::new(&data)
+        let data: Vec<Point<T>> = self.data.iter().map(|&p| p / rhs).collect();
+        self.clone_with(&data)
     }
 }
 
@@ -176,8 +176,8 @@ impl<T: Graphable> Add<Point<T>> for Series<T> {
     type Output = Self;
 
     fn add(self, rhs: Point<T>) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p + rhs).collect();
-        Series::new(&data)
+        let data: Vec<Point<T>> = self.data.iter().map(|&p| p + rhs).collect();
+        self.clone_with(&data)
     }
 }
 
@@ -185,8 +185,8 @@ impl<T: Graphable> Sub<Point<T>> for Series<T> {
     type Output = Self;
 
     fn sub(self, rhs: Point<T>) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.into_iter().map(|p| p - rhs).collect();
-        Series::new(&data)
+        let data: Vec<Point<T>> = self.data.iter().map(|&p| p - rhs).collect();
+        self.clone_with(&data)
     }
 }
 
