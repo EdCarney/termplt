@@ -325,11 +325,7 @@ impl<T: Graphable> Graph<T> {
 
 impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
-        let mut mask_points = self
-            .data()
-            .iter()
-            .flat_map(|series| series.get_mask().unwrap())
-            .collect::<Vec<_>>();
+        let mut mask_points = Vec::new();
 
         // add axes if they are defined
         if let Some(axes) = &self.axes {
@@ -342,6 +338,14 @@ impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
             let limits = self.limits().unwrap();
             mask_points.extend(grid_lines.get_mask(limits)?);
         }
+
+        // add series data
+        mask_points.extend(
+            self.data()
+                .iter()
+                .flat_map(|series| series.get_mask().unwrap())
+                .collect::<Vec<_>>(),
+        );
 
         Ok(mask_points)
     }
