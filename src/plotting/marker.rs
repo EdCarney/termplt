@@ -1,16 +1,23 @@
+use core::f32;
+
 use super::{
     colors,
     common::{Drawable, MaskPoints},
     limits::Limits,
     point::Point,
 };
-use crate::common::Result;
+use crate::{
+    common::Result,
+    plotting::common::{FloatConvertable, IntConvertable, UIntConvertable},
+};
 use rgb::RGB8;
 
 #[derive(Debug, Clone)]
 pub enum MarkerStyle {
     FilledSquare { size: u32, color: RGB8 },
     HollowSquare { size: u32, color: RGB8 },
+    FilledCircle { size: u32, color: RGB8 },
+    HollowCircle { size: u32, color: RGB8 },
 }
 
 #[derive(Debug)]
@@ -29,8 +36,10 @@ impl MarkerStyle {
 
     pub fn size(&self) -> u32 {
         match self {
-            MarkerStyle::FilledSquare { size, color: _ } => *size,
-            MarkerStyle::HollowSquare { size, color: _ } => *size,
+            MarkerStyle::FilledSquare { size, .. }
+            | MarkerStyle::HollowSquare { size, .. }
+            | MarkerStyle::FilledCircle { size, .. }
+            | MarkerStyle::HollowCircle { size, .. } => *size,
         }
     }
 }
@@ -100,6 +109,84 @@ impl Drawable for Marker {
                         color: color.clone(),
                     },
                 ]
+            }
+            MarkerStyle::FilledCircle { size, color } => {
+                let get_point_fn = |x_adj: f32, y_adj: f32| -> Point<u32> {
+                    let size = size as i32;
+                    let x_adj = if x_adj > 0. {
+                        i32::min(x_adj.round().convert_to_i32(), size)
+                    } else {
+                        i32::max(x_adj.round().convert_to_i32(), -size)
+                    };
+                    let y_adj = if y_adj > 0. {
+                        i32::min(y_adj.round().convert_to_i32(), size)
+                    } else {
+                        i32::max(y_adj.round().convert_to_i32(), -size)
+                    };
+
+                    let x = (self.center.x.convert_to_i32() + x_adj).convert_to_u32();
+                    let y = (self.center.y.convert_to_i32() + y_adj).convert_to_u32();
+
+                    Point::new(x, y)
+                };
+
+                let mut points = Vec::new();
+                let radius = size as f32;
+                let step = f32::atan(1.0 / radius);
+                let mut angle = 0.;
+                while angle < f32::consts::FRAC_PI_2 + step {
+                    let x_adj = radius * f32::cos(angle);
+                    let y_adj = radius * f32::sin(angle);
+
+                    let iter_points = Point::<u32>::range(
+                        &get_point_fn(-x_adj, -y_adj),
+                        &get_point_fn(x_adj, y_adj),
+                    );
+
+                    points.extend(iter_points);
+                    angle += step;
+                }
+                vec![MaskPoints { points, color }]
+            }
+            MarkerStyle::HollowCircle { size, color } => {
+                let get_point_fn = |x_adj: f32, y_adj: f32| -> Point<u32> {
+                    let size = size as i32;
+                    let x_adj = if x_adj > 0. {
+                        i32::min(x_adj.round().convert_to_i32(), size)
+                    } else {
+                        i32::max(x_adj.round().convert_to_i32(), -size)
+                    };
+                    let y_adj = if y_adj > 0. {
+                        i32::min(y_adj.round().convert_to_i32(), size)
+                    } else {
+                        i32::max(y_adj.round().convert_to_i32(), -size)
+                    };
+
+                    let x = (self.center.x.convert_to_i32() + x_adj).convert_to_u32();
+                    let y = (self.center.y.convert_to_i32() + y_adj).convert_to_u32();
+
+                    Point::new(x, y)
+                };
+
+                let mut points = Vec::new();
+                let radius = size as f32;
+                let step = f32::atan(1.0 / radius);
+                let mut angle = 0.;
+                while angle < f32::consts::FRAC_PI_2 + step {
+                    let x_adj = radius * f32::cos(angle);
+                    let y_adj = radius * f32::sin(angle);
+
+                    let iter_points = vec![
+                        get_point_fn(x_adj, y_adj),
+                        get_point_fn(-x_adj, y_adj),
+                        get_point_fn(x_adj, -y_adj),
+                        get_point_fn(-x_adj, -y_adj),
+                    ];
+
+                    points.extend(iter_points);
+                    angle += step;
+                }
+                vec![MaskPoints { points, color }]
             }
         };
         Ok(mask_points)
