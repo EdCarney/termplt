@@ -9,3 +9,4 @@ mod line_positioning;
 pub mod marker;
 pub mod point;
 pub mod series;
+pub mod text;
