@@ -21,15 +21,16 @@ use termplt::{
 };
 
 fn main() {
-    let points_x2 = (-50..=50)
+    let num_points = 200;
+    let points_x2 = (-num_points / 2..=num_points / 2)
         .map(|x| Point::new(x, x * x))
         .collect::<Vec<Point<_>>>();
-    let points_x3 = (-50..=50)
+    let points_x3 = (-num_points / 2..=num_points / 2)
         .map(|x| Point::new(x, x * x * x))
         .collect::<Vec<Point<_>>>();
 
     draw_graph_style_1(&points_x2, None, None);
-    draw_graph_style_1(&points_x3, Some((-60, 60)), None);
+    draw_graph_style_1(&points_x3, None, None);
 
     let num_points = 100;
     let points_sin = (0..=num_points)
@@ -49,12 +50,10 @@ fn draw_graph_style_1(
     let width = 500;
     let height = 500;
     let mut graph = Graph::new()
-        .with_series(
-            Series::new(data).with_marker_style(MarkerStyle::HollowSquare {
-                size: 3,
-                color: colors::BLACK,
-            }),
-        )
+        .with_series(Series::new(data).with_line_style(LineStyle::Solid {
+            color: colors::BLUE,
+            thickness: 0,
+        }))
         .with_axes(Axes::XY(LineStyle::Solid {
             color: colors::BLACK,
             thickness: 1,
@@ -96,28 +95,51 @@ fn draw_graph_style_2(data: &[Point<f32>]) {
         .with_graph(
             Graph::new()
                 .with_series(
-                    Series::new(data).with_marker_style(MarkerStyle::FilledCircle {
-                        size: 3,
-                        color: colors::LIME,
-                    }),
+                    Series::new(data)
+                        .with_marker_style(MarkerStyle::FilledCircle {
+                            size: 3,
+                            color: colors::LIME,
+                        })
+                        .with_line_style(LineStyle::Solid {
+                            color: colors::LIME,
+                            thickness: 0,
+                        }),
                 )
                 .with_series(
-                    Series::new(data).with_marker_style(MarkerStyle::HollowCircle {
-                        size: 3,
-                        color: colors::RED,
-                    }) + Point::new(f32::consts::FRAC_PI_4, 0.),
+                    Series::new(data)
+                        .with_marker_style(MarkerStyle::HollowCircle {
+                            size: 3,
+                            color: colors::RED,
+                        })
+                        .with_line_style(LineStyle::Solid {
+                            color: colors::RED,
+                            thickness: 0,
+                        })
+                        + Point::new(f32::consts::FRAC_PI_4, 0.),
                 )
                 .with_series(
-                    Series::new(data).with_marker_style(MarkerStyle::FilledSquare {
-                        size: 3,
-                        color: colors::CYAN,
-                    }) + Point::new(2. * f32::consts::FRAC_PI_4, 0.),
+                    Series::new(data)
+                        .with_marker_style(MarkerStyle::FilledSquare {
+                            size: 3,
+                            color: colors::CYAN,
+                        })
+                        .with_line_style(LineStyle::Solid {
+                            color: colors::CYAN,
+                            thickness: 0,
+                        })
+                        + Point::new(2. * f32::consts::FRAC_PI_4, 0.),
                 )
                 .with_series(
-                    Series::new(data).with_marker_style(MarkerStyle::HollowSquare {
-                        size: 3,
-                        color: colors::ORANGE,
-                    }) + Point::new(3. * f32::consts::FRAC_PI_4, 0.),
+                    Series::new(data)
+                        .with_marker_style(MarkerStyle::HollowSquare {
+                            size: 3,
+                            color: colors::ORANGE,
+                        })
+                        .with_line_style(LineStyle::Solid {
+                            color: colors::ORANGE,
+                            thickness: 0,
+                        })
+                        + Point::new(3. * f32::consts::FRAC_PI_4, 0.),
                 )
                 .with_axes(Axes::XY(LineStyle::Solid {
                     color: colors::GHOST_WHITE,

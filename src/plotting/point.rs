@@ -139,8 +139,11 @@ where
         Point { x, y }
     }
 
-    pub fn dist(&self, other: &Point<T>) -> f64 {
-        let diff = (*self - *other).convert_to_f64();
+    pub fn dist<U>(&self, other: &Point<U>) -> f64
+    where
+        U: FloatConvertable + Graphable,
+    {
+        let diff = self.convert_to_f64() - other.convert_to_f64();
         f64::sqrt(diff.x.powi(2) + diff.y.powi(2))
     }
 }

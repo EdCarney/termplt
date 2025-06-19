@@ -119,10 +119,10 @@ where
     }
 }
 
-impl Line<u32> {
+impl Line<i32> {
     /// Gets drawable limits for the line.
     pub fn drawable_limits(&self) -> Limits<u32> {
-        let limits = self.limits();
+        let limits = self.limits().convert_to_u32();
         let min = *limits.min() - self.style.thickness();
         let max = *limits.max() + self.style.thickness();
         Limits::new(min, max)
@@ -145,7 +145,9 @@ impl Line<u32> {
                 let p1 = start.convert_to_f64();
                 let mut p2 = end.convert_to_f64();
                 let mut x_step = (p2.x - p1.x).convert_to_f64();
-                while !self.limits().contains(&p2.round()) || p1.dist(&p2) > 1. {
+                let max_dist = p1.dist(&p2);
+
+                while start.dist(&p2) > max_dist || start.dist(&p2) > 1. {
                     x_step /= 2.;
                     let x = p1.x + x_step;
                     let y = m * x + b;
@@ -156,7 +158,7 @@ impl Line<u32> {
                 let num_iter = ((end.x - start.x).convert_to_f64() / x_step)
                     .floor()
                     .convert_to_u32();
-                for i in 1..num_iter {
+                for i in 1..=num_iter {
                     let step = x_step * i.convert_to_f64();
                     let x = p1.x + step;
                     let y = m * x + b;
@@ -186,7 +188,7 @@ impl<T: IntConvertable + Graphable> Drawable for Line<T> {
                     _ => panic!("Invalid line positioning type for flat line fn: {pos:?}"),
                 };
                 points.extend(
-                    self.convert_to_u32()
+                    self.convert_to_i32()
                         .full_drawable_points()
                         .iter()
                         .map(|&p| (p.convert_to_i32() + shift_point).convert_to_u32()),
@@ -201,7 +203,7 @@ impl<T: IntConvertable + Graphable> Drawable for Line<T> {
                         flat_line_fn(thickness, &self.positioning)
                     }
                     LinePositioning::BetweenPoints { .. } => {
-                        self.convert_to_u32().full_drawable_points()
+                        self.convert_to_i32().full_drawable_points()
                     }
                 };
 

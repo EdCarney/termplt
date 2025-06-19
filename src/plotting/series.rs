@@ -91,18 +91,13 @@ impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
 
         // add lines if line styling is present
         if let Some(line_style) = &self.line_style {
-            let mut lines = Vec::<Line<u32>>::with_capacity(self.data.len());
             for i in 0..self.data.len() - 1 {
                 let start = self.data[i];
                 let end = self.data[i + 1];
                 let pos = LinePositioning::BetweenPoints { start, end };
-                lines.push(Line::new(pos.convert_to_u32(), line_style.clone()));
+                let line = Line::new(pos.convert_to_u32(), line_style.clone());
+                mask_points.extend(line.get_mask()?);
             }
-            let line_mask_points = lines
-                .iter()
-                .flat_map(|line| line.get_mask().unwrap())
-                .collect::<Vec<_>>();
-            mask_points.extend(line_mask_points);
         };
 
         Ok(mask_points)
