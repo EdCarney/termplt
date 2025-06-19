@@ -139,18 +139,35 @@ impl Line<u32> {
             LinePositioning::BetweenPoints { start, end } => {
                 let m = (end.y - start.y).convert_to_f64() / (end.x - start.x).convert_to_f64();
                 let b = start.y.convert_to_f64() - start.x.convert_to_f64() * m;
-                let hypot = start.dist(&end);
 
                 // get iteration size; start w/ x step size of 1 and decrease until the dist b/w
                 // two subsequent points is <= 1
-                let mut x_step = 1f64;
                 let p1 = start.convert_to_f64();
-                let mut p2 = Point::new(p1.x + x_step, m * (p1.x + x_step) + b);
-
-                for x in start.x.convert_to_u32()..=end.x. {
-                    y = m * x.conver
+                let mut p2 = end.convert_to_f64();
+                let mut x_step = (p2.x - p1.x).convert_to_f64();
+                while !self.limits().contains(&p2.round()) || p1.dist(&p2) > 1. {
+                    x_step /= 2.;
+                    let x = p1.x + x_step;
+                    let y = m * x + b;
+                    p2 = Point::new(x, y);
                 }
-                todo!()
+
+                let mut points = Vec::new();
+                let num_iter = ((end.x - start.x).convert_to_f64() / x_step)
+                    .floor()
+                    .convert_to_u32();
+                for i in 1..num_iter {
+                    let step = x_step * i.convert_to_f64();
+                    let x = p1.x + step;
+                    let y = m * x + b;
+                    let point = Point::new(x, y).convert_to_u32();
+
+                    // only add points that are not already added
+                    if !points.iter().any(|&p| p == point) {
+                        points.push(point);
+                    }
+                }
+                points
             }
         }
     }
@@ -158,7 +175,7 @@ impl Line<u32> {
 
 impl<T: IntConvertable + Graphable> Drawable for Line<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
-        let flat_line_fn = |thickness: u32, pos: LinePositioning<T>| -> Vec<Point<u32>> {
+        let flat_line_fn = |thickness: u32, pos: &LinePositioning<T>| -> Vec<Point<u32>> {
             let mut points = Vec::new();
             let shift_start = -1 * thickness as i32;
             let shift_end = thickness as i32;
@@ -169,23 +186,24 @@ impl<T: IntConvertable + Graphable> Drawable for Line<T> {
                     _ => panic!("Invalid line positioning type for flat line fn: {pos:?}"),
                 };
                 points.extend(
-                    self.full_drawable_points()
+                    self.convert_to_u32()
+                        .full_drawable_points()
                         .iter()
                         .map(|&p| (p.convert_to_i32() + shift_point).convert_to_u32()),
                 );
             }
             points
         };
-        let shift_point_fn = match self.positioning {
-            LinePositioning::Vertical { .. } => |amount: i32| Point::new(amount, 0),
-            LinePositioning::Horizontal { .. } => |amount: i32| Point::new(0, amount),
-            LinePositioning::BetweenPoints { .. } => todo!(),
-        };
         let mask_points = match self.style {
             LineStyle::Solid { color, thickness } => {
                 let points = match self.positioning {
-                    LinePositioning::Vertical { start, length }
-        };
+                    LinePositioning::Vertical { .. } | LinePositioning::Horizontal { .. } => {
+                        flat_line_fn(thickness, &self.positioning)
+                    }
+                    LinePositioning::BetweenPoints { .. } => {
+                        self.convert_to_u32().full_drawable_points()
+                    }
+                };
 
                 vec![MaskPoints {
                     points,

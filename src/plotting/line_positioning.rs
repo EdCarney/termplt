@@ -4,7 +4,7 @@ use super::{
     point::Point,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum LinePositioning<T: Graphable> {
     Horizontal { start: Point<T>, length: T },
     Vertical { start: Point<T>, length: T },

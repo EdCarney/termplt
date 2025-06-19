@@ -71,6 +71,29 @@ where
     pub fn limit_range(limits: Limits<T>) -> Vec<Point<u32>> {
         Point::<T>::range(limits.min(), limits.max())
     }
+
+    /// Rounds point to the nearest integer values and converts to u32.
+    pub fn round(&self) -> Point<u32> {
+        let x = self.x.convert_to_f64().round().convert_to_u32();
+        let y = self.y.convert_to_f64().round().convert_to_u32();
+        Point { x, y }
+    }
+
+    /// Rounds point to the largest integer values greater than or equal to the current values and
+    /// converts to u32.
+    pub fn ceil(&self) -> Point<u32> {
+        let x = self.x.convert_to_f64().ceil().convert_to_u32();
+        let y = self.y.convert_to_f64().ceil().convert_to_u32();
+        Point { x, y }
+    }
+
+    /// Rounds point to the largest integer values less than or equal to the current values and
+    /// converts to u32.
+    pub fn floor(&self) -> Point<u32> {
+        let x = self.x.convert_to_f64().floor().convert_to_u32();
+        let y = self.y.convert_to_f64().floor().convert_to_u32();
+        Point { x, y }
+    }
 }
 
 impl<T, U> Scalable<T, U> for Point<T>
