@@ -6,47 +6,60 @@ use super::{
 use crate::common::Result;
 use rgb::RGB8;
 
+#[derive(Debug, Clone)]
 pub enum TextPositioning {
     Centered(Point<u32>),
     LeftAligned(Point<u32>),
     // to add...
 }
 
+#[derive(Debug, Clone)]
 pub struct TextChar {
     value: char,
     bitmap: Vec<Vec<i32>>,
-    center: Point<u32>,
-    style: TextStyle,
 }
 
 impl TextChar {
-    pub fn new(value: char, center: Point<u32>, style: TextStyle) -> TextChar {
+    pub fn new(value: char) -> TextChar {
         let bitmap = match value {
-            '0' => vec![vec![0, 0, 1, 0, 0], vec![]],
+            '0' => vec![
+                vec![0, 1, 1, 1, 0],
+                vec![1, 1, 0, 1, 1],
+                vec![1, 0, 0, 0, 1],
+                vec![1, 0, 0, 0, 1],
+                vec![1, 0, 0, 0, 1],
+                vec![1, 0, 0, 0, 1],
+                vec![1, 0, 0, 0, 1],
+                vec![1, 0, 0, 0, 1],
+                vec![1, 1, 0, 1, 1],
+                vec![0, 1, 1, 1, 0],
+            ],
             _ => panic!("Bitmap not defined for character: '{value}'"),
         };
-        TextChar {
-            value,
-            bitmap,
-            center,
-            style,
-        }
+        TextChar { value, bitmap }
     }
-}
 
-impl Drawable for TextChar {
-    fn get_mask(&self) -> Result<Vec<MaskPoints>> {
+    pub fn width(&self) -> usize {
+        self.bitmap.first().unwrap().len()
+    }
+
+    pub fn height(&self) -> usize {
+        self.bitmap.len()
+    }
+
+    pub fn get_mask(&self, center: Point<u32>, style: TextStyle) -> Result<Vec<MaskPoints>> {
         let points = self
             .bitmap
             .iter()
             .flatten()
-            .map(|&shift| (self.center.convert_to_i32() + shift).convert_to_u32())
+            .map(|&shift| (center.convert_to_i32() + shift).convert_to_u32())
             .collect::<Vec<_>>();
-        let color = self.style.color;
+        let color = style.color;
         Ok(vec![MaskPoints { points, color }])
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TextStyle {
     pub color: RGB8,
     pub size: u32,
@@ -61,10 +74,14 @@ impl TextStyle {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Text {
     text: String,
     style: TextStyle,
     positioning: TextPositioning,
+    chars: Vec<TextChar>,
+    width: usize,
+    height: usize,
 }
 
 impl Text {
@@ -72,16 +89,41 @@ impl Text {
         if style.size < 5 {
             panic!("Text size cannot be less than 5")
         }
+
+        let chars = text.chars().map(|c| TextChar::new(c)).collect::<Vec<_>>();
+        let width = chars.iter().fold(0usize, |acc, val| acc + val.width());
+        let height = chars.iter().map(|c| c.height()).max().unwrap();
+
         Text {
             text,
             style,
             positioning,
+            chars,
+            width,
+            height,
         }
     }
 }
 
 impl Drawable for Text {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
-        todo!()
+        let mask_points = match self.positioning {
+            TextPositioning::Centered(center) => {
+                let shift: i32 = (self.width / 2).try_into().unwrap();
+                let mut masks = Vec::new();
+                self.chars.iter().fold(-shift, |acc, c| {
+                    let char_width: i32 = c.width().try_into().unwrap();
+                    let char_center = center.convert_to_i32() + Point::new(acc + char_width / 2, 0);
+                    masks.extend(
+                        c.get_mask(char_center.convert_to_u32(), self.style.clone())
+                            .unwrap(),
+                    );
+                    acc + char_width
+                });
+                masks
+            }
+            _ => panic!("Not implemented"),
+        };
+        Ok(mask_points)
     }
 }

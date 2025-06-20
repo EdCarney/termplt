@@ -3,6 +3,7 @@ use super::{
     graph::{Axes, Graph},
     limits::Limits,
     point::Point,
+    text::Text,
 };
 use crate::common::Result;
 use rgb::RGB8;
@@ -93,6 +94,7 @@ pub struct TerminalCanvas<T: Graphable> {
     canvas: Canvas,
     buffer: CanvasBuffer,
     graph: Option<Graph<T>>,
+    text: Option<Vec<Text>>,
     limits: Limits<u32>,
 }
 
@@ -105,6 +107,7 @@ where
             canvas: Canvas::new(width, height, background),
             buffer: CanvasBuffer::new(BufferType::None),
             graph: None,
+            text: None,
             limits: Limits::new(Point::new(0, 0), Point::new(width - 1, height - 1)),
         }
     }
@@ -126,16 +129,23 @@ where
         self.canvas.get_bytes()
     }
 
-    // Consumes the graph and draws it on the canvas.
+    /// Consumes all drawable assets and draws them on the canvas.
     pub fn draw(mut self) -> Result<Self> {
         let canvas_limits = self.get_drawable_limits().convert_to_f64();
-        self.graph
-            .take()
-            .unwrap()
-            .scale(canvas_limits)
-            .get_mask()?
-            .iter()
-            .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
+
+        if let Some(graph) = self.graph.take() {
+            graph
+                .scale(canvas_limits)
+                .get_mask()?
+                .iter()
+                .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
+        }
+
+        if let Some(text) = self.text.take() {
+            text.iter()
+                .flat_map(|txt| txt.get_mask().unwrap())
+                .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
+        }
 
         Ok(self)
     }
