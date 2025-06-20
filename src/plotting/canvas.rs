@@ -125,6 +125,16 @@ where
         self
     }
 
+    pub fn with_text(mut self, text: Text) -> Self {
+        self.text = if let Some(mut texts) = self.text {
+            texts.push(text);
+            Some(texts)
+        } else {
+            Some(vec![text])
+        };
+        self
+    }
+
     pub fn get_bytes(&self) -> Vec<u8> {
         self.canvas.get_bytes()
     }
