@@ -12,6 +12,7 @@ use termplt::{
         marker::MarkerStyle,
         point::Point,
         series::Series,
+        text::{Text, TextPositioning, TextStyle},
     },
     terminal_commands::{
         csi_cmds::{self, CsiCommand},
@@ -21,6 +22,31 @@ use termplt::{
 };
 
 fn main() {
+    let txt = Text::new(
+        String::from("0"),
+        TextStyle::default(),
+        TextPositioning::Centered(Point::new(5, 5)),
+    );
+
+    let width = 50;
+    let height = 50;
+    let bytes = TerminalCanvas::<u32>::new(width, height, colors::WHITE)
+        .with_buffer(BufferType::Uniform(10))
+        .with_text(txt)
+        .draw()
+        .unwrap()
+        .get_bytes();
+    Image::new(
+        PixelFormat::Rgb { width, height },
+        Transmission::Direct(bytes),
+    )
+    .unwrap()
+    .display()
+    .unwrap();
+    println!();
+}
+
+fn test_graphing() {
     let num_points = 200;
     let points_x2 = (-num_points / 2..=num_points / 2)
         .map(|x| Point::new(x, x * x))

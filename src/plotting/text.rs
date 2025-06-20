@@ -47,12 +47,22 @@ impl TextChar {
         self.bitmap.len()
     }
 
-    pub fn get_mask(&self, center: Point<u32>, style: TextStyle) -> Result<Vec<MaskPoints>> {
+    pub fn get_mask(&self, top_left: Point<u32>, style: TextStyle) -> Result<Vec<MaskPoints>> {
+        let mut points = Vec::new();
+        for i in 0..self.height() {
+            for j in 0..self.width() {
+                if self.bitmap[i][j] == 1 {
+                    let shift = Point::new(j as i32, i as i32);
+                    let point = top_left.convert_to_i32() + shift;
+                    points.push(point);
+                }
+            }
+        }
         let points = self
             .bitmap
             .iter()
             .flatten()
-            .map(|&shift| (center.convert_to_i32() + shift).convert_to_u32())
+            .map(|&shift| (top_left.convert_to_i32() + shift).convert_to_u32())
             .collect::<Vec<_>>();
         let color = style.color;
         Ok(vec![MaskPoints { points, color }])
@@ -109,15 +119,17 @@ impl Drawable for Text {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mask_points = match self.positioning {
             TextPositioning::Centered(center) => {
+                let height_shift: i32 = self.height.try_into().unwrap();
+                let height_shift = height_shift / 2;
                 let shift: i32 = (self.width / 2).try_into().unwrap();
                 let mut masks = Vec::new();
                 self.chars.iter().fold(-shift, |acc, c| {
-                    let char_width: i32 = c.width().try_into().unwrap();
-                    let char_center = center.convert_to_i32() + Point::new(acc + char_width / 2, 0);
+                    let char_top_left = center.convert_to_i32() + Point::new(acc, height_shift);
                     masks.extend(
-                        c.get_mask(char_center.convert_to_u32(), self.style.clone())
+                        c.get_mask(char_top_left.convert_to_u32(), self.style.clone())
                             .unwrap(),
                     );
+                    let char_width: i32 = c.width().try_into().unwrap();
                     acc + char_width
                 });
                 masks
