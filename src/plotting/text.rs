@@ -21,34 +21,76 @@ pub struct TextChar {
 
 impl TextChar {
     pub fn new(value: char) -> TextChar {
-        let mut bitmap = match value {
+        let bitmap = match value {
             '0' => vec![
-                vec![0, 1, 1, 1, 0],
-                vec![1, 1, 0, 1, 1],
-                vec![1, 0, 0, 0, 1],
-                vec![1, 0, 0, 0, 1],
-                vec![1, 0, 1, 0, 1],
-                vec![1, 0, 1, 0, 1],
-                vec![1, 0, 0, 0, 1],
-                vec![1, 0, 0, 0, 1],
-                vec![1, 1, 0, 1, 1],
-                vec![0, 1, 1, 1, 0],
+                "  000000  ",
+                "0000  0000",
+                "00      00",
+                "00      00",
+                "00  00  00",
+                "00  00  00",
+                "00      00",
+                "00      00",
+                "0000  0000",
+                "  000000  ",
             ],
             '1' => vec![
-                vec![0, 0, 1, 0, 0],
-                vec![0, 1, 1, 0, 0],
-                vec![1, 0, 1, 0, 0],
-                vec![0, 0, 1, 0, 0],
-                vec![0, 0, 1, 0, 0],
-                vec![0, 0, 1, 0, 0],
-                vec![0, 0, 1, 0, 0],
-                vec![0, 0, 1, 0, 0],
-                vec![0, 0, 1, 0, 0],
-                vec![1, 1, 1, 1, 1],
+                "    11    ",
+                "  1111    ",
+                "11  11    ",
+                "    11    ",
+                "    11    ",
+                "    11    ",
+                "    11    ",
+                "    11    ",
+                "    11    ",
+                "1111111111",
+            ],
+            '2' => vec![
+                "  222222  ",
+                "2222  2222",
+                "22    2222",
+                "    2222  ",
+                "    2222  ",
+                "  2222    ",
+                "  2222    ",
+                "2222      ",
+                "2222      ",
+                "2222222222",
+            ],
+            '3' => vec![
+                "3333333333",
+                "      3333",
+                "    3333  ",
+                "  3333    ",
+                " 33333    ",
+                "    3333  ",
+                "      3333",
+                "33      33",
+                "3333  3333",
+                "  333333  ",
             ],
             _ => panic!("Bitmap not defined for character: '{value}'"),
         };
+
+        // note that bitmaps are written to be human-readable; they need to be modified to be
+        // printed; this includes correcting the aspect ratio (every other row element is skipped
+        // to ensure the aspect ratio is 1:2); also the string is converted to a vec of i32
+        let mut bitmap = bitmap
+            .iter()
+            .map(|row| {
+                row.to_string()
+                    .chars()
+                    .map(|x| if x == ' ' { 0 } else { 1 })
+                    .step_by(2)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        // the rows of the bitmap must also be reversed to ensure that lower indices are the bottom
+        // of the coordinates
         bitmap.reverse();
+
         TextChar { value, bitmap }
     }
 

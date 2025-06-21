@@ -23,13 +23,13 @@ use termplt::{
 
 fn main() {
     let txt = Text::new(
-        String::from("01"),
+        String::from("0123"),
         TextStyle::default(),
-        TextPositioning::Centered(Point::new(5, 5)),
+        TextPositioning::Centered(Point::new(50, 50)),
     );
 
-    let width = 50;
-    let height = 50;
+    let width = 100;
+    let height = 100;
     let bytes = TerminalCanvas::<u32>::new(width, height, colors::WHITE)
         .with_buffer(BufferType::Uniform(10))
         .with_text(txt)
