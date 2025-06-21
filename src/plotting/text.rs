@@ -21,21 +21,34 @@ pub struct TextChar {
 
 impl TextChar {
     pub fn new(value: char) -> TextChar {
-        let bitmap = match value {
+        let mut bitmap = match value {
             '0' => vec![
                 vec![0, 1, 1, 1, 0],
                 vec![1, 1, 0, 1, 1],
                 vec![1, 0, 0, 0, 1],
                 vec![1, 0, 0, 0, 1],
-                vec![1, 0, 0, 0, 1],
-                vec![1, 0, 0, 0, 1],
+                vec![1, 0, 1, 0, 1],
+                vec![1, 0, 1, 0, 1],
                 vec![1, 0, 0, 0, 1],
                 vec![1, 0, 0, 0, 1],
                 vec![1, 1, 0, 1, 1],
                 vec![0, 1, 1, 1, 0],
             ],
+            '1' => vec![
+                vec![0, 0, 1, 0, 0],
+                vec![0, 1, 1, 0, 0],
+                vec![1, 0, 1, 0, 0],
+                vec![0, 0, 1, 0, 0],
+                vec![0, 0, 1, 0, 0],
+                vec![0, 0, 1, 0, 0],
+                vec![0, 0, 1, 0, 0],
+                vec![0, 0, 1, 0, 0],
+                vec![0, 0, 1, 0, 0],
+                vec![1, 1, 1, 1, 1],
+            ],
             _ => panic!("Bitmap not defined for character: '{value}'"),
         };
+        bitmap.reverse();
         TextChar { value, bitmap }
     }
 
@@ -54,16 +67,10 @@ impl TextChar {
                 if self.bitmap[i][j] == 1 {
                     let shift = Point::new(j as i32, i as i32);
                     let point = top_left.convert_to_i32() + shift;
-                    points.push(point);
+                    points.push(point.convert_to_u32());
                 }
             }
         }
-        let points = self
-            .bitmap
-            .iter()
-            .flatten()
-            .map(|&shift| (top_left.convert_to_i32() + shift).convert_to_u32())
-            .collect::<Vec<_>>();
         let color = style.color;
         Ok(vec![MaskPoints { points, color }])
     }
@@ -119,8 +126,7 @@ impl Drawable for Text {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mask_points = match self.positioning {
             TextPositioning::Centered(center) => {
-                let height_shift: i32 = self.height.try_into().unwrap();
-                let height_shift = height_shift / 2;
+                let height_shift: i32 = (self.height / 2).try_into().unwrap();
                 let shift: i32 = (self.width / 2).try_into().unwrap();
                 let mut masks = Vec::new();
                 self.chars.iter().fold(-shift, |acc, c| {

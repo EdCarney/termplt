@@ -23,7 +23,7 @@ use termplt::{
 
 fn main() {
     let txt = Text::new(
-        String::from("0"),
+        String::from("01"),
         TextStyle::default(),
         TextPositioning::Centered(Point::new(5, 5)),
     );
