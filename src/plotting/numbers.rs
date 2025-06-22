@@ -2,19 +2,41 @@ const CHAR_WIDTH: usize = 5;
 const CHAR_HEIGHT: usize = 10;
 const NUM_ZERO: &str = "
   000000
-0000  0000
+0000000000
 00      00
 00      00
 00  00  00
 00  00  00
 00      00
 00      00
-0000  0000
+0000000000
   000000
 ";
+// const NUM_ZERO: &str = "
+//       00000000
+//     0000    0000
+//   0000        0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+// 0000            0000
+//   0000        0000
+//     0000    0000
+//       00000000
+// ";
 const NUM_ONE: &str = "
-    11
   1111
+111111
 11  11
     11
     11
@@ -67,44 +89,44 @@ const NUM_FIVE: &str = "
 55555     
    55555  
      55555
-       555
-        55
-5555    55
+      5555
+      5555
+5555  5555
   555555
 ";
 const NUM_SIX: &str = "
-    66
-  6666
-6666
-66
+    666666
+  666666  
+6666  
+666666
 66666666
 6666  6666
-66      66
+6666  6666
 6666  6666
   666666
-    66
+   6666
 ";
 const NUM_SEVEN: &str = "
 7777777777
-77      77
-       777
-      777
-     777
-    777
-   777
-  777
- 777
-777
+7777  7777
+      7777
+    7777
+    7777
+    77
+  7777
+  7777
+7777
+7777
 ";
 const NUM_EIGHT: &str = "
   888888  
 8888  8888
-88      88
 8888  8888
-   8888
 8888  8888
-88      88
-88      88
+  888888
+8888  8888
+8888  8888
+8888  8888
 8888  8888
   888888
 ";
@@ -121,7 +143,7 @@ const NUM_NINE: &str = "
 999
 ";
 
-pub fn get_bitmap(c: char) -> Vec<Vec<bool>> {
+pub fn get_bitmap(c: char, scale: u8) -> Vec<Vec<bool>> {
     let str_map = match c {
         '0' => NUM_ZERO,
         '1' => NUM_ONE,
@@ -141,7 +163,11 @@ pub fn get_bitmap(c: char) -> Vec<Vec<bool>> {
     // to ensure the aspect ratio is 1:2); also the string is converted to a vec of i32
     let mut bitmap = str_map
         .lines()
-        .map(|row| {
+        .filter_map(|row| {
+            if row.is_empty() {
+                return None;
+            }
+
             let mut chars = row
                 .to_string()
                 .chars()
@@ -153,7 +179,7 @@ pub fn get_bitmap(c: char) -> Vec<Vec<bool>> {
             while chars.len() < CHAR_WIDTH {
                 chars.push(false);
             }
-            chars
+            Some(chars)
         })
         .collect::<Vec<_>>();
 
@@ -161,6 +187,21 @@ pub fn get_bitmap(c: char) -> Vec<Vec<bool>> {
     while bitmap.len() < CHAR_HEIGHT {
         bitmap.push(vec![false; CHAR_WIDTH]);
     }
+
+    // scale the char
+    let mut scaled_bitmap = Vec::new();
+    for i in 0..CHAR_HEIGHT {
+        let mut scaled_row = Vec::new();
+        for j in 0..CHAR_WIDTH {
+            for _ in 0..scale {
+                scaled_row.push(bitmap[i][j]);
+            }
+        }
+        for _ in 0..scale {
+            scaled_bitmap.push(scaled_row.clone());
+        }
+    }
+    let mut bitmap = scaled_bitmap;
 
     // the rows of the bitmap must also be reversed to ensure that lower indices are the bottom
     // of the coordinates

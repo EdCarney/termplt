@@ -21,8 +21,8 @@ pub struct TextChar {
 }
 
 impl TextChar {
-    pub fn new(value: char) -> TextChar {
-        let bitmap = get_bitmap(value);
+    pub fn new(value: char, scale: u8) -> TextChar {
+        let bitmap = get_bitmap(value, scale);
         TextChar { value, bitmap }
     }
 
@@ -53,14 +53,18 @@ impl TextChar {
 #[derive(Debug, Clone)]
 pub struct TextStyle {
     pub color: RGB8,
-    pub size: u32,
+    pub scale: u8,
 }
 
 impl TextStyle {
+    pub fn new(color: RGB8, scale: u8) -> TextStyle {
+        TextStyle { color, scale }
+    }
+
     pub fn default() -> TextStyle {
         TextStyle {
             color: colors::BLACK,
-            size: 5,
+            scale: 5,
         }
     }
 }
@@ -77,11 +81,14 @@ pub struct Text {
 
 impl Text {
     pub fn new(text: String, style: TextStyle, positioning: TextPositioning) -> Text {
-        if style.size < 5 {
-            panic!("Text size cannot be less than 5")
+        if style.scale < 1 {
+            panic!("Text scaling cannot be less than 1")
         }
 
-        let chars = text.chars().map(|c| TextChar::new(c)).collect::<Vec<_>>();
+        let chars = text
+            .chars()
+            .map(|c| TextChar::new(c, style.scale))
+            .collect::<Vec<_>>();
         let width = chars.iter().fold(0usize, |acc, val| acc + val.width());
         let height = chars.iter().map(|c| c.height()).max().unwrap();
 

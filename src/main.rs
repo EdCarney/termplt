@@ -22,17 +22,23 @@ use termplt::{
 };
 
 fn main() {
-    let txt = Text::new(
+    let txt_1 = Text::new(
         String::from("0123456789"),
-        TextStyle::default(),
+        TextStyle::new(colors::RED, 1),
         TextPositioning::Centered(Point::new(50, 50)),
     );
+    let txt_2 = Text::new(
+        String::from("0123456789"),
+        TextStyle::new(colors::BLUE, 3),
+        TextPositioning::Centered(Point::new(100, 100)),
+    );
 
-    let width = 100;
-    let height = 100;
+    let width = 200;
+    let height = 200;
     let bytes = TerminalCanvas::<u32>::new(width, height, colors::WHITE)
         .with_buffer(BufferType::Uniform(10))
-        .with_text(txt)
+        .with_text(txt_1)
+        .with_text(txt_2)
         .draw()
         .unwrap()
         .get_bytes();
