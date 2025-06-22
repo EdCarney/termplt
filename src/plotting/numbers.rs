@@ -1,3 +1,5 @@
+const CHAR_WIDTH: usize = 5;
+const CHAR_HEIGHT: usize = 10;
 const NUM_ZERO: &str = "
   000000
 0000  0000
@@ -46,6 +48,18 @@ const NUM_THREE: &str = "
 3333  3333
   333333
 ";
+const NUM_FOUR: &str = "
+44      44
+44      44
+44      44
+44      44
+4444444444
+        44
+        44
+        44
+        44
+        44
+";
 
 pub fn get_bitmap(c: char) -> Vec<Vec<bool>> {
     let str_map = match c {
@@ -68,12 +82,19 @@ pub fn get_bitmap(c: char) -> Vec<Vec<bool>> {
                 .map(|x| if x == ' ' { false } else { true })
                 .step_by(2)
                 .collect::<Vec<_>>();
-            while chars.len() < 5 {
+
+            // ensure consistent char width
+            while chars.len() < CHAR_WIDTH {
                 chars.push(false);
             }
             chars
         })
         .collect::<Vec<_>>();
+
+    // ensure consistent char height
+    while bitmap.len() < CHAR_HEIGHT {
+        bitmap.push(vec![false; CHAR_WIDTH]);
+    }
 
     // the rows of the bitmap must also be reversed to ensure that lower indices are the bottom
     // of the coordinates
