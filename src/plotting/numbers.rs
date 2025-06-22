@@ -54,11 +54,71 @@ const NUM_FOUR: &str = "
 44      44
 44      44
 4444444444
+4444444444
         44
         44
         44
         44
-        44
+";
+const NUM_FIVE: &str = "
+5555555555
+5555      
+5555      
+55555     
+   55555  
+     55555
+       555
+        55
+5555    55
+  555555
+";
+const NUM_SIX: &str = "
+    66
+  6666
+6666
+66
+66666666
+6666  6666
+66      66
+6666  6666
+  666666
+    66
+";
+const NUM_SEVEN: &str = "
+7777777777
+77      77
+       777
+      777
+     777
+    777
+   777
+  777
+ 777
+777
+";
+const NUM_EIGHT: &str = "
+  888888  
+8888  8888
+88      88
+8888  8888
+   8888
+8888  8888
+88      88
+88      88
+8888  8888
+  888888
+";
+const NUM_NINE: &str = "
+  999999  
+9999  9999
+9999  9999
+9999  9999
+  999999
+    999
+   999
+  999
+ 999
+999
 ";
 
 pub fn get_bitmap(c: char) -> Vec<Vec<bool>> {
@@ -67,6 +127,12 @@ pub fn get_bitmap(c: char) -> Vec<Vec<bool>> {
         '1' => NUM_ONE,
         '2' => NUM_TWO,
         '3' => NUM_THREE,
+        '4' => NUM_FOUR,
+        '5' => NUM_FIVE,
+        '6' => NUM_SIX,
+        '7' => NUM_SEVEN,
+        '8' => NUM_EIGHT,
+        '9' => NUM_NINE,
         _ => panic!("Bitmap not defined for character: '{c}'"),
     };
 

@@ -1,6 +1,7 @@
 use super::{
     colors,
     common::{Drawable, IntConvertable, MaskPoints, UIntConvertable},
+    numbers::get_bitmap,
     point::Point,
 };
 use crate::common::Result;
@@ -16,81 +17,12 @@ pub enum TextPositioning {
 #[derive(Debug, Clone)]
 pub struct TextChar {
     value: char,
-    bitmap: Vec<Vec<i32>>,
+    bitmap: Vec<Vec<bool>>,
 }
 
 impl TextChar {
     pub fn new(value: char) -> TextChar {
-        let bitmap = match value {
-            '0' => vec![
-                "  000000  ",
-                "0000  0000",
-                "00      00",
-                "00      00",
-                "00  00  00",
-                "00  00  00",
-                "00      00",
-                "00      00",
-                "0000  0000",
-                "  000000  ",
-            ],
-            '1' => vec![
-                "    11    ",
-                "  1111    ",
-                "11  11    ",
-                "    11    ",
-                "    11    ",
-                "    11    ",
-                "    11    ",
-                "    11    ",
-                "    11    ",
-                "1111111111",
-            ],
-            '2' => vec![
-                "  222222  ",
-                "2222  2222",
-                "22    2222",
-                "    2222  ",
-                "    2222  ",
-                "  2222    ",
-                "  2222    ",
-                "2222      ",
-                "2222      ",
-                "2222222222",
-            ],
-            '3' => vec![
-                "3333333333",
-                "      3333",
-                "    3333  ",
-                "  3333    ",
-                " 33333    ",
-                "    3333  ",
-                "      3333",
-                "33      33",
-                "3333  3333",
-                "  333333  ",
-            ],
-            _ => panic!("Bitmap not defined for character: '{value}'"),
-        };
-
-        // note that bitmaps are written to be human-readable; they need to be modified to be
-        // printed; this includes correcting the aspect ratio (every other row element is skipped
-        // to ensure the aspect ratio is 1:2); also the string is converted to a vec of i32
-        let mut bitmap = bitmap
-            .iter()
-            .map(|row| {
-                row.to_string()
-                    .chars()
-                    .map(|x| if x == ' ' { 0 } else { 1 })
-                    .step_by(2)
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
-        // the rows of the bitmap must also be reversed to ensure that lower indices are the bottom
-        // of the coordinates
-        bitmap.reverse();
-
+        let bitmap = get_bitmap(value);
         TextChar { value, bitmap }
     }
 
@@ -106,7 +38,7 @@ impl TextChar {
         let mut points = Vec::new();
         for i in 0..self.height() {
             for j in 0..self.width() {
-                if self.bitmap[i][j] == 1 {
+                if self.bitmap[i][j] {
                     let shift = Point::new(j as i32, i as i32);
                     let point = top_left.convert_to_i32() + shift;
                     points.push(point.convert_to_u32());
