@@ -1,4 +1,4 @@
-use std::f32;
+use std::{f32, thread, time};
 use termplt::{
     kitty_graphics::{
         ctrl_seq::{PixelFormat, Transmission},
@@ -23,18 +23,19 @@ use termplt::{
 };
 
 fn main() {
-    test_graphing();
     test_text();
 }
 
 fn test_text() {
-    let txt_1 = Text::new(
-        String::from("-9.91e1"),
-        TextStyle::new(colors::RED, 1, 1),
+    let txt_1 = Text::from_number(
+        -0.008911,
+        3,
+        TextStyle::new(colors::RED, 2, 1),
         TextPositioning::Centered(Point::new(50, 50)),
     );
-    let txt_2 = Text::new(
-        String::from("1.22e-4"),
+    let txt_2 = Text::from_number(
+        -112.1233381,
+        3,
         TextStyle::new(colors::BLUE, 2, 1),
         TextPositioning::Centered(Point::new(100, 100)),
     );

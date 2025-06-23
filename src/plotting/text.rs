@@ -1,6 +1,6 @@
 use super::{
     colors,
-    common::{Drawable, IntConvertable, MaskPoints, UIntConvertable},
+    common::{Drawable, FloatConvertable, IntConvertable, MaskPoints, UIntConvertable},
     numbers,
     point::Point,
 };
@@ -77,7 +77,6 @@ impl TextStyle {
 
 #[derive(Debug, Clone)]
 pub struct Text {
-    text: String,
     style: TextStyle,
     positioning: TextPositioning,
     chars: Vec<TextChar>,
@@ -99,13 +98,57 @@ impl Text {
         let height = chars.iter().map(|c| c.height()).max().unwrap();
 
         Text {
-            text,
             style,
             positioning,
             chars,
             width,
             height,
         }
+    }
+
+    pub fn from_number(
+        number: f64,
+        sig_figs: u8,
+        style: TextStyle,
+        positioning: TextPositioning,
+    ) -> Text {
+        if style.scale < 1 {
+            panic!("Text scaling cannot be less than 1")
+        }
+        if sig_figs < 1 {
+            panic!("Number of significant figures must be nonzero")
+        }
+
+        let full_sci = format!("{number:e}");
+        let mut trunc_sci = Vec::new();
+        let mut sig_fig_count = 0;
+
+        // get the first part of the number, up to the required number of sig figs or the
+        // scientific exponent (whichever comes first)
+        for c in full_sci.chars() {
+            if sig_fig_count == sig_figs || c == 'e' {
+                break;
+            }
+            trunc_sci.push(c);
+            if c.is_ascii_digit() {
+                sig_fig_count += 1;
+            }
+        }
+
+        // add the scientific component, but only if it is nonzero
+        if !full_sci.ends_with("e0") {
+            let mut end_str = Vec::new();
+            let mut chars = full_sci.chars();
+            while let Some(c) = chars.next_back() {
+                end_str.insert(0, c.clone());
+                if c == 'e' {
+                    break;
+                }
+            }
+            trunc_sci.extend(&end_str);
+        }
+
+        Text::new(String::from_iter(trunc_sci), style, positioning)
     }
 }
 
