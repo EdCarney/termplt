@@ -23,17 +23,18 @@ use termplt::{
 };
 
 fn main() {
-    test_graphing()
+    test_graphing();
+    test_text();
 }
 
 fn test_text() {
     let txt_1 = Text::new(
-        String::from("0123456789"),
+        String::from("-9.91e1"),
         TextStyle::new(colors::RED, 1, 1),
         TextPositioning::Centered(Point::new(50, 50)),
     );
     let txt_2 = Text::new(
-        String::from("0123456789"),
+        String::from("1.22e-4"),
         TextStyle::new(colors::BLUE, 2, 1),
         TextPositioning::Centered(Point::new(100, 100)),
     );

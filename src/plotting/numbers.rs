@@ -17,7 +17,7 @@ const NUM_ZERO: &str = "
 const NUM_ONE: &str = "
   1111
 111111
-11  11
+    11
     11
     11
     11
@@ -134,6 +134,42 @@ const CHAR_SPACE: &str = "
           
           
 ";
+const CHAR_DECIMAL: &str = "
+          
+          
+          
+          
+          
+          
+          
+   0000   
+   0000   
+   0000   
+";
+const CHAR_DASH: &str = "
+          
+          
+          
+          
+  000000  
+  000000  
+          
+          
+          
+          
+";
+const CHAR_E: &str = "
+          
+          
+          
+  eeeeee  
+ eee  eee 
+eee    eee
+eeeeeeeeee
+eee       
+ eeeeeeee 
+  eeeeee  
+";
 
 pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
     let str_map = match c {
@@ -148,6 +184,9 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
         '8' => NUM_EIGHT,
         '9' => NUM_NINE,
         ' ' => CHAR_SPACE,
+        '.' => CHAR_DECIMAL,
+        '-' => CHAR_DASH,
+        'e' => CHAR_E,
         _ => panic!("Bitmap not defined for character: '{c}'"),
     };
 
