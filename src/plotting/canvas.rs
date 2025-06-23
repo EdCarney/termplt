@@ -1,6 +1,7 @@
 use super::{
+    axes::AxesPositioning,
     common::{Drawable, FloatConvertable, Graphable},
-    graph::{Axes, Graph},
+    graph::Graph,
     limits::Limits,
     point::Point,
     text::Text,
@@ -176,9 +177,9 @@ where
             // axes thickness in x/y pixels
             let axes_thickness = match graph.axes() {
                 Some(axes) => match axes {
-                    Axes::XOnly(line_style) => (0, 2 * line_style.thickness()),
-                    Axes::YOnly(line_style) => (2 * line_style.thickness(), 0),
-                    Axes::XY(line_style) => {
+                    AxesPositioning::XOnly(line_style) => (0, 2 * line_style.thickness()),
+                    AxesPositioning::YOnly(line_style) => (2 * line_style.thickness(), 0),
+                    AxesPositioning::XY(line_style) => {
                         (2 * line_style.thickness(), 2 * line_style.thickness())
                     }
                 },

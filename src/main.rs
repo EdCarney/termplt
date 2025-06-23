@@ -5,9 +5,10 @@ use termplt::{
         png_imgs, rgb_imgs, rgba_imgs,
     },
     plotting::{
+        axes::AxesPositioning,
         canvas::{BufferType, TerminalCanvas},
         colors,
-        graph::{Axes, Graph, GridLines},
+        graph::{Graph, GridLines},
         line::LineStyle,
         marker::MarkerStyle,
         point::Point,
@@ -22,6 +23,10 @@ use termplt::{
 };
 
 fn main() {
+    test_graphing()
+}
+
+fn test_text() {
     let txt_1 = Text::new(
         String::from("0123456789"),
         TextStyle::new(colors::RED, 1, 1),
@@ -29,7 +34,7 @@ fn main() {
     );
     let txt_2 = Text::new(
         String::from("0123456789"),
-        TextStyle::new(colors::BLUE, 2, 5),
+        TextStyle::new(colors::BLUE, 2, 1),
         TextPositioning::Centered(Point::new(100, 100)),
     );
 
@@ -86,7 +91,7 @@ fn draw_graph_style_1(
             color: colors::BLUE,
             thickness: 0,
         }))
-        .with_axes(Axes::XY(LineStyle::Solid {
+        .with_axes(AxesPositioning::XY(LineStyle::Solid {
             color: colors::BLACK,
             thickness: 1,
         }))
@@ -173,7 +178,7 @@ fn draw_graph_style_2(data: &[Point<f32>]) {
                         })
                         + Point::new(3. * f32::consts::FRAC_PI_4, 0.),
                 )
-                .with_axes(Axes::XY(LineStyle::Solid {
+                .with_axes(AxesPositioning::XY(LineStyle::Solid {
                     color: colors::GHOST_WHITE,
                     thickness: 0,
                 })), // .with_grid_lines(GridLines::XY(LineStyle::Solid {
