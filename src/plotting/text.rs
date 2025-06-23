@@ -1,7 +1,7 @@
 use super::{
     colors,
     common::{Drawable, IntConvertable, MaskPoints, UIntConvertable},
-    numbers::get_bitmap,
+    numbers,
     point::Point,
 };
 use crate::common::Result;
@@ -21,13 +21,13 @@ pub struct TextChar {
 }
 
 impl TextChar {
-    pub fn new(value: char, scale: u8) -> TextChar {
-        let bitmap = get_bitmap(value, scale);
+    pub fn new(value: char, style: &TextStyle) -> TextChar {
+        let bitmap = numbers::get_bitmap(value, style);
         TextChar { value, bitmap }
     }
 
     pub fn width(&self) -> usize {
-        self.bitmap.first().unwrap().len()
+        self.bitmap.iter().map(|row| row.len()).max().unwrap()
     }
 
     pub fn height(&self) -> usize {
@@ -54,17 +54,23 @@ impl TextChar {
 pub struct TextStyle {
     pub color: RGB8,
     pub scale: u8,
+    pub padding: u8,
 }
 
 impl TextStyle {
-    pub fn new(color: RGB8, scale: u8) -> TextStyle {
-        TextStyle { color, scale }
+    pub fn new(color: RGB8, scale: u8, padding: u8) -> TextStyle {
+        TextStyle {
+            color,
+            scale,
+            padding,
+        }
     }
 
     pub fn default() -> TextStyle {
         TextStyle {
             color: colors::BLACK,
             scale: 5,
+            padding: 0,
         }
     }
 }
@@ -87,7 +93,7 @@ impl Text {
 
         let chars = text
             .chars()
-            .map(|c| TextChar::new(c, style.scale))
+            .map(|c| TextChar::new(c, &style))
             .collect::<Vec<_>>();
         let width = chars.iter().fold(0usize, |acc, val| acc + val.width());
         let height = chars.iter().map(|c| c.height()).max().unwrap();

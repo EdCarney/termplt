@@ -24,12 +24,12 @@ use termplt::{
 fn main() {
     let txt_1 = Text::new(
         String::from("0123456789"),
-        TextStyle::new(colors::RED, 1),
+        TextStyle::new(colors::RED, 1, 1),
         TextPositioning::Centered(Point::new(50, 50)),
     );
     let txt_2 = Text::new(
         String::from("0123456789"),
-        TextStyle::new(colors::BLUE, 3),
+        TextStyle::new(colors::BLUE, 2, 5),
         TextPositioning::Centered(Point::new(100, 100)),
     );
 

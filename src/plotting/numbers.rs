@@ -1,3 +1,5 @@
+use super::text::TextStyle;
+
 const CHAR_WIDTH: usize = 5;
 const CHAR_HEIGHT: usize = 10;
 const NUM_ZERO: &str = "
@@ -12,28 +14,6 @@ const NUM_ZERO: &str = "
 0000000000
   000000
 ";
-// const NUM_ZERO: &str = "
-//       00000000
-//     0000    0000
-//   0000        0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-// 0000            0000
-//   0000        0000
-//     0000    0000
-//       00000000
-// ";
 const NUM_ONE: &str = "
   1111
 111111
@@ -142,8 +122,20 @@ const NUM_NINE: &str = "
  999
 999
 ";
+const CHAR_SPACE: &str = "
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+";
 
-pub fn get_bitmap(c: char, scale: u8) -> Vec<Vec<bool>> {
+pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
     let str_map = match c {
         '0' => NUM_ZERO,
         '1' => NUM_ONE,
@@ -155,6 +147,7 @@ pub fn get_bitmap(c: char, scale: u8) -> Vec<Vec<bool>> {
         '7' => NUM_SEVEN,
         '8' => NUM_EIGHT,
         '9' => NUM_NINE,
+        ' ' => CHAR_SPACE,
         _ => panic!("Bitmap not defined for character: '{c}'"),
     };
 
@@ -179,6 +172,7 @@ pub fn get_bitmap(c: char, scale: u8) -> Vec<Vec<bool>> {
             while chars.len() < CHAR_WIDTH {
                 chars.push(false);
             }
+
             Some(chars)
         })
         .collect::<Vec<_>>();
@@ -193,15 +187,30 @@ pub fn get_bitmap(c: char, scale: u8) -> Vec<Vec<bool>> {
     for i in 0..CHAR_HEIGHT {
         let mut scaled_row = Vec::new();
         for j in 0..CHAR_WIDTH {
-            for _ in 0..scale {
+            for _ in 0..style.scale {
                 scaled_row.push(bitmap[i][j]);
             }
         }
-        for _ in 0..scale {
+        for _ in 0..style.scale {
             scaled_bitmap.push(scaled_row.clone());
         }
     }
-    let mut bitmap = scaled_bitmap;
+    let mut bitmap = Vec::new();
+
+    // add padding
+    for mut row in scaled_bitmap {
+        for _ in 0..style.padding {
+            row.insert(0, false);
+            row.push(false);
+        }
+        bitmap.push(row);
+    }
+
+    let num_row_items = 2 * style.padding as usize + CHAR_WIDTH * style.scale as usize;
+    for _ in 0..style.padding {
+        bitmap.insert(0, vec![false; num_row_items]);
+        bitmap.push(vec![false; num_row_items]);
+    }
 
     // the rows of the bitmap must also be reversed to ensure that lower indices are the bottom
     // of the coordinates
