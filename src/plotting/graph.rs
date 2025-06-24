@@ -1,4 +1,5 @@
 use super::{
+    axes::AxesPositioning,
     common::{
         Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints, Scalable,
         Shiftable,
@@ -11,66 +12,6 @@ use super::{
     series::Series,
 };
 use crate::common::Result;
-
-#[derive(Debug, Clone)]
-pub enum Axes {
-    XOnly(LineStyle),
-    YOnly(LineStyle),
-    XY(LineStyle),
-}
-
-impl Axes {
-    pub fn get_mask<T: FloatConvertable + Graphable>(
-        &self,
-        limits: Limits<T>,
-    ) -> Result<Vec<MaskPoints>> {
-        let limits = limits.convert_to_f64();
-        let (limit_span_x, limit_span_y) = limits.span();
-
-        // thickness is applied in both directions from the line center, so shift the start of
-        // the line in the appropriate direction to ensure it will not go into the data area
-        match self {
-            Axes::XOnly(line_style) => {
-                let start = Point::new(
-                    limits.min().x,
-                    limits.min().y - line_style.thickness().convert_to_f64(),
-                );
-                let length = limit_span_x;
-                let pos = LinePositioning::Horizontal { start, length };
-                Line::new(pos, *line_style).get_mask()
-            }
-            Axes::YOnly(line_style) => {
-                let start = Point::new(
-                    limits.min().x - line_style.thickness().convert_to_f64(),
-                    limits.min().y,
-                );
-                let length = limit_span_y;
-                let pos = LinePositioning::Vertical { start, length };
-                Line::new(pos, *line_style).get_mask()
-            }
-            Axes::XY(line_style) => {
-                let pos_x = LinePositioning::Horizontal {
-                    start: Point::new(
-                        limits.min().x,
-                        limits.min().y - line_style.thickness().convert_to_f64(),
-                    ),
-                    length: limit_span_x,
-                };
-                let pos_y = LinePositioning::Vertical {
-                    start: Point::new(
-                        limits.min().x - line_style.thickness().convert_to_f64(),
-                        limits.min().y,
-                    ),
-                    length: limit_span_y,
-                };
-
-                let mut mask = Line::new(pos_x, *line_style).get_mask()?;
-                mask.extend(Line::new(pos_y, *line_style).get_mask()?);
-                Ok(mask)
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum GridLines {
@@ -136,7 +77,7 @@ impl GridLines {
 pub struct Graph<T: Graphable + FloatConvertable> {
     data: Vec<Series<T>>,
     graph_limits: Option<GraphLimits<T>>,
-    axes: Option<Axes>,
+    axes: Option<AxesPositioning>,
     grid_lines: Option<GridLines>,
 }
 
@@ -182,7 +123,7 @@ impl<T: Graphable> Graph<T> {
         self
     }
 
-    pub fn with_axes(mut self, axes: Axes) -> Self {
+    pub fn with_axes(mut self, axes: AxesPositioning) -> Self {
         self.axes = Some(axes);
         self
     }
@@ -250,7 +191,7 @@ impl<T: Graphable> Graph<T> {
         &self.data
     }
 
-    pub fn axes(&self) -> Option<Axes> {
+    pub fn axes(&self) -> Option<AxesPositioning> {
         self.axes.clone()
     }
 

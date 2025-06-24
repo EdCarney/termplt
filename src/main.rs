@@ -1,17 +1,19 @@
-use std::f32;
+use std::{f32, thread, time};
 use termplt::{
     kitty_graphics::{
         ctrl_seq::{PixelFormat, Transmission},
         png_imgs, rgb_imgs, rgba_imgs,
     },
     plotting::{
+        axes::AxesPositioning,
         canvas::{BufferType, TerminalCanvas},
         colors,
-        graph::{Axes, Graph, GridLines},
+        graph::{Graph, GridLines},
         line::LineStyle,
         marker::MarkerStyle,
         point::Point,
         series::Series,
+        text::{Text, TextPositioning, TextStyle},
     },
     terminal_commands::{
         csi_cmds::{self, CsiCommand},
@@ -21,6 +23,43 @@ use termplt::{
 };
 
 fn main() {
+    test_text();
+}
+
+fn test_text() {
+    let txt_1 = Text::from_number(
+        -0.008911,
+        3,
+        TextStyle::new(colors::RED, 2, 1),
+        TextPositioning::Centered(Point::new(50, 50)),
+    );
+    let txt_2 = Text::from_number(
+        -112.1233381,
+        3,
+        TextStyle::new(colors::BLUE, 2, 1),
+        TextPositioning::Centered(Point::new(100, 100)),
+    );
+
+    let width = 200;
+    let height = 200;
+    let bytes = TerminalCanvas::<u32>::new(width, height, colors::WHITE)
+        .with_buffer(BufferType::Uniform(10))
+        .with_text(txt_1)
+        .with_text(txt_2)
+        .draw()
+        .unwrap()
+        .get_bytes();
+    Image::new(
+        PixelFormat::Rgb { width, height },
+        Transmission::Direct(bytes),
+    )
+    .unwrap()
+    .display()
+    .unwrap();
+    println!();
+}
+
+fn test_graphing() {
     let num_points = 200;
     let points_x2 = (-num_points / 2..=num_points / 2)
         .map(|x| Point::new(x, x * x))
@@ -54,7 +93,7 @@ fn draw_graph_style_1(
             color: colors::BLUE,
             thickness: 0,
         }))
-        .with_axes(Axes::XY(LineStyle::Solid {
+        .with_axes(AxesPositioning::XY(LineStyle::Solid {
             color: colors::BLACK,
             thickness: 1,
         }))
@@ -141,7 +180,7 @@ fn draw_graph_style_2(data: &[Point<f32>]) {
                         })
                         + Point::new(3. * f32::consts::FRAC_PI_4, 0.),
                 )
-                .with_axes(Axes::XY(LineStyle::Solid {
+                .with_axes(AxesPositioning::XY(LineStyle::Solid {
                     color: colors::GHOST_WHITE,
                     thickness: 0,
                 })), // .with_grid_lines(GridLines::XY(LineStyle::Solid {

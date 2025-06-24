@@ -1,3 +1,4 @@
+pub mod axes;
 pub mod canvas;
 pub mod colors;
 pub mod common;
@@ -7,5 +8,7 @@ pub mod limits;
 pub mod line;
 mod line_positioning;
 pub mod marker;
+pub mod numbers;
 pub mod point;
 pub mod series;
+pub mod text;
