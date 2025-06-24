@@ -1,5 +1,6 @@
-use std::{f32, thread, time};
+use std::f32;
 use termplt::{
+    get_window_size,
     kitty_graphics::{
         ctrl_seq::{PixelFormat, Transmission},
         png_imgs, rgb_imgs, rgba_imgs,
@@ -24,19 +25,21 @@ use termplt::{
 
 fn main() {
     test_text();
+    let win_sz = get_window_size().unwrap();
+    println!("{win_sz:?}");
 }
 
 fn test_text() {
     let txt_1 = Text::from_number(
         -0.008911,
-        3,
-        TextStyle::new(colors::RED, 2, 1),
+        2,
+        TextStyle::new(colors::RED, 1, 1),
         TextPositioning::Centered(Point::new(50, 50)),
     );
     let txt_2 = Text::from_number(
         -112.1233381,
         3,
-        TextStyle::new(colors::BLUE, 2, 1),
+        TextStyle::new(colors::BLUE, 1, 1),
         TextPositioning::Centered(Point::new(100, 100)),
     );
 

@@ -1,23 +1,25 @@
 use super::text::TextStyle;
 
-const CHAR_WIDTH: usize = 5;
-const CHAR_HEIGHT: usize = 10;
+const CHAR_WIDTH: usize = 10;
+const CHAR_HEIGHT: usize = 11;
 const NUM_ZERO: &str = "
   000000
-0000000000
+ 00000000 
+00      00
 00      00
 00      00
 00  00  00
-00  00  00
 00      00
 00      00
-0000000000
+00      00
+ 00000000 
   000000
 ";
 const NUM_ONE: &str = "
   1111
-111111
-    11
+ 11 11
+11  11
+11  11
     11
     11
     11
@@ -27,36 +29,39 @@ const NUM_ONE: &str = "
 1111111111
 ";
 const NUM_TWO: &str = "
-  222222
+ 22222222
 2222  2222
-22    2222
-    2222
-    2222
-  2222
-  2222
-2222
-2222
+222    222
+      222
+     222
+    222
+   222
+  222
+ 222
+222
 2222222222
 ";
 const NUM_THREE: &str = "
 3333333333
       3333
-    3333
-  3333
- 33333
-    3333
-      3333
-33      33
-3333  3333
-  333333
+     333
+    333
+   333
+    333 
+     333
+      333
+333    333
+ 333   333
+  3333333
 ";
 const NUM_FOUR: &str = "
 44      44
 44      44
 44      44
 44      44
+44      44
 4444444444
-4444444444
+        44
         44
         44
         44
@@ -64,57 +69,62 @@ const NUM_FOUR: &str = "
 ";
 const NUM_FIVE: &str = "
 5555555555
+55        
+55        
 5555      
-5555      
-55555     
-   55555  
+  5555
+    5555
      55555
-      5555
-      5555
-5555  5555
+        55
+        55
+55      55
   555555
 ";
 const NUM_SIX: &str = "
-    666666
-  666666  
-6666  
-666666
-66666666
-6666  6666
-6666  6666
-6666  6666
-  666666
+       666
+      666
+     666
+    666
    6666
+ 66666666
+6666  6666
+666    666
+666    666
+ 666  666
+  666666
 ";
 const NUM_SEVEN: &str = "
 7777777777
-7777  7777
-      7777
-    7777
-    7777
-    77
-  7777
-  7777
-7777
-7777
+77     777
+       777
+      777
+      777
+     777
+    777
+   777
+  777
+ 777
+777
 ";
 const NUM_EIGHT: &str = "
   888888  
-8888  8888
-8888  8888
-8888  8888
+888    888
+888    888
+888    888
   888888
-8888  8888
-8888  8888
-8888  8888
-8888  8888
+888    888
+888    888
+888    888
+888    888
+888    888
   888888
 ";
 const NUM_NINE: &str = "
   999999  
-9999  9999
-9999  9999
-9999  9999
+999    999
+999    999
+999    999
+999    999
   999999
     999
    999
@@ -123,6 +133,7 @@ const NUM_NINE: &str = "
 999
 ";
 const CHAR_SPACE: &str = "
+          
           
           
           
@@ -142,6 +153,7 @@ const CHAR_DECIMAL: &str = "
           
           
           
+          
    0000   
    0000   
    0000   
@@ -151,8 +163,9 @@ const CHAR_DASH: &str = "
           
           
           
+          
   000000  
-  000000  
+          
           
           
           
@@ -162,13 +175,14 @@ const CHAR_E: &str = "
           
           
           
+          
   eeeeee  
- eee  eee 
-eee    eee
+ ee    ee 
+ee      ee
 eeeeeeeeee
-eee       
- eeeeeeee 
-  eeeeee  
+ee        
+ ee    ee
+  eeeeee
 ";
 
 pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
@@ -204,7 +218,7 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
                 .to_string()
                 .chars()
                 .map(|x| if x == ' ' { false } else { true })
-                .step_by(2)
+                //.step_by(2)
                 .collect::<Vec<_>>();
 
             // ensure consistent char width
