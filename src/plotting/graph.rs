@@ -9,7 +9,7 @@ use super::{
     limits::Limits,
     point::{Point, PointCollection},
     series::Series,
-    text::Text,
+    text::{Label, Text},
 };
 use crate::common::Result;
 
@@ -203,6 +203,15 @@ impl<T: Graphable> Graph<T> {
                 .expect("No valid points lie in specified graph limits");
         }
         scaled_graph.scale_to(&old_limits, &new_limits)
+    }
+
+    /// Generates labels for axes. Graph limits define the expected numerical values for the
+    /// labels.
+    pub fn get_axes_labels(&self, graph_limits: &Limits<T>) -> Result<Vec<Label>> {
+        self.axes
+            .as_ref()
+            .unwrap()
+            .get_labels(&self.limits().unwrap(), graph_limits)
     }
 }
 

@@ -210,7 +210,7 @@ fn draw_graph_style_3(
             color: colors::BLUE,
             thickness: 0,
         }))
-        .with_axes(AxesPositioning::YOnly(LineStyle::Solid {
+        .with_axes(AxesPositioning::XOnly(LineStyle::Solid {
             color: colors::BLACK,
             thickness: 1,
         }))

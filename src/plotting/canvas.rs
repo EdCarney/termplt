@@ -95,7 +95,7 @@ pub struct TerminalCanvas<T: Graphable> {
     canvas: Canvas,
     buffer: CanvasBuffer,
     graph: Option<Graph<T>>,
-    labels: Option<Vec<Label>>,
+    labels: Vec<Label>,
     limits: Limits<u32>,
 }
 
@@ -108,7 +108,7 @@ where
             canvas: Canvas::new(width, height, background),
             buffer: CanvasBuffer::new(BufferType::None),
             graph: None,
-            labels: None,
+            labels: Vec::new(),
             limits: Limits::new(Point::new(0, 0), Point::new(width - 1, height - 1)),
         }
     }
@@ -127,12 +127,7 @@ where
     }
 
     pub fn with_label(mut self, label: Label) -> Self {
-        self.labels = if let Some(mut labels) = self.labels {
-            labels.push(label);
-            Some(labels)
-        } else {
-            Some(vec![label])
-        };
+        self.labels.push(label);
         self
     }
 
@@ -145,18 +140,25 @@ where
         let canvas_limits = self.get_drawable_limits().convert_to_f64();
 
         if let Some(graph) = self.graph.take() {
-            graph
-                .scale(canvas_limits)
+            let unscaled_limits = graph.limits().unwrap().convert_to_f64();
+            let scaled_graph = graph.scale(canvas_limits);
+
+            scaled_graph
+                .get_axes_labels(&unscaled_limits)?
+                .into_iter()
+                .for_each(|label| self.labels.push(label));
+
+            scaled_graph
                 .get_mask()?
                 .iter()
                 .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
         }
 
-        if let Some(text) = self.labels.take() {
-            text.iter()
-                .flat_map(|txt| txt.get_mask().unwrap())
-                .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
-        }
+        // labels must be drawn after graph since axes labels are added to the canvas
+        self.labels
+            .iter()
+            .flat_map(|txt| txt.get_mask().unwrap())
+            .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
 
         Ok(self)
     }

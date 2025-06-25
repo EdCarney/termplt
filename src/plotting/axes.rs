@@ -1,5 +1,6 @@
 use super::{
     common::{Drawable, FloatConvertable, Graphable, MaskPoints},
+    graph_limits::GraphLimits,
     limits::Limits,
     line::{Line, LineStyle},
     line_positioning::LinePositioning,
@@ -36,6 +37,44 @@ impl Axes {
         &self.style
     }
 
+    pub fn get_labels<T: FloatConvertable + Graphable>(
+        &self,
+        canvas_limits: &Limits<T>,
+        graph_limits: &Limits<T>,
+    ) -> Result<Vec<Label>> {
+        let canvas_limits = canvas_limits.convert_to_f64();
+        let graph_limits = graph_limits.convert_to_f64();
+
+        // canvas limits define where the points will be drawn; the graph limits are only used to
+        // know the values of the labels
+        let labels = match &self.positioning {
+            AxesPositioning::XOnly(line_style) => {
+                let txt = Text::from_number(graph_limits.min().x, 3, self.style.clone());
+                let x = canvas_limits.min().x;
+                let y = canvas_limits.min().y
+                    - line_style.thickness().convert_to_f64() * 2.
+                    - (txt.height() as f64 / 2.);
+                let center = Point::new(x, y).floor();
+
+                vec![Label::new(txt, TextPositioning::Centered(center))]
+            }
+            AxesPositioning::YOnly(line_style) => {
+                let txt = Text::from_number(graph_limits.min().y, 3, self.style.clone());
+                let x = canvas_limits.min().x
+                    - line_style.thickness().convert_to_f64() * 2.
+                    - (txt.width() as f64 / 2.);
+                let y = canvas_limits.min().y;
+                let center = Point::new(x, y).floor();
+
+                vec![Label::new(txt, TextPositioning::Centered(center))]
+            }
+            AxesPositioning::XY(line_style) => {
+                vec![]
+            }
+        };
+        Ok(labels)
+    }
+
     pub fn get_mask<T: FloatConvertable + Graphable>(
         &self,
         limits: Limits<T>,
@@ -53,23 +92,7 @@ impl Axes {
                 );
                 let length = limit_span_x;
                 let pos = LinePositioning::Horizontal { start, length };
-                let line = Line::new(pos, *line_style);
-
-                // x points will increase in the x direction and have consistent y position
-                let label_txt = Text::from_number(start.x, 3, self.style.clone());
-                let label_x = limits.min().x;
-                let label_y = limits.min().y
-                    - line_style.thickness().convert_to_f64() * 2.
-                    - (label_txt.height() as f64 / 2.);
-                let label_center = Point::new(label_x, label_y).floor();
-                let label = Label::new(label_txt, TextPositioning::Centered(label_center));
-
-                let mask = vec![line.get_mask()?, label.get_mask()?]
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>();
-
-                Ok(mask)
+                Line::new(pos, *line_style).get_mask()
             }
             AxesPositioning::YOnly(line_style) => {
                 let start = Point::new(
@@ -78,23 +101,7 @@ impl Axes {
                 );
                 let length = limit_span_y;
                 let pos = LinePositioning::Vertical { start, length };
-                let line = Line::new(pos, *line_style);
-
-                // labels will increase in the y direction and have consistent x position
-                let label_txt = Text::from_number(start.y, 3, self.style.clone());
-                let label_x = limits.min().x
-                    - line_style.thickness().convert_to_f64() * 2.
-                    - (label_txt.width() as f64 / 2.);
-                let label_y = limits.min().y;
-                let label_center = Point::new(label_x, label_y).floor();
-                let label = Label::new(label_txt, TextPositioning::Centered(label_center));
-
-                let mask = vec![line.get_mask()?, label.get_mask()?]
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>();
-
-                Ok(mask)
+                Line::new(pos, *line_style).get_mask()
             }
             AxesPositioning::XY(line_style) => {
                 let pos_x = LinePositioning::Horizontal {
