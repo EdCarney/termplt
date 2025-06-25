@@ -3,7 +3,9 @@ use super::{
     limits::Limits,
     line::{Line, LineStyle},
     line_positioning::LinePositioning,
+    numbers,
     point::Point,
+    text::{Label, Text, TextPositioning, TextStyle},
 };
 use crate::common::Result;
 
@@ -17,15 +19,23 @@ pub enum AxesPositioning {
 #[derive(Debug, Clone)]
 pub struct Axes {
     positioning: AxesPositioning,
+    style: TextStyle,
 }
 
 impl Axes {
+    pub fn new(positioning: AxesPositioning) -> Axes {
+        let style = TextStyle::default();
+        Axes { positioning, style }
+    }
+
     pub fn positioning(&self) -> &AxesPositioning {
         &self.positioning
     }
-}
 
-impl AxesPositioning {
+    pub fn style(&self) -> &TextStyle {
+        &self.style
+    }
+
     pub fn get_mask<T: FloatConvertable + Graphable>(
         &self,
         limits: Limits<T>,
@@ -35,7 +45,7 @@ impl AxesPositioning {
 
         // thickness is applied in both directions from the line center, so shift the start of
         // the line in the appropriate direction to ensure it will not go into the data area
-        match self {
+        match &self.positioning {
             AxesPositioning::XOnly(line_style) => {
                 let start = Point::new(
                     limits.min().x,
@@ -43,7 +53,23 @@ impl AxesPositioning {
                 );
                 let length = limit_span_x;
                 let pos = LinePositioning::Horizontal { start, length };
-                Line::new(pos, *line_style).get_mask()
+                let line = Line::new(pos, *line_style);
+
+                // x points will increase in the x direction and have consistent y position
+                let label_txt = Text::from_number(start.x, 3, self.style.clone());
+                let label_x = limits.min().x;
+                let label_y = limits.min().y
+                    - line_style.thickness().convert_to_f64() * 2.
+                    - (label_txt.height() as f64 / 2.);
+                let label_center = Point::new(label_x, label_y).floor();
+                let label = Label::new(label_txt, TextPositioning::Centered(label_center));
+
+                let mask = vec![line.get_mask()?, label.get_mask()?]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                Ok(mask)
             }
             AxesPositioning::YOnly(line_style) => {
                 let start = Point::new(
@@ -52,7 +78,23 @@ impl AxesPositioning {
                 );
                 let length = limit_span_y;
                 let pos = LinePositioning::Vertical { start, length };
-                Line::new(pos, *line_style).get_mask()
+                let line = Line::new(pos, *line_style);
+
+                // labels will increase in the y direction and have consistent x position
+                let label_txt = Text::from_number(start.y, 3, self.style.clone());
+                let label_x = limits.min().x
+                    - line_style.thickness().convert_to_f64() * 2.
+                    - (label_txt.width() as f64 / 2.);
+                let label_y = limits.min().y;
+                let label_center = Point::new(label_x, label_y).floor();
+                let label = Label::new(label_txt, TextPositioning::Centered(label_center));
+
+                let mask = vec![line.get_mask()?, label.get_mask()?]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                Ok(mask)
             }
             AxesPositioning::XY(line_style) => {
                 let pos_x = LinePositioning::Horizontal {

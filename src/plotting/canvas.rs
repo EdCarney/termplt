@@ -4,7 +4,7 @@ use super::{
     graph::Graph,
     limits::Limits,
     point::Point,
-    text::Text,
+    text::{Label, Text},
 };
 use crate::common::Result;
 use rgb::RGB8;
@@ -95,7 +95,7 @@ pub struct TerminalCanvas<T: Graphable> {
     canvas: Canvas,
     buffer: CanvasBuffer,
     graph: Option<Graph<T>>,
-    text: Option<Vec<Text>>,
+    labels: Option<Vec<Label>>,
     limits: Limits<u32>,
 }
 
@@ -108,7 +108,7 @@ where
             canvas: Canvas::new(width, height, background),
             buffer: CanvasBuffer::new(BufferType::None),
             graph: None,
-            text: None,
+            labels: None,
             limits: Limits::new(Point::new(0, 0), Point::new(width - 1, height - 1)),
         }
     }
@@ -126,12 +126,12 @@ where
         self
     }
 
-    pub fn with_text(mut self, text: Text) -> Self {
-        self.text = if let Some(mut texts) = self.text {
-            texts.push(text);
-            Some(texts)
+    pub fn with_label(mut self, label: Label) -> Self {
+        self.labels = if let Some(mut labels) = self.labels {
+            labels.push(label);
+            Some(labels)
         } else {
-            Some(vec![text])
+            Some(vec![label])
         };
         self
     }
@@ -152,7 +152,7 @@ where
                 .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
         }
 
-        if let Some(text) = self.text.take() {
+        if let Some(text) = self.labels.take() {
             text.iter()
                 .flat_map(|txt| txt.get_mask().unwrap())
                 .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
@@ -176,7 +176,7 @@ where
 
             // axes thickness in x/y pixels
             let axes_thickness = match graph.axes() {
-                Some(axes) => match axes {
+                Some(axes) => match axes.positioning() {
                     AxesPositioning::XOnly(line_style) => (0, 2 * line_style.thickness()),
                     AxesPositioning::YOnly(line_style) => (2 * line_style.thickness(), 0),
                     AxesPositioning::XY(line_style) => {
@@ -186,11 +186,13 @@ where
                 None => (0, 0),
             };
 
-            // use the larger of marker/axes to set bounderies
-            let min_x = min.x + u32::max(largest_marker_sz, axes_thickness.0);
-            let min_y = min.y + u32::max(largest_marker_sz, axes_thickness.1);
-            let max_x = max.x - u32::max(largest_marker_sz, axes_thickness.0);
-            let max_y = max.y - u32::max(largest_marker_sz, axes_thickness.1);
+            // note that axes and markers can overlap; so use the larger of marker/axes as bounds
+            let mut min_x = min.x + u32::max(largest_marker_sz, axes_thickness.0);
+            let mut min_y = min.y + u32::max(largest_marker_sz, axes_thickness.1);
+            let mut max_x = max.x - u32::max(largest_marker_sz, axes_thickness.0);
+            let mut max_y = max.y - u32::max(largest_marker_sz, axes_thickness.1);
+
+            // include axes text
 
             min = Point::new(min_x, min_y);
             max = Point::new(max_x, max_y);

@@ -1,6 +1,6 @@
 use super::{
     colors,
-    common::{Drawable, FloatConvertable, IntConvertable, MaskPoints, UIntConvertable},
+    common::{Drawable, IntConvertable, MaskPoints, UIntConvertable},
     numbers,
     point::Point,
 };
@@ -34,13 +34,13 @@ impl TextChar {
         self.bitmap.len()
     }
 
-    pub fn get_mask(&self, top_left: Point<u32>, style: TextStyle) -> Result<Vec<MaskPoints>> {
+    pub fn get_mask(&self, lower_left: Point<u32>, style: TextStyle) -> Result<Vec<MaskPoints>> {
         let mut points = Vec::new();
         for i in 0..self.height() {
             for j in 0..self.width() {
                 if self.bitmap[i][j] {
                     let shift = Point::new(j as i32, i as i32);
-                    let point = top_left.convert_to_i32() + shift;
+                    let point = lower_left.convert_to_i32() + shift;
                     points.push(point.convert_to_u32());
                 }
             }
@@ -52,13 +52,17 @@ impl TextChar {
 
 #[derive(Debug, Clone)]
 pub struct TextStyle {
-    pub color: RGB8,
-    pub scale: u8,
-    pub padding: u8,
+    color: RGB8,
+    scale: usize,
+    padding: usize,
 }
 
 impl TextStyle {
-    pub fn new(color: RGB8, scale: u8, padding: u8) -> TextStyle {
+    pub fn new(color: RGB8, scale: usize, padding: usize) -> TextStyle {
+        if scale < 1 {
+            panic!("Text scaling cannot be less than 1")
+        }
+
         TextStyle {
             color,
             scale,
@@ -69,27 +73,34 @@ impl TextStyle {
     pub fn default() -> TextStyle {
         TextStyle {
             color: colors::BLACK,
-            scale: 5,
-            padding: 0,
+            scale: 1,
+            padding: 1,
         }
+    }
+
+    pub fn color(&self) -> RGB8 {
+        self.color
+    }
+
+    pub fn scale(&self) -> usize {
+        self.scale
+    }
+
+    pub fn padding(&self) -> usize {
+        self.padding
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Text {
     style: TextStyle,
-    positioning: TextPositioning,
     chars: Vec<TextChar>,
     width: usize,
     height: usize,
 }
 
 impl Text {
-    pub fn new(text: String, style: TextStyle, positioning: TextPositioning) -> Text {
-        if style.scale < 1 {
-            panic!("Text scaling cannot be less than 1")
-        }
-
+    pub fn new(text: String, style: TextStyle) -> Text {
         let chars = text
             .chars()
             .map(|c| TextChar::new(c, &style))
@@ -99,19 +110,13 @@ impl Text {
 
         Text {
             style,
-            positioning,
             chars,
             width,
             height,
         }
     }
 
-    pub fn from_number(
-        number: f64,
-        sig_figs: u8,
-        style: TextStyle,
-        positioning: TextPositioning,
-    ) -> Text {
+    pub fn from_number(number: f64, sig_figs: u8, style: TextStyle) -> Text {
         if style.scale < 1 {
             panic!("Text scaling cannot be less than 1")
         }
@@ -148,21 +153,41 @@ impl Text {
             trunc_sci.extend(&end_str);
         }
 
-        Text::new(String::from_iter(trunc_sci), style, positioning)
+        Text::new(String::from_iter(trunc_sci), style)
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
     }
 }
 
-impl Drawable for Text {
+#[derive(Debug, Clone)]
+pub struct Label {
+    txt: Text,
+    pos: TextPositioning,
+}
+
+impl Label {
+    pub fn new(txt: Text, pos: TextPositioning) -> Label {
+        Label { txt, pos }
+    }
+}
+
+impl Drawable for Label {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
-        let mask_points = match self.positioning {
+        let mask_points = match &self.pos {
             TextPositioning::Centered(center) => {
-                let height_shift: i32 = (self.height / 2).try_into().unwrap();
-                let shift: i32 = (self.width / 2).try_into().unwrap();
+                let height_shift: i32 = (self.txt.height / 2).try_into().unwrap();
+                let width_shift: i32 = (self.txt.width / 2).try_into().unwrap();
                 let mut masks = Vec::new();
-                self.chars.iter().fold(-shift, |acc, c| {
-                    let char_top_left = center.convert_to_i32() + Point::new(acc, height_shift);
+                self.txt.chars.iter().fold(-width_shift, |acc, c| {
+                    let char_lower_left = center.convert_to_i32() + Point::new(acc, -height_shift);
                     masks.extend(
-                        c.get_mask(char_top_left.convert_to_u32(), self.style.clone())
+                        c.get_mask(char_lower_left.convert_to_u32(), self.txt.style.clone())
                             .unwrap(),
                     );
                     let char_width: i32 = c.width().try_into().unwrap();

@@ -1,7 +1,7 @@
 use super::text::TextStyle;
 
-const CHAR_WIDTH: usize = 10;
-const CHAR_HEIGHT: usize = 11;
+pub const CHAR_WIDTH: usize = 10;
+pub const CHAR_HEIGHT: usize = 11;
 const NUM_ZERO: &str = "
   000000
  00000000 
@@ -69,12 +69,12 @@ const NUM_FOUR: &str = "
 ";
 const NUM_FIVE: &str = "
 5555555555
-55        
-55        
-5555      
-  5555
+55
+55
+555555
     5555
-     55555
+      5555
+       555
         55
         55
 55      55
@@ -240,11 +240,11 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
     for i in 0..CHAR_HEIGHT {
         let mut scaled_row = Vec::new();
         for j in 0..CHAR_WIDTH {
-            for _ in 0..style.scale {
+            for _ in 0..style.scale() {
                 scaled_row.push(bitmap[i][j]);
             }
         }
-        for _ in 0..style.scale {
+        for _ in 0..style.scale() {
             scaled_bitmap.push(scaled_row.clone());
         }
     }
@@ -252,15 +252,15 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
 
     // add padding
     for mut row in scaled_bitmap {
-        for _ in 0..style.padding {
+        for _ in 0..style.padding() {
             row.insert(0, false);
             row.push(false);
         }
         bitmap.push(row);
     }
 
-    let num_row_items = 2 * style.padding as usize + CHAR_WIDTH * style.scale as usize;
-    for _ in 0..style.padding {
+    let num_row_items = 2 * style.padding() + CHAR_WIDTH * style.scale();
+    for _ in 0..style.padding() {
         bitmap.insert(0, vec![false; num_row_items]);
         bitmap.push(vec![false; num_row_items]);
     }

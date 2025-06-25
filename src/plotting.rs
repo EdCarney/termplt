@@ -4,6 +4,7 @@ pub mod colors;
 pub mod common;
 pub mod graph;
 mod graph_limits;
+pub mod grid_lines;
 pub mod limits;
 pub mod line;
 mod line_positioning;
