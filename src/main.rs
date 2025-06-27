@@ -34,11 +34,9 @@ fn main() {
 fn test_text() {
     let txt_1 = Text::from_number(-0.008911, 2, TextStyle::new(colors::RED, 1, 1));
     let lab_1 = Label::new(txt_1, TextPositioning::Centered(Point::new(100, 50)));
-    println!("lab_1: {lab_1:?}");
 
     let txt_2 = Text::from_number(-112.1233381, 3, TextStyle::new(colors::BLUE, 1, 1));
     let lab_2 = Label::new(txt_2, TextPositioning::Centered(Point::new(100, 100)));
-    println!("lab_2: {lab_2:?}");
 
     let width = 200;
     let height = 200;
@@ -76,8 +74,8 @@ fn test_graphing() {
         })
         .collect::<Vec<Point<_>>>();
 
-    draw_graph_style_1(&points_x2, None, None);
-    draw_graph_style_2(&points_sin);
+    // draw_graph_style_1(&points_x2, None, None);
+    // draw_graph_style_2(&points_sin);
     draw_graph_style_3(&points_x3, None, None);
 }
 
@@ -210,7 +208,7 @@ fn draw_graph_style_3(
             color: colors::BLUE,
             thickness: 0,
         }))
-        .with_axes(AxesPositioning::XOnly(LineStyle::Solid {
+        .with_axes(AxesPositioning::XY(LineStyle::Solid {
             color: colors::BLACK,
             thickness: 1,
         }))

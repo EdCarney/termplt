@@ -50,10 +50,8 @@ impl Axes {
         let x_starts = x_starts_graph.iter().zip(x_starts_canvas);
         let y_starts = y_starts_graph.iter().zip(y_starts_canvas);
 
-        // canvas limits define where the points will be drawn; the graph limits are only used to
-        // know the values of the labels
-        let labels = match &self.positioning {
-            AxesPositioning::XOnly(line_style) => x_starts
+        let x_labels = |line_style: &LineStyle| {
+            x_starts
                 .map(|(graph_start, canvas_start)| {
                     let txt = Text::from_number(graph_start.x, 3, self.style.clone());
                     let x = canvas_start.x;
@@ -62,8 +60,10 @@ impl Axes {
                         - (txt.height() as f64 / 2.);
                     Label::new(txt, TextPositioning::Centered(Point::new(x, y).floor()))
                 })
-                .collect::<Vec<_>>(),
-            AxesPositioning::YOnly(line_style) => y_starts
+                .collect::<Vec<_>>()
+        };
+        let y_labels = |line_style: &LineStyle| {
+            y_starts
                 .map(|(graph_start, canvas_start)| {
                     let txt = Text::from_number(graph_start.y, 3, self.style.clone());
                     let x = canvas_start.x
@@ -72,10 +72,18 @@ impl Axes {
                     let y = canvas_start.y;
                     Label::new(txt, TextPositioning::Centered(Point::new(x, y).floor()))
                 })
+                .collect::<Vec<_>>()
+        };
+
+        // canvas limits define where the points will be drawn; the graph limits are only used to
+        // know the values of the labels
+        let labels = match &self.positioning {
+            AxesPositioning::XOnly(line_style) => x_labels(line_style),
+            AxesPositioning::YOnly(line_style) => y_labels(line_style),
+            AxesPositioning::XY(line_style) => x_labels(line_style)
+                .into_iter()
+                .chain(y_labels(line_style))
                 .collect::<Vec<_>>(),
-            AxesPositioning::XY(line_style) => {
-                vec![]
-            }
         };
         Ok(labels)
     }
