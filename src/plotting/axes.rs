@@ -1,10 +1,9 @@
 use super::{
     common::{Drawable, FloatConvertable, Graphable, MaskPoints},
-    graph_limits::GraphLimits,
+    grid_lines::NUM_GRID_SECTIONS,
     limits::Limits,
     line::{Line, LineStyle},
     line_positioning::LinePositioning,
-    numbers,
     point::Point,
     text::{Label, Text, TextPositioning, TextStyle},
 };
@@ -45,29 +44,35 @@ impl Axes {
         let canvas_limits = canvas_limits.convert_to_f64();
         let graph_limits = graph_limits.convert_to_f64();
 
+        let (x_starts_graph, y_starts_graph) = graph_limits.chunk(NUM_GRID_SECTIONS);
+        let (x_starts_canvas, y_starts_canvas) = canvas_limits.chunk(NUM_GRID_SECTIONS);
+
+        let x_starts = x_starts_graph.iter().zip(x_starts_canvas);
+        let y_starts = y_starts_graph.iter().zip(y_starts_canvas);
+
         // canvas limits define where the points will be drawn; the graph limits are only used to
         // know the values of the labels
         let labels = match &self.positioning {
-            AxesPositioning::XOnly(line_style) => {
-                let txt = Text::from_number(graph_limits.min().x, 3, self.style.clone());
-                let x = canvas_limits.min().x;
-                let y = canvas_limits.min().y
-                    - line_style.thickness().convert_to_f64() * 2.
-                    - (txt.height() as f64 / 2.);
-                let center = Point::new(x, y).floor();
-
-                vec![Label::new(txt, TextPositioning::Centered(center))]
-            }
-            AxesPositioning::YOnly(line_style) => {
-                let txt = Text::from_number(graph_limits.min().y, 3, self.style.clone());
-                let x = canvas_limits.min().x
-                    - line_style.thickness().convert_to_f64() * 2.
-                    - (txt.width() as f64 / 2.);
-                let y = canvas_limits.min().y;
-                let center = Point::new(x, y).floor();
-
-                vec![Label::new(txt, TextPositioning::Centered(center))]
-            }
+            AxesPositioning::XOnly(line_style) => x_starts
+                .map(|(graph_start, canvas_start)| {
+                    let txt = Text::from_number(graph_start.x, 3, self.style.clone());
+                    let x = canvas_start.x;
+                    let y = canvas_start.y
+                        - line_style.thickness().convert_to_f64() * 2.
+                        - (txt.height() as f64 / 2.);
+                    Label::new(txt, TextPositioning::Centered(Point::new(x, y).floor()))
+                })
+                .collect::<Vec<_>>(),
+            AxesPositioning::YOnly(line_style) => y_starts
+                .map(|(graph_start, canvas_start)| {
+                    let txt = Text::from_number(graph_start.y, 3, self.style.clone());
+                    let x = canvas_start.x
+                        - line_style.thickness().convert_to_f64() * 2.
+                        - (txt.width() as f64 / 2.);
+                    let y = canvas_start.y;
+                    Label::new(txt, TextPositioning::Centered(Point::new(x, y).floor()))
+                })
+                .collect::<Vec<_>>(),
             AxesPositioning::XY(line_style) => {
                 vec![]
             }

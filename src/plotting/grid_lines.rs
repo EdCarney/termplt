@@ -3,7 +3,6 @@ use super::{
     limits::Limits,
     line::{Line, LineStyle},
     line_positioning::LinePositioning,
-    point::Point,
 };
 use crate::common::Result;
 
