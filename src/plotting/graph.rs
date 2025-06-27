@@ -218,17 +218,16 @@ impl<T: Graphable> Graph<T> {
 impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mut mask_points = Vec::new();
+        let limits = self.limits().unwrap();
 
         // add axes if they are defined
         if let Some(axes) = &self.axes {
-            let limits = self.limits().unwrap();
-            mask_points.extend(axes.get_mask(limits)?);
+            mask_points.extend(axes.get_mask(&limits)?);
         }
 
         // add grid lines if they are defined
         if let Some(grid_lines) = &self.grid_lines {
-            let limits = self.limits().unwrap();
-            mask_points.extend(grid_lines.get_mask(limits)?);
+            mask_points.extend(grid_lines.get_mask(&limits)?);
         }
 
         // add series data

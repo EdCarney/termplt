@@ -77,7 +77,7 @@ impl Axes {
 
     pub fn get_mask<T: FloatConvertable + Graphable>(
         &self,
-        limits: Limits<T>,
+        limits: &Limits<T>,
     ) -> Result<Vec<MaskPoints>> {
         let limits = limits.convert_to_f64();
         let (limit_span_x, limit_span_y) = limits.span();
