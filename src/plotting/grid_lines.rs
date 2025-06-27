@@ -23,44 +23,31 @@ impl GridLines {
     ) -> Result<Vec<MaskPoints>> {
         let limits = limits.convert_to_f64();
         let (limit_span_x, limit_span_y) = limits.span();
-        let limit_min = limits.min();
+        let (x_starts, y_starts) = limits.chunk(NUM_GRID_SECTIONS);
 
-        let mut mask_points = Vec::new();
-        let interval_x = limit_span_x / NUM_GRID_SECTIONS.convert_to_f64();
-        let interval_y = limit_span_y / NUM_GRID_SECTIONS.convert_to_f64();
+        let horz_lines = |length: f64, line_style: &LineStyle| {
+            y_starts
+                .into_iter()
+                .map(|start| LinePositioning::Horizontal { start, length })
+                .flat_map(|pos| Line::new(pos, *line_style).get_mask().unwrap())
+                .collect::<Vec<_>>()
+        };
+        let vert_lines = |length: f64, line_style: &LineStyle| {
+            x_starts
+                .into_iter()
+                .map(|start| LinePositioning::Vertical { start, length })
+                .flat_map(|pos| Line::new(pos, *line_style).get_mask().unwrap())
+                .collect::<Vec<_>>()
+        };
 
-        for i in 0..=NUM_GRID_SECTIONS {
-            match self {
-                GridLines::XOnly(line_style) => {
-                    let pos = LinePositioning::Horizontal {
-                        start: *limit_min + Point::new(0., interval_y * i as f64),
-                        length: limit_span_x,
-                    };
-                    mask_points.extend(Line::new(pos, *line_style).get_mask()?);
-                }
-                GridLines::YOnly(line_style) => {
-                    let pos = LinePositioning::Vertical {
-                        start: *limit_min + Point::new(interval_x * i as f64, 0.),
-                        length: limit_span_y,
-                    };
-                    mask_points.extend(Line::new(pos, *line_style).get_mask()?);
-                }
-                GridLines::XY(line_style) => {
-                    let pos_horz = LinePositioning::Horizontal {
-                        start: *limit_min + Point::new(0., interval_y * i as f64),
-                        length: limit_span_x,
-                    };
-
-                    let pos_vert = LinePositioning::Vertical {
-                        start: *limit_min + Point::new(interval_x * i as f64, 0.),
-                        length: limit_span_y,
-                    };
-
-                    mask_points.extend(Line::new(pos_horz, *line_style).get_mask()?);
-                    mask_points.extend(Line::new(pos_vert, *line_style).get_mask()?);
-                }
-            }
-        }
+        let mask_points = match self {
+            GridLines::XOnly(line_style) => horz_lines(limit_span_x, line_style),
+            GridLines::YOnly(line_style) => vert_lines(limit_span_y, line_style),
+            GridLines::XY(line_style) => horz_lines(limit_span_x, line_style)
+                .into_iter()
+                .chain(vert_lines(limit_span_y, line_style))
+                .collect::<Vec<_>>(),
+        };
         Ok(mask_points)
     }
 }

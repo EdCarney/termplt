@@ -1,8 +1,9 @@
+use core::num;
+
 use super::{
     common::{Convertable, FloatConvertable, Graphable, Scalable, Shiftable},
     point::Point,
 };
-use crate::common::Result;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Limits<T: Graphable> {
@@ -20,7 +21,7 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Limits<T> {
     }
 }
 
-impl<T: Graphable> Limits<T> {
+impl<T: FloatConvertable + Graphable> Limits<T> {
     /// Creates a new instance with the specified min/max. Requires that the max point be greater
     /// than the min point in both dimensions.
     pub fn new(min: Point<T>, max: Point<T>) -> Limits<T> {
@@ -63,6 +64,25 @@ impl<T: Graphable> Limits<T> {
     /// Validates whether the provided point exists within the limit.
     pub fn contains(&self, point: &Point<T>) -> bool {
         (self.min.x..=self.max.x).contains(&point.x) && (self.min.y..=self.max.y).contains(&point.y)
+    }
+
+    /// Chunks the limits into a collection of x and y points that will split the limit range into
+    /// num_chunks^2 sections.
+    pub fn chunk(&self, num_chunks: u32) -> (Vec<Point<f64>>, Vec<Point<f64>>) {
+        let limits = self.convert_to_f64();
+        let (limit_span_x, limit_span_y) = limits.span();
+
+        let interval_x = limit_span_x / num_chunks.convert_to_f64();
+        let interval_y = limit_span_y / num_chunks.convert_to_f64();
+
+        let x_points = (0..=num_chunks)
+            .map(|i| *limits.min() + Point::new(interval_x * i as f64, 0.))
+            .collect::<Vec<_>>();
+        let y_points = (0..=num_chunks)
+            .map(|i| *limits.min() + Point::new(0., interval_y * i as f64))
+            .collect::<Vec<_>>();
+
+        (x_points, y_points)
     }
 }
 
