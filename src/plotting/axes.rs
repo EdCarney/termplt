@@ -54,10 +54,16 @@ impl Axes {
             x_starts
                 .map(|(graph_start, canvas_start)| {
                     let txt = Text::from_number(graph_start.x, 3, self.style.clone());
-                    let x = canvas_start.x;
+                    let mut x = canvas_start.x;
                     let y = canvas_start.y
                         - line_style.thickness().convert_to_f64() * 2.
                         - (txt.height() as f64 / 2.);
+
+                    // shift positioning if number is negative
+                    if graph_start.x < 0. {
+                        x -= Text::new("-", TextStyle::default()).width() as f64 / 2.;
+                    }
+
                     Label::new(txt, TextPositioning::Centered(Point::new(x, y).floor()))
                 })
                 .collect::<Vec<_>>()

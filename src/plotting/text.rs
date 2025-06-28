@@ -34,6 +34,10 @@ impl TextChar {
         self.bitmap.len()
     }
 
+    pub fn value(&self) -> char {
+        self.value
+    }
+
     pub fn get_mask(&self, lower_left: Point<u32>, style: TextStyle) -> Result<Vec<MaskPoints>> {
         let mut points = Vec::new();
         for i in 0..self.height() {
@@ -100,7 +104,7 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new(text: String, style: TextStyle) -> Text {
+    pub fn new(text: &str, style: TextStyle) -> Text {
         let chars = text
             .chars()
             .map(|c| TextChar::new(c, &style))
@@ -116,12 +120,29 @@ impl Text {
         }
     }
 
-    pub fn from_number(number: f64, sig_figs: u8, style: TextStyle) -> Text {
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn chars(&self) -> &[TextChar] {
+        &self.chars
+    }
+
+    pub fn from_number(number: f64, sig_figs: usize, style: TextStyle) -> Text {
         if style.scale < 1 {
             panic!("Text scaling cannot be less than 1")
         }
         if sig_figs < 1 {
             panic!("Number of significant figures must be nonzero")
+        }
+
+        // return number as-is if it's w/in the number of sig figs
+        if number.to_string().trim_start_matches('-').len() <= sig_figs {
+            return Text::new(&number.to_string(), style);
         }
 
         let full_sci = format!("{number:e}");
@@ -153,15 +174,7 @@ impl Text {
             trunc_sci.extend(&end_str);
         }
 
-        Text::new(String::from_iter(trunc_sci), style)
-    }
-
-    pub fn height(&self) -> usize {
-        self.height
-    }
-
-    pub fn width(&self) -> usize {
-        self.width
+        Text::new(&String::from_iter(trunc_sci), style)
     }
 }
 
