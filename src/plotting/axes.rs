@@ -96,7 +96,6 @@ impl Axes {
                         if x_label.limits().intersects(y_label.limits()) {
                             let x_lab_max_y = x_label.limits().max().y;
                             let y_lab_min_y = y_label.limits().min().y;
-                            println!("x_lab_max_y: {x_lab_max_y}, y_lab_min_y: {y_lab_min_y}");
                             let x_lab_y_shift = x_lab_max_y - y_lab_min_y;
                             x_lab = x_lab
                                 .iter()
