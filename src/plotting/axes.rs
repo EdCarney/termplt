@@ -23,8 +23,7 @@ pub struct Axes {
 }
 
 impl Axes {
-    pub fn new(positioning: AxesPositioning) -> Axes {
-        let style = TextStyle::default();
+    pub fn new(positioning: AxesPositioning, style: TextStyle) -> Axes {
         Axes { positioning, style }
     }
 

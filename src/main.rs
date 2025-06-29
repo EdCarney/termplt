@@ -6,7 +6,7 @@ use termplt::{
         png_imgs, rgb_imgs, rgba_imgs,
     },
     plotting::{
-        axes::AxesPositioning,
+        axes::{Axes, AxesPositioning},
         canvas::{BufferType, TerminalCanvas},
         colors,
         graph::Graph,
@@ -75,7 +75,7 @@ fn test_graphing() {
         .collect::<Vec<Point<_>>>();
 
     // draw_graph_style_1(&points_x2, None, None);
-    // draw_graph_style_2(&points_sin);
+    draw_graph_style_2(&points_sin);
     draw_graph_style_3(&points_x3, None, None);
 }
 
@@ -91,10 +91,13 @@ fn draw_graph_style_1(
             color: colors::BLUE,
             thickness: 0,
         }))
-        .with_axes(AxesPositioning::XY(LineStyle::Solid {
-            color: colors::BLACK,
-            thickness: 1,
-        }))
+        .with_axes(Axes::new(
+            AxesPositioning::XY(LineStyle::Solid {
+                color: colors::BLACK,
+                thickness: 1,
+            }),
+            TextStyle::with_color(colors::WHITE),
+        ))
         .with_grid_lines(GridLines::XY(LineStyle::Solid {
             color: colors::BLACK,
             thickness: 0,
@@ -125,10 +128,10 @@ fn draw_graph_style_1(
 }
 
 fn draw_graph_style_2(data: &[Point<f32>]) {
-    let width = 600;
-    let height = 600;
+    let width = 900;
+    let height = 900;
     let bytes = TerminalCanvas::new(width, height, colors::BLACK)
-        .with_buffer(BufferType::Uniform(15))
+        .with_buffer(BufferType::Uniform(100))
         .with_graph(
             Graph::new()
                 .with_series(
@@ -178,13 +181,17 @@ fn draw_graph_style_2(data: &[Point<f32>]) {
                         })
                         + Point::new(3. * f32::consts::FRAC_PI_4, 0.),
                 )
-                .with_axes(AxesPositioning::XY(LineStyle::Solid {
-                    color: colors::GHOST_WHITE,
+                .with_axes(Axes::new(
+                    AxesPositioning::XY(LineStyle::Solid {
+                        color: colors::GHOST_WHITE,
+                        thickness: 1,
+                    }),
+                    TextStyle::with_color(colors::WHITE),
+                ))
+                .with_grid_lines(GridLines::XY(LineStyle::Solid {
+                    color: colors::GRAY,
                     thickness: 0,
-                })), // .with_grid_lines(GridLines::XY(LineStyle::Solid {
-                     //     color: colors::GRAY,
-                     //     thickness: 0,
-                     // })),
+                })),
         )
         .draw()
         .unwrap()
@@ -208,10 +215,13 @@ fn draw_graph_style_3(
             color: colors::BLUE,
             thickness: 0,
         }))
-        .with_axes(AxesPositioning::XY(LineStyle::Solid {
-            color: colors::BLACK,
-            thickness: 1,
-        }))
+        .with_axes(Axes::new(
+            AxesPositioning::XY(LineStyle::Solid {
+                color: colors::BLACK,
+                thickness: 1,
+            }),
+            TextStyle::default(),
+        ))
         .with_grid_lines(GridLines::XY(LineStyle::Solid {
             color: colors::BLACK,
             thickness: 0,

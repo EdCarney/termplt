@@ -99,6 +99,14 @@ impl TextStyle {
         }
     }
 
+    pub fn with_color(color: RGB8) -> TextStyle {
+        TextStyle {
+            color,
+            scale: 1,
+            padding: 1,
+        }
+    }
+
     pub fn color(&self) -> RGB8 {
         self.color
     }

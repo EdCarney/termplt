@@ -64,8 +64,7 @@ impl<T: Graphable> Graph<T> {
         self
     }
 
-    pub fn with_axes(mut self, pos: AxesPositioning) -> Self {
-        let axes = Axes::new(pos);
+    pub fn with_axes(mut self, axes: Axes) -> Self {
         self.axes = Some(axes);
         self
     }
