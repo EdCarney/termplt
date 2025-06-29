@@ -1,6 +1,7 @@
 use super::{
     colors,
     common::{Drawable, IntConvertable, MaskPoints, UIntConvertable},
+    limits::Limits,
     numbers,
     point::Point,
 };
@@ -12,6 +13,22 @@ pub enum TextPositioning {
     Centered(Point<u32>),
     LeftAligned(Point<u32>),
     // to add...
+}
+
+impl TextPositioning {
+    pub fn clone_with(&self, new_point: Point<u32>) -> Self {
+        match self {
+            Self::Centered(_) => Self::Centered(new_point),
+            Self::LeftAligned(_) => Self::LeftAligned(new_point),
+        }
+    }
+
+    pub fn point(&self) -> &Point<u32> {
+        match self {
+            Self::Centered(point) => point,
+            Self::LeftAligned(point) => point,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -187,6 +204,27 @@ pub struct Label {
 impl Label {
     pub fn new(txt: Text, pos: TextPositioning) -> Label {
         Label { txt, pos }
+    }
+
+    pub fn txt(&self) -> &Text {
+        &self.txt
+    }
+
+    pub fn pos(&self) -> &TextPositioning {
+        &self.pos
+    }
+
+    pub fn limits(&self) -> Limits<u32> {
+        match &self.pos {
+            TextPositioning::Centered(center) => {
+                let height_shift = (self.txt.height as f64) / 2.;
+                let width_shift = (self.txt.width as f64) / 2.;
+                let min = *center - Point::new(width_shift, height_shift).floor();
+                let max = *center + Point::new(width_shift, height_shift).ceil();
+                Limits::new(min, max)
+            }
+            _ => panic!("Not implemented"),
+        }
     }
 }
 

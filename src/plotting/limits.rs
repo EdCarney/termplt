@@ -1,5 +1,3 @@
-use core::num;
-
 use super::{
     common::{Convertable, FloatConvertable, Graphable, Scalable, Shiftable},
     point::Point,
@@ -61,9 +59,40 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
         &self.max
     }
 
+    pub fn upper_left(&self) -> Point<T> {
+        Point::new(self.min().x, self.max().y)
+    }
+
+    pub fn upper_right(&self) -> Point<T> {
+        self.max().clone()
+    }
+
+    pub fn lower_right(&self) -> Point<T> {
+        Point::new(self.max().x, self.min().y)
+    }
+
+    pub fn lower_left(&self) -> Point<T> {
+        self.min().clone()
+    }
+
     /// Validates whether the provided point exists within the limit.
     pub fn contains(&self, point: &Point<T>) -> bool {
         (self.min.x..=self.max.x).contains(&point.x) && (self.min.y..=self.max.y).contains(&point.y)
+    }
+
+    /// Checks if this limit intersects with another limit.
+    pub fn intersects<U: FloatConvertable + Graphable>(&self, other: Limits<U>) -> bool {
+        let this = self.convert_to_f64();
+        let other = other.convert_to_f64();
+
+        this.contains(&other.upper_left())
+            || this.contains(&other.upper_right())
+            || this.contains(&other.lower_right())
+            || this.contains(&other.lower_left())
+            || other.contains(&this.upper_left())
+            || other.contains(&this.upper_right())
+            || other.contains(&this.lower_right())
+            || other.contains(&this.lower_left())
     }
 
     /// Chunks the limits into a collection of x and y points that will split the limit range into

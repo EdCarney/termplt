@@ -86,10 +86,36 @@ impl Axes {
         let labels = match &self.positioning {
             AxesPositioning::XOnly(line_style) => x_labels(line_style),
             AxesPositioning::YOnly(line_style) => y_labels(line_style),
-            AxesPositioning::XY(line_style) => x_labels(line_style)
-                .into_iter()
-                .chain(y_labels(line_style))
-                .collect::<Vec<_>>(),
+            AxesPositioning::XY(line_style) => {
+                let mut x_lab = x_labels(line_style);
+                let y_lab = y_labels(line_style);
+
+                // shift x labels down if necessary to avoid intersection
+                if let Some(x_label) = x_lab.first() {
+                    if let Some(y_label) = y_lab.first() {
+                        if x_label.limits().intersects(y_label.limits()) {
+                            let x_lab_max_y = x_label.limits().max().y;
+                            let y_lab_min_y = y_label.limits().min().y;
+                            println!("x_lab_max_y: {x_lab_max_y}, y_lab_min_y: {y_lab_min_y}");
+                            let x_lab_y_shift = x_lab_max_y - y_lab_min_y;
+                            x_lab = x_lab
+                                .iter()
+                                .map(|lab| {
+                                    let current_point = lab.pos().point().clone();
+                                    let shifted_point = Point::new(
+                                        current_point.x,
+                                        current_point.y - x_lab_y_shift,
+                                    );
+                                    let shifted_pos = lab.pos().clone_with(shifted_point);
+                                    Label::new(lab.txt().clone(), shifted_pos)
+                                })
+                                .collect::<Vec<_>>();
+                        }
+                    }
+                }
+
+                x_lab.into_iter().chain(y_lab).collect::<Vec<_>>()
+            }
         };
         Ok(labels)
     }
