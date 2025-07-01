@@ -196,6 +196,8 @@ fn num_to_str(number: f64, sig_figs: usize) -> String {
         }
     }
 
+    // for decimal numbers, remove any trailing zeros (these are technically sig figs but removing
+    // them yields a cleaner graph)
     while trunc_str.contains(&'.') && trunc_str.len() > 1 {
         if trunc_str.last().unwrap() == &'0' {
             trunc_str.pop()
