@@ -207,10 +207,10 @@ impl<T: Graphable> Graph<T> {
     /// Generates labels for axes. Graph limits define the expected numerical values for the
     /// labels.
     pub fn get_axes_labels(&self, graph_limits: &Limits<T>) -> Result<Vec<Label>> {
-        self.axes
-            .as_ref()
-            .unwrap()
-            .get_labels(&self.limits().unwrap(), graph_limits)
+        match &self.axes {
+            Some(axes) => axes.get_labels(&self.limits().unwrap(), graph_limits),
+            None => Ok(Vec::new()),
+        }
     }
 }
 

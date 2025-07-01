@@ -4,7 +4,7 @@ use super::{
     graph::Graph,
     limits::Limits,
     point::Point,
-    text::{Label, Text},
+    text::Label,
 };
 use crate::common::Result;
 use rgb::RGB8;
