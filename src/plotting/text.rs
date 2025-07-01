@@ -161,46 +161,63 @@ impl Text {
         if style.scale < 1 {
             panic!("Text scaling cannot be less than 1")
         }
-        if sig_figs < 1 {
-            panic!("Number of significant figures must be nonzero")
+        Text::new(&num_to_str(number, sig_figs), style)
+    }
+}
+
+fn num_to_str(number: f64, sig_figs: usize) -> String {
+    if sig_figs < 1 {
+        panic!("Number of significant figures must be nonzero")
+    }
+
+    let min = 0.1_f64.powi(sig_figs as i32);
+    let max = 10_f64.powi(sig_figs as i32);
+
+    let mut trunc_str = Vec::new();
+    let mut sig_fig_count = 0;
+
+    let num_str = if min < number.abs() && number.abs() < max {
+        number.to_string()
+    } else {
+        format!("{number:e}")
+    };
+
+    let is_leading_zero = |s: &str, ind: usize| ind == 0 && s.chars().nth(ind).unwrap() == '0';
+
+    // get the first part of the number, up to the required number of sig figs or the
+    // scientific exponent (whichever comes first)
+    for (ind, c) in num_str.chars().enumerate() {
+        if sig_fig_count == sig_figs || c == 'e' {
+            break;
         }
-
-        // return number as-is if it's w/in the number of sig figs
-        if number.to_string().trim_start_matches('-').len() <= sig_figs {
-            return Text::new(&number.to_string(), style);
+        trunc_str.push(c);
+        if !is_leading_zero(&num_str, ind) && c.is_ascii_digit() {
+            sig_fig_count += 1;
         }
+    }
 
-        let full_sci = format!("{number:e}");
-        let mut trunc_sci = Vec::new();
-        let mut sig_fig_count = 0;
+    while trunc_str.contains(&'.') && trunc_str.len() > 1 {
+        if trunc_str.last().unwrap() == &'0' {
+            trunc_str.pop()
+        } else {
+            break;
+        };
+    }
 
-        // get the first part of the number, up to the required number of sig figs or the
-        // scientific exponent (whichever comes first)
-        for c in full_sci.chars() {
-            if sig_fig_count == sig_figs || c == 'e' {
+    // add the scientific component, but only if it is nonzero
+    if num_str.contains('e') && !num_str.ends_with("e0") {
+        let mut end_str = Vec::new();
+        let mut chars = num_str.chars();
+        while let Some(c) = chars.next_back() {
+            end_str.insert(0, c.clone());
+            if c == 'e' {
                 break;
             }
-            trunc_sci.push(c);
-            if c.is_ascii_digit() {
-                sig_fig_count += 1;
-            }
         }
-
-        // add the scientific component, but only if it is nonzero
-        if !full_sci.ends_with("e0") {
-            let mut end_str = Vec::new();
-            let mut chars = full_sci.chars();
-            while let Some(c) = chars.next_back() {
-                end_str.insert(0, c.clone());
-                if c == 'e' {
-                    break;
-                }
-            }
-            trunc_sci.extend(&end_str);
-        }
-
-        Text::new(&String::from_iter(trunc_sci), style)
+        trunc_str.extend(&end_str);
     }
+
+    String::from_iter(trunc_str)
 }
 
 #[derive(Debug, Clone)]
@@ -257,5 +274,55 @@ impl Drawable for Label {
             _ => panic!("Not implemented"),
         };
         Ok(mask_points)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::num_to_str;
+
+    #[test]
+    fn num_to_str_within_range_gt_zero() {
+        let number: f64 = 25.;
+        let sig_figs: usize = 2;
+        let num_str = num_to_str(number, sig_figs);
+
+        assert_eq!(num_str, "25");
+    }
+
+    #[test]
+    fn num_to_str_within_range_lt_zero() {
+        let number: f64 = 0.25;
+        let sig_figs: usize = 2;
+        let num_str = num_to_str(number, sig_figs);
+
+        assert_eq!(num_str, "0.25");
+    }
+
+    #[test]
+    fn num_to_str_lt_min_range() {
+        let number: f64 = 0.000250505;
+        let sig_figs: usize = 2;
+        let num_str = num_to_str(number, sig_figs);
+
+        assert_eq!(num_str, "2.5e-4");
+    }
+
+    #[test]
+    fn num_to_str_gt_max_range() {
+        let number: f64 = 2_554_223.23;
+        let sig_figs: usize = 2;
+        let num_str = num_to_str(number, sig_figs);
+
+        assert_eq!(num_str, "2.5e6");
+    }
+
+    #[test]
+    fn num_to_str_within_range_trailing_zeros() {
+        let number: f64 = 0.2001;
+        let sig_figs: usize = 2;
+        let num_str = num_to_str(number, sig_figs);
+
+        assert_eq!(num_str, "0.2");
     }
 }
