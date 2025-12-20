@@ -69,8 +69,8 @@ fn test_graphing() {
     let num_points = 100;
     let points_sin = (0..=num_points)
         .map(|x| {
-            let x = (x as f32) * (2. * f32::consts::PI / (num_points as f32));
-            Point::new(x, x.sin())
+            let x = (x as f32) * (360. / (num_points as f32));
+            Point::new(x, (x * f32::consts::PI / 180.).sin())
         })
         .collect::<Vec<Point<_>>>();
 
@@ -155,7 +155,7 @@ fn draw_graph_style_2(data: &[Point<f32>]) {
                             color: colors::RED,
                             thickness: 0,
                         })
-                        + Point::new(f32::consts::FRAC_PI_4, 0.),
+                        + Point::new(45., 0.),
                 )
                 .with_series(
                     Series::new(data)
@@ -167,7 +167,7 @@ fn draw_graph_style_2(data: &[Point<f32>]) {
                             color: colors::CYAN,
                             thickness: 0,
                         })
-                        + Point::new(2. * f32::consts::FRAC_PI_4, 0.),
+                        + Point::new(90., 0.),
                 )
                 .with_series(
                     Series::new(data)
@@ -179,7 +179,7 @@ fn draw_graph_style_2(data: &[Point<f32>]) {
                             color: colors::ORANGE,
                             thickness: 0,
                         })
-                        + Point::new(3. * f32::consts::FRAC_PI_4, 0.),
+                        + Point::new(135., 0.),
                 )
                 .with_axes(Axes::new(
                     AxesPositioning::XY(LineStyle::Solid {
