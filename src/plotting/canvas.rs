@@ -137,7 +137,7 @@ where
 
     /// Consumes all drawable assets and draws them on the canvas.
     pub fn draw(mut self) -> Result<Self> {
-        let canvas_limits = self.get_drawable_limits().convert_to_f64();
+        let canvas_limits = self.get_drawable_limits()?.convert_to_f64();
 
         if let Some(graph) = self.graph.take() {
             let unscaled_limits = graph.limits().unwrap().convert_to_f64();
@@ -163,10 +163,14 @@ where
         Ok(self)
     }
 
-    pub fn get_drawable_limits(&self) -> Limits<u32> {
-        // set initial point from the buffer
+    pub fn get_drawable_limits(&self) -> Result<Limits<u32>> {
+        // set initial point from the buffer; use saturating_sub to avoid u32 overflow
+        // when the canvas is smaller than the buffer
         let mut min = Point::new(self.buffer.left, self.buffer.bottom);
-        let mut max = self.limits.max().clone() - Point::new(self.buffer.right, self.buffer.top);
+        let mut max = Point::new(
+            self.limits.max().x.saturating_sub(self.buffer.right),
+            self.limits.max().y.saturating_sub(self.buffer.top),
+        );
 
         if let Some(graph) = &self.graph {
             let largest_marker_sz = graph
@@ -189,10 +193,13 @@ where
             };
 
             // note that axes and markers can overlap; so use the larger of marker/axes as bounds
-            let mut min_x = min.x + u32::max(largest_marker_sz, axes_thickness.0);
-            let mut min_y = min.y + u32::max(largest_marker_sz, axes_thickness.1);
-            let mut max_x = max.x - u32::max(largest_marker_sz, axes_thickness.0);
-            let mut max_y = max.y - u32::max(largest_marker_sz, axes_thickness.1);
+            let inset_x = u32::max(largest_marker_sz, axes_thickness.0);
+            let inset_y = u32::max(largest_marker_sz, axes_thickness.1);
+
+            let min_x = min.x + inset_x;
+            let min_y = min.y + inset_y;
+            let max_x = max.x.saturating_sub(inset_x);
+            let max_y = max.y.saturating_sub(inset_y);
 
             // include axes text
 
@@ -200,7 +207,20 @@ where
             max = Point::new(max_x, max_y);
         }
 
-        Limits::new(min, max)
+        if min.x >= max.x || min.y >= max.y {
+            return Err(format!(
+                "Canvas too small for the configured buffer and graph elements. \
+                 Drawable area would be {}x{} pixels (min={:?}, max={:?}). \
+                 Try a larger terminal window or smaller buffer/marker sizes.",
+                max.x.saturating_sub(min.x),
+                max.y.saturating_sub(min.y),
+                min,
+                max,
+            )
+            .into());
+        }
+
+        Ok(Limits::new(min, max))
     }
 }
 
@@ -226,5 +246,19 @@ mod tests {
             .with_graph(Graph::new().with_series(Series::new(&points)))
             .draw()
             .unwrap();
+    }
+
+    #[test]
+    fn canvas_too_small_for_buffer_returns_error() {
+        let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
+        let result = TerminalCanvas::new(50, 50, colors::BLACK)
+            .with_buffer(BufferType::Uniform(30))
+            .with_graph(Graph::new().with_series(Series::new(&points)))
+            .draw();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Canvas too small"));
     }
 }

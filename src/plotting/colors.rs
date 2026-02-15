@@ -1,4 +1,4 @@
-use rgb::{self, RGB8};
+use rgb::RGB8;
 
 pub const MAROON: RGB8 = RGB8::new(128, 0, 0);
 pub const DARK_RED: RGB8 = RGB8::new(139, 0, 0);
@@ -139,3 +139,190 @@ pub const LIGHT_GRAY: RGB8 = RGB8::new(211, 211, 211);
 pub const GAINSBORO: RGB8 = RGB8::new(220, 220, 220);
 pub const WHITE_SMOKE: RGB8 = RGB8::new(245, 245, 245);
 pub const WHITE: RGB8 = RGB8::new(255, 255, 255);
+
+const COLOR_TABLE: &[(&str, RGB8)] = &[
+    ("MAROON", MAROON),
+    ("DARK_RED", DARK_RED),
+    ("BROWN", BROWN),
+    ("FIREBRICK", FIREBRICK),
+    ("CRIMSON", CRIMSON),
+    ("RED", RED),
+    ("TOMATO", TOMATO),
+    ("CORAL", CORAL),
+    ("INDIAN_RED", INDIAN_RED),
+    ("LIGHT_CORAL", LIGHT_CORAL),
+    ("DARK_SALMON", DARK_SALMON),
+    ("SALMON", SALMON),
+    ("LIGHT_SALMON", LIGHT_SALMON),
+    ("ORANGE_RED", ORANGE_RED),
+    ("DARK_ORANGE", DARK_ORANGE),
+    ("ORANGE", ORANGE),
+    ("GOLD", GOLD),
+    ("DARK_GOLDEN_ROD", DARK_GOLDEN_ROD),
+    ("GOLDEN_ROD", GOLDEN_ROD),
+    ("PALE_GOLDEN_ROD", PALE_GOLDEN_ROD),
+    ("DARK_KHAKI", DARK_KHAKI),
+    ("KHAKI", KHAKI),
+    ("OLIVE", OLIVE),
+    ("YELLOW", YELLOW),
+    ("YELLOW_GREEN", YELLOW_GREEN),
+    ("DARK_OLIVE_GREEN", DARK_OLIVE_GREEN),
+    ("OLIVE_DRAB", OLIVE_DRAB),
+    ("LAWN_GREEN", LAWN_GREEN),
+    ("CHARTREUSE", CHARTREUSE),
+    ("GREEN_YELLOW", GREEN_YELLOW),
+    ("DARK_GREEN", DARK_GREEN),
+    ("GREEN", GREEN),
+    ("FOREST_GREEN", FOREST_GREEN),
+    ("LIME", LIME),
+    ("LIME_GREEN", LIME_GREEN),
+    ("LIGHT_GREEN", LIGHT_GREEN),
+    ("PALE_GREEN", PALE_GREEN),
+    ("DARK_SEA_GREEN", DARK_SEA_GREEN),
+    ("MEDIUM_SPRING_GREEN", MEDIUM_SPRING_GREEN),
+    ("SPRING_GREEN", SPRING_GREEN),
+    ("SEA_GREEN", SEA_GREEN),
+    ("MEDIUM_AQUA_MARINE", MEDIUM_AQUA_MARINE),
+    ("MEDIUM_SEA_GREEN", MEDIUM_SEA_GREEN),
+    ("LIGHT_SEA_GREEN", LIGHT_SEA_GREEN),
+    ("DARK_SLATE_GRAY", DARK_SLATE_GRAY),
+    ("TEAL", TEAL),
+    ("DARK_CYAN", DARK_CYAN),
+    ("AQUA", AQUA),
+    ("CYAN", CYAN),
+    ("LIGHT_CYAN", LIGHT_CYAN),
+    ("DARK_TURQUOISE", DARK_TURQUOISE),
+    ("TURQUOISE", TURQUOISE),
+    ("MEDIUM_TURQUOISE", MEDIUM_TURQUOISE),
+    ("PALE_TURQUOISE", PALE_TURQUOISE),
+    ("AQUA_MARINE", AQUA_MARINE),
+    ("POWDER_BLUE", POWDER_BLUE),
+    ("CADET_BLUE", CADET_BLUE),
+    ("STEEL_BLUE", STEEL_BLUE),
+    ("CORN_FLOWER_BLUE", CORN_FLOWER_BLUE),
+    ("DEEP_SKY_BLUE", DEEP_SKY_BLUE),
+    ("DODGER_BLUE", DODGER_BLUE),
+    ("LIGHT_BLUE", LIGHT_BLUE),
+    ("SKY_BLUE", SKY_BLUE),
+    ("LIGHT_SKY_BLUE", LIGHT_SKY_BLUE),
+    ("MIDNIGHT_BLUE", MIDNIGHT_BLUE),
+    ("NAVY", NAVY),
+    ("DARK_BLUE", DARK_BLUE),
+    ("MEDIUM_BLUE", MEDIUM_BLUE),
+    ("BLUE", BLUE),
+    ("ROYAL_BLUE", ROYAL_BLUE),
+    ("BLUE_VIOLET", BLUE_VIOLET),
+    ("INDIGO", INDIGO),
+    ("DARK_SLATE_BLUE", DARK_SLATE_BLUE),
+    ("SLATE_BLUE", SLATE_BLUE),
+    ("MEDIUM_SLATE_BLUE", MEDIUM_SLATE_BLUE),
+    ("MEDIUM_PURPLE", MEDIUM_PURPLE),
+    ("DARK_MAGENTA", DARK_MAGENTA),
+    ("DARK_VIOLET", DARK_VIOLET),
+    ("DARK_ORCHID", DARK_ORCHID),
+    ("MEDIUM_ORCHID", MEDIUM_ORCHID),
+    ("PURPLE", PURPLE),
+    ("THISTLE", THISTLE),
+    ("PLUM", PLUM),
+    ("VIOLET", VIOLET),
+    ("MAGENTA", MAGENTA),
+    ("ORCHID", ORCHID),
+    ("MEDIUM_VIOLET_RED", MEDIUM_VIOLET_RED),
+    ("PALE_VIOLET_RED", PALE_VIOLET_RED),
+    ("DEEP_PINK", DEEP_PINK),
+    ("HOT_PINK", HOT_PINK),
+    ("LIGHT_PINK", LIGHT_PINK),
+    ("PINK", PINK),
+    ("ANTIQUE_WHITE", ANTIQUE_WHITE),
+    ("BEIGE", BEIGE),
+    ("BISQUE", BISQUE),
+    ("BLANCHED_ALMOND", BLANCHED_ALMOND),
+    ("WHEAT", WHEAT),
+    ("CORN_SILK", CORN_SILK),
+    ("LEMON_CHIFFON", LEMON_CHIFFON),
+    ("LIGHT_GOLDEN_ROD_YELLOW", LIGHT_GOLDEN_ROD_YELLOW),
+    ("LIGHT_YELLOW", LIGHT_YELLOW),
+    ("SADDLE_BROWN", SADDLE_BROWN),
+    ("SIENNA", SIENNA),
+    ("CHOCOLATE", CHOCOLATE),
+    ("PERU", PERU),
+    ("SANDY_BROWN", SANDY_BROWN),
+    ("BURLY_WOOD", BURLY_WOOD),
+    ("TAN", TAN),
+    ("ROSY_BROWN", ROSY_BROWN),
+    ("MOCCASIN", MOCCASIN),
+    ("NAVAJO_WHITE", NAVAJO_WHITE),
+    ("PEACH_PUFF", PEACH_PUFF),
+    ("MISTY_ROSE", MISTY_ROSE),
+    ("LAVENDER_BLUSH", LAVENDER_BLUSH),
+    ("LINEN", LINEN),
+    ("OLD_LACE", OLD_LACE),
+    ("PAPAYA_WHIP", PAPAYA_WHIP),
+    ("SEA_SHELL", SEA_SHELL),
+    ("MINT_CREAM", MINT_CREAM),
+    ("SLATE_GRAY", SLATE_GRAY),
+    ("LIGHT_SLATE_GRAY", LIGHT_SLATE_GRAY),
+    ("LIGHT_STEEL_BLUE", LIGHT_STEEL_BLUE),
+    ("LAVENDER", LAVENDER),
+    ("FLORAL_WHITE", FLORAL_WHITE),
+    ("ALICE_BLUE", ALICE_BLUE),
+    ("GHOST_WHITE", GHOST_WHITE),
+    ("HONEYDEW", HONEYDEW),
+    ("IVORY", IVORY),
+    ("AZURE", AZURE),
+    ("SNOW", SNOW),
+    ("BLACK", BLACK),
+    ("DIM_GRAY", DIM_GRAY),
+    ("GRAY", GRAY),
+    ("DARK_GRAY", DARK_GRAY),
+    ("SILVER", SILVER),
+    ("LIGHT_GRAY", LIGHT_GRAY),
+    ("GAINSBORO", GAINSBORO),
+    ("WHITE_SMOKE", WHITE_SMOKE),
+    ("WHITE", WHITE),
+];
+
+/// Case-insensitive color name lookup. Accepts names like "Blue", "DARK_RED", "lime", etc.
+pub fn from_name(name: &str) -> Option<RGB8> {
+    let upper = name.to_ascii_uppercase();
+    COLOR_TABLE
+        .iter()
+        .find(|(n, _)| *n == upper)
+        .map(|(_, c)| *c)
+}
+
+/// Returns all available color names (uppercase with underscores).
+pub fn all_names() -> &'static [(&'static str, RGB8)] {
+    COLOR_TABLE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_name_exact_match() {
+        assert_eq!(from_name("BLUE"), Some(BLUE));
+        assert_eq!(from_name("RED"), Some(RED));
+    }
+
+    #[test]
+    fn from_name_case_insensitive() {
+        assert_eq!(from_name("blue"), Some(BLUE));
+        assert_eq!(from_name("Blue"), Some(BLUE));
+        assert_eq!(from_name("dark_red"), Some(DARK_RED));
+        assert_eq!(from_name("Dark_Red"), Some(DARK_RED));
+    }
+
+    #[test]
+    fn from_name_unknown_returns_none() {
+        assert_eq!(from_name("Gren"), None);
+        assert_eq!(from_name("not_a_color"), None);
+        assert_eq!(from_name(""), None);
+    }
+
+    #[test]
+    fn all_names_is_nonempty() {
+        assert!(all_names().len() > 100);
+    }
+}
