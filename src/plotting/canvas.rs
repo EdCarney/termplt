@@ -35,7 +35,24 @@ impl CanvasBuffer {
                 right: x,
                 bottom: x,
             },
-            _ => panic!("Not implemented"),
+            BufferType::TopBottom(top, bottom) => CanvasBuffer {
+                left: 0,
+                top,
+                right: 0,
+                bottom,
+            },
+            BufferType::LeftRight(left, right) => CanvasBuffer {
+                left,
+                top: 0,
+                right,
+                bottom: 0,
+            },
+            BufferType::TopBottomLeftRight(top, bottom, left, right) => CanvasBuffer {
+                left,
+                top,
+                right,
+                bottom,
+            },
         }
     }
 }
@@ -260,5 +277,62 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Canvas too small"));
+    }
+
+    #[test]
+    fn buffer_type_top_bottom() {
+        let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
+        TerminalCanvas::new(100, 100, colors::BLACK)
+            .with_buffer(BufferType::TopBottom(10, 5))
+            .with_graph(Graph::new().with_series(Series::new(&points)))
+            .draw()
+            .unwrap();
+    }
+
+    #[test]
+    fn buffer_type_left_right() {
+        let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
+        TerminalCanvas::new(100, 100, colors::BLACK)
+            .with_buffer(BufferType::LeftRight(10, 5))
+            .with_graph(Graph::new().with_series(Series::new(&points)))
+            .draw()
+            .unwrap();
+    }
+
+    #[test]
+    fn buffer_type_top_bottom_left_right() {
+        let points = (0..=5).map(|x| Point::new(x, x)).collect::<Vec<Point<_>>>();
+        TerminalCanvas::new(100, 100, colors::BLACK)
+            .with_buffer(BufferType::TopBottomLeftRight(10, 5, 8, 3))
+            .with_graph(Graph::new().with_series(Series::new(&points)))
+            .draw()
+            .unwrap();
+    }
+
+    #[test]
+    fn buffer_type_top_bottom_left_right_fields_are_correct() {
+        let buf = CanvasBuffer::new(BufferType::TopBottomLeftRight(10, 5, 8, 3));
+        assert_eq!(buf.top, 10);
+        assert_eq!(buf.bottom, 5);
+        assert_eq!(buf.left, 8);
+        assert_eq!(buf.right, 3);
+    }
+
+    #[test]
+    fn buffer_type_top_bottom_fields_are_correct() {
+        let buf = CanvasBuffer::new(BufferType::TopBottom(10, 5));
+        assert_eq!(buf.top, 10);
+        assert_eq!(buf.bottom, 5);
+        assert_eq!(buf.left, 0);
+        assert_eq!(buf.right, 0);
+    }
+
+    #[test]
+    fn buffer_type_left_right_fields_are_correct() {
+        let buf = CanvasBuffer::new(BufferType::LeftRight(8, 3));
+        assert_eq!(buf.left, 8);
+        assert_eq!(buf.right, 3);
+        assert_eq!(buf.top, 0);
+        assert_eq!(buf.bottom, 0);
     }
 }
