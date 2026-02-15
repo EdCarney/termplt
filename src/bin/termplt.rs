@@ -135,7 +135,8 @@ STYLE (applies to the preceding --data or --data_file):
   --line_color <color>       Named color for connecting line
   --line_thickness <pixels>  Line thickness in pixels (default: {DEFAULT_LINE_THICKNESS})
 
-HELP:
+OTHER:
+  --verbose, -v              Print debug info (terminal size, canvas, buffer, etc.)
   --help, -h                 Show this help message
   --help colors              List all available color names
   --help markers             List all available marker styles
@@ -154,14 +155,24 @@ Examples:
 // Argument parsing
 // ---------------------------------------------------------------------------
 
-fn parse_args(args: Vec<String>) -> Result<Vec<SeriesSpec>> {
+#[derive(Debug)]
+struct CliArgs {
+    specs: Vec<SeriesSpec>,
+    verbose: bool,
+}
+
+fn parse_args(args: Vec<String>) -> Result<CliArgs> {
     let mut specs: Vec<SeriesSpec> = Vec::new();
     let mut current: Option<SeriesSpec> = None;
+    let mut verbose = false;
 
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
         match arg.as_str() {
+            "--verbose" | "-v" => {
+                verbose = true;
+            }
             "--help" | "-h" => {
                 let topic = args.get(i + 1).map(|s| s.as_str());
                 print_help(topic);
@@ -275,7 +286,7 @@ fn parse_args(args: Vec<String>) -> Result<Vec<SeriesSpec>> {
             .into());
     }
 
-    Ok(specs)
+    Ok(CliArgs { specs, verbose })
 }
 
 // ---------------------------------------------------------------------------
@@ -523,21 +534,35 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let specs = parse_args(args)?;
+    let cli = parse_args(args)?;
+    let verbose = cli.verbose;
 
     // Build all series
     let mut graph = Graph::new();
-    for (i, spec) in specs.into_iter().enumerate() {
+    for (i, spec) in cli.specs.into_iter().enumerate() {
+        if verbose {
+            eprintln!("[verbose] series {}: {:?}", i, spec);
+        }
         let series = build_series(spec, i)?;
+        if verbose {
+            eprintln!(
+                "[verbose] series {}: {} points, marker={:?}, line={:?}",
+                i,
+                series.data().len(),
+                series.marker_style(),
+                series.line_style()
+            );
+        }
         graph = graph.with_series(series);
     }
 
     // Add axes and grid lines
+    let axes_thickness: u32 = 1;
     graph = graph
         .with_axes(Axes::new(
             AxesPositioning::XY(LineStyle::Solid {
                 color: colors::WHITE,
-                thickness: 1,
+                thickness: axes_thickness,
             }),
             TextStyle::with_color(colors::WHITE),
         ))
@@ -548,12 +573,49 @@ fn run() -> Result<()> {
 
     // Determine canvas size from terminal window
     let win = get_window_size()?;
+    if verbose {
+        eprintln!(
+            "[verbose] terminal: {}x{} cells, {}x{} pixels ({} px/col, {} px/row)",
+            win.cols, win.rows, win.x_pix, win.y_pix, win.pix_per_col, win.pix_per_row
+        );
+    }
+
     let size = std::cmp::min(win.x_pix, win.y_pix) / 2;
     let size = std::cmp::max(size, 200); // minimum 200px
     let width = size;
     let height = size;
-
     let buffer = std::cmp::max(size / 10, 20);
+
+    if verbose {
+        eprintln!("[verbose] canvas: {}x{} pixels", width, height);
+        eprintln!("[verbose] buffer: {} pixels (uniform)", buffer);
+
+        let largest_marker = graph
+            .data()
+            .iter()
+            .map(|s| s.marker_style().size())
+            .max()
+            .unwrap_or(0);
+        let axes_bound = 2 * axes_thickness;
+        let inset = u32::max(largest_marker, axes_bound);
+        let drawable_w = (width - 1).saturating_sub(2 * (buffer + inset));
+        let drawable_h = (height - 1).saturating_sub(2 * (buffer + inset));
+        eprintln!(
+            "[verbose] largest marker: {}, axes bound: {}, effective inset: {}",
+            largest_marker, axes_bound, inset
+        );
+        eprintln!(
+            "[verbose] estimated drawable area: ~{}x{} pixels",
+            drawable_w, drawable_h
+        );
+        if drawable_w == 0 || drawable_h == 0 {
+            eprintln!(
+                "[verbose] WARNING: drawable area is zero! Canvas {}x{} is too small \
+                 for buffer ({}) + inset ({}). Consider a larger terminal window.",
+                width, height, buffer, inset
+            );
+        }
+    }
 
     let bytes = TerminalCanvas::new(width, height, colors::BLACK)
         .with_buffer(BufferType::Uniform(buffer))
@@ -593,17 +655,18 @@ mod tests {
     #[test]
     fn parse_args_single_inline_data() {
         let args = vec!["--data".into(), "(1,2),(3,4)".into()];
-        let specs = parse_args(args).unwrap();
-        assert_eq!(specs.len(), 1);
-        assert!(matches!(specs[0].data_source, DataSource::Inline(_)));
+        let cli = parse_args(args).unwrap();
+        assert_eq!(cli.specs.len(), 1);
+        assert!(matches!(cli.specs[0].data_source, DataSource::Inline(_)));
+        assert!(!cli.verbose);
     }
 
     #[test]
     fn parse_args_single_file_data() {
         let args = vec!["--data_file".into(), "test.csv".into()];
-        let specs = parse_args(args).unwrap();
-        assert_eq!(specs.len(), 1);
-        assert!(matches!(specs[0].data_source, DataSource::File(_)));
+        let cli = parse_args(args).unwrap();
+        assert_eq!(cli.specs.len(), 1);
+        assert!(matches!(cli.specs[0].data_source, DataSource::File(_)));
     }
 
     #[test]
@@ -614,8 +677,8 @@ mod tests {
             "--data_file".into(),
             "b.txt".into(),
         ];
-        let specs = parse_args(args).unwrap();
-        assert_eq!(specs.len(), 2);
+        let cli = parse_args(args).unwrap();
+        assert_eq!(cli.specs.len(), 2);
     }
 
     #[test]
@@ -634,7 +697,8 @@ mod tests {
             "--line_thickness".into(),
             "2".into(),
         ];
-        let specs = parse_args(args).unwrap();
+        let cli = parse_args(args).unwrap();
+        let specs = &cli.specs;
         assert_eq!(specs.len(), 1);
         assert_eq!(specs[0].marker_style.as_deref(), Some("HollowCircle"));
         assert_eq!(specs[0].marker_color.as_deref(), Some("Red"));
@@ -882,8 +946,23 @@ mod tests {
             "--line_style".into(),
             "None".into(),
         ];
-        let specs = parse_args(args).unwrap();
-        assert_eq!(specs[0].line_style.as_deref(), Some("None"));
+        let cli = parse_args(args).unwrap();
+        assert_eq!(cli.specs[0].line_style.as_deref(), Some("None"));
+    }
+
+    #[test]
+    fn parse_args_verbose_flag() {
+        let args = vec!["-v".into(), "--data".into(), "(1,2)".into()];
+        let cli = parse_args(args).unwrap();
+        assert!(cli.verbose);
+        assert_eq!(cli.specs.len(), 1);
+    }
+
+    #[test]
+    fn parse_args_verbose_flag_long() {
+        let args = vec!["--data".into(), "(1,2)".into(), "--verbose".into()];
+        let cli = parse_args(args).unwrap();
+        assert!(cli.verbose);
     }
 
     #[test]
