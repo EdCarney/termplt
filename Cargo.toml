@@ -2,6 +2,12 @@
 name = "termplt"
 version = "0.1.0"
 edition = "2024"
+description = "A Rust library for rendering 2D plots directly in Kitty-compatible terminals"
+license = "MIT"
+repository = "https://github.com/EdCarney/termplt"
+keywords = ["terminal", "plotting", "kitty", "graphs", "cli"]
+categories = ["command-line-utilities", "visualization"]
+exclude = ["test_data/", "scripts/", ".claude/", "CLAUDE.md"]
 
 [[bin]]
 name = "termplt"

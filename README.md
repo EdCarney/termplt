@@ -72,7 +72,7 @@ Add `termplt` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-termplt = { git = "https://github.com/EdCarney/termplt.git" }
+termplt = "0.1.0"
 ```
 
 ### Plotting a sine wave
@@ -189,4 +189,4 @@ This creates 13 data files in `test_data/` covering sine/cosine, polynomials, ex
 
 ## License
 
-This project does not currently specify a license. All rights reserved by the author.
+This project is licensed under the [MIT License](LICENSE).
