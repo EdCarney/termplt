@@ -47,7 +47,7 @@ pub struct Point<T: Graphable> {
 
 impl<T: Graphable, U: Graphable> Convertable<U> for Point<T> {
     type ConvertTo = Point<U>;
-    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+    fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
         let x = self.x.convert_to(convert_fn);
         let y = self.y.convert_to(convert_fn);
         Point { x, y }

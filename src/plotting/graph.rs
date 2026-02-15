@@ -24,7 +24,7 @@ pub struct Graph<T: Graphable + FloatConvertable> {
 
 impl<T: Graphable, U: Graphable> Convertable<U> for Graph<T> {
     type ConvertTo = Graph<U>;
-    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+    fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
         let data = self
             .data
             .iter()

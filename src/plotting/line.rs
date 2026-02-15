@@ -67,7 +67,7 @@ pub struct Line<T: Graphable> {
 
 impl<T: Graphable, U: Graphable> Convertable<U> for Line<T> {
     type ConvertTo = Line<U>;
-    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+    fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
         let style = self.style().clone();
         let positioning = self.positioning.convert_to(convert_fn);
         Line { style, positioning }
