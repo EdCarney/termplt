@@ -281,7 +281,55 @@ impl Drawable for Label {
 
 #[cfg(test)]
 mod test {
-    use super::num_to_str;
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "Not implemented")]
+    fn label_limits_left_aligned_panics() {
+        let style = TextStyle::default();
+        let txt = Text::new("0", style);
+        let pos = TextPositioning::LeftAligned(Point::new(50, 50));
+        let label = Label::new(txt, pos);
+        let _ = label.limits();
+    }
+
+    #[test]
+    #[should_panic(expected = "Not implemented")]
+    fn label_get_mask_left_aligned_panics() {
+        let style = TextStyle::default();
+        let txt = Text::new("0", style);
+        let pos = TextPositioning::LeftAligned(Point::new(50, 50));
+        let label = Label::new(txt, pos);
+        let _ = label.get_mask();
+    }
+
+    #[test]
+    fn label_limits_centered_returns_valid_bounds() {
+        let style = TextStyle::default();
+        let txt = Text::new("0", style);
+        let center = Point::new(50, 50);
+        let pos = TextPositioning::Centered(center);
+        let label = Label::new(txt, pos);
+
+        let limits = label.limits();
+        // The limits should be centered around the center point
+        assert!(limits.min().x < center.x);
+        assert!(limits.min().y < center.y);
+        assert!(limits.max().x > center.x);
+        assert!(limits.max().y > center.y);
+    }
+
+    #[test]
+    fn label_get_mask_centered_returns_points() {
+        let style = TextStyle::default();
+        let txt = Text::new("1", style);
+        let pos = TextPositioning::Centered(Point::new(50, 50));
+        let label = Label::new(txt, pos);
+
+        let mask = label.get_mask().unwrap();
+        assert!(!mask.is_empty());
+        assert!(!mask[0].points.is_empty(), "Label mask should contain drawn points");
+    }
 
     #[test]
     fn num_to_str_within_range_gt_zero() {

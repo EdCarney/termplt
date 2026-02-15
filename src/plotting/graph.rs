@@ -377,4 +377,120 @@ mod tests {
             Limits::new(Point::new(-20, -50), Point::new(100, 50))
         );
     }
+
+    // --- with_x_limits state machine ---
+
+    fn graph_with_data() -> Graph<i32> {
+        Graph::new().with_series(Series::new(&vec![
+            Point::new(0, 0),
+            Point::new(10, 20),
+        ]))
+    }
+
+    #[test]
+    fn with_x_limits_from_none_produces_x_only() {
+        // None → XOnly: x limits override data, y limits come from data
+        let g = graph_with_data().with_x_limits(-5, 15);
+        let limits = g.limits().unwrap();
+        assert_eq!(limits.min().x, -5);
+        assert_eq!(limits.max().x, 15);
+        // y should still come from data
+        assert_eq!(limits.min().y, 0);
+        assert_eq!(limits.max().y, 20);
+    }
+
+    #[test]
+    fn with_x_limits_from_x_only_replaces_x() {
+        // XOnly → XOnly: new x limits replace old x limits
+        let g = graph_with_data().with_x_limits(-5, 15).with_x_limits(-100, 100);
+        let limits = g.limits().unwrap();
+        assert_eq!(limits.min().x, -100);
+        assert_eq!(limits.max().x, 100);
+        assert_eq!(limits.min().y, 0);
+        assert_eq!(limits.max().y, 20);
+    }
+
+    #[test]
+    fn with_x_limits_from_y_only_produces_xy() {
+        // YOnly → XY: combining x and y limits
+        let g = graph_with_data().with_y_limits(-10, 30).with_x_limits(-5, 15);
+        let limits = g.limits().unwrap();
+        assert_eq!(limits.min().x, -5);
+        assert_eq!(limits.max().x, 15);
+        assert_eq!(limits.min().y, -10);
+        assert_eq!(limits.max().y, 30);
+    }
+
+    #[test]
+    fn with_x_limits_from_xy_updates_only_x() {
+        // XY → XY: only x changes
+        let g = graph_with_data()
+            .with_x_limits(-5, 15)
+            .with_y_limits(-10, 30)
+            .with_x_limits(-50, 50);
+        let limits = g.limits().unwrap();
+        assert_eq!(limits.min().x, -50);
+        assert_eq!(limits.max().x, 50);
+        // y should be preserved from the earlier with_y_limits call
+        assert_eq!(limits.min().y, -10);
+        assert_eq!(limits.max().y, 30);
+    }
+
+    // --- with_y_limits state machine ---
+
+    #[test]
+    fn with_y_limits_from_none_produces_y_only() {
+        // None → YOnly: y limits override data, x limits come from data
+        let g = graph_with_data().with_y_limits(-10, 30);
+        let limits = g.limits().unwrap();
+        assert_eq!(limits.min().x, 0);
+        assert_eq!(limits.max().x, 10);
+        assert_eq!(limits.min().y, -10);
+        assert_eq!(limits.max().y, 30);
+    }
+
+    #[test]
+    fn with_y_limits_from_y_only_replaces_y() {
+        // YOnly → YOnly: new y limits replace old y limits
+        let g = graph_with_data().with_y_limits(-10, 30).with_y_limits(-100, 100);
+        let limits = g.limits().unwrap();
+        assert_eq!(limits.min().x, 0);
+        assert_eq!(limits.max().x, 10);
+        assert_eq!(limits.min().y, -100);
+        assert_eq!(limits.max().y, 100);
+    }
+
+    #[test]
+    fn with_y_limits_from_x_only_produces_xy() {
+        // XOnly → XY: combining x and y limits
+        let g = graph_with_data().with_x_limits(-5, 15).with_y_limits(-10, 30);
+        let limits = g.limits().unwrap();
+        assert_eq!(limits.min().x, -5);
+        assert_eq!(limits.max().x, 15);
+        assert_eq!(limits.min().y, -10);
+        assert_eq!(limits.max().y, 30);
+    }
+
+    #[test]
+    fn with_y_limits_from_xy_updates_only_y() {
+        // XY → XY: only y changes
+        let g = graph_with_data()
+            .with_x_limits(-5, 15)
+            .with_y_limits(-10, 30)
+            .with_y_limits(-50, 50);
+        let limits = g.limits().unwrap();
+        // x should be preserved from the earlier with_x_limits call
+        assert_eq!(limits.min().x, -5);
+        assert_eq!(limits.max().x, 15);
+        assert_eq!(limits.min().y, -50);
+        assert_eq!(limits.max().y, 50);
+    }
+
+    // --- limits() with no data returns None even with graph_limits ---
+
+    #[test]
+    fn limits_with_no_data_returns_none() {
+        let g = Graph::<i32>::new().with_x_limits(0, 10);
+        assert!(g.limits().is_none(), "No data means no limits, even with explicit graph limits");
+    }
 }
