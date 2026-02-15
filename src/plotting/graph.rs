@@ -208,7 +208,12 @@ impl<T: Graphable> Graph<T> {
     /// labels.
     pub fn get_axes_labels(&self, graph_limits: &Limits<T>) -> Result<Vec<Label>> {
         match &self.axes {
-            Some(axes) => axes.get_labels(&self.limits().unwrap(), graph_limits),
+            Some(axes) => {
+                let limits = self
+                    .limits()
+                    .ok_or("Graph has no data; cannot compute limits for axes labels")?;
+                axes.get_labels(&limits, graph_limits)
+            }
             None => Ok(Vec::new()),
         }
     }
@@ -217,7 +222,9 @@ impl<T: Graphable> Graph<T> {
 impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mut mask_points = Vec::new();
-        let limits = self.limits().unwrap();
+        let limits = self
+            .limits()
+            .ok_or("Graph has no data; cannot compute limits for mask")?;
 
         // add axes if they are defined
         if let Some(axes) = &self.axes {
@@ -230,12 +237,12 @@ impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
         }
 
         // add series data
-        mask_points.extend(
-            self.data()
-                .iter()
-                .flat_map(|series| series.get_mask().unwrap())
-                .collect::<Vec<_>>(),
-        );
+        let series_masks: Vec<Vec<MaskPoints>> = self
+            .data()
+            .iter()
+            .map(|series| series.get_mask())
+            .collect::<Result<_>>()?;
+        mask_points.extend(series_masks.into_iter().flatten());
 
         Ok(mask_points)
     }
@@ -492,5 +499,34 @@ mod tests {
     fn limits_with_no_data_returns_none() {
         let g = Graph::<i32>::new().with_x_limits(0, 10);
         assert!(g.limits().is_none(), "No data means no limits, even with explicit graph limits");
+    }
+
+    #[test]
+    fn get_mask_on_empty_graph_returns_error() {
+        let g = Graph::<i32>::new();
+        let result = g.get_mask();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("no data"));
+    }
+
+    #[test]
+    fn get_axes_labels_on_empty_graph_with_axes_returns_error() {
+        use crate::plotting::line::LineStyle;
+        use crate::plotting::text::TextStyle;
+        let axes = Axes::new(
+            AxesPositioning::XY(LineStyle::default()),
+            TextStyle::default(),
+        );
+        let g = Graph::<i32>::new().with_axes(axes);
+        let dummy_limits = Limits::new(Point::new(0, 0), Point::new(10, 10));
+        let result = g.get_axes_labels(&dummy_limits);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("no data"));
     }
 }
