@@ -1,6 +1,6 @@
 # termplt
 
-A Rust library for rendering 2D plots directly in [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminals. Data goes in, pixel-perfect graphs come out — no GUI, no image files, no browser.
+A Rust library for rendering 2D plots directly in [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminals. Data goes in, pixel-perfect graphs come out; no GUI, no image files, no browser!
 
 termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) to transmit rendered plots as RGB pixel data via APC escape sequences, so graphs display inline in your terminal.
 
@@ -9,7 +9,7 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 - **Generic numeric types** — plot `i32`, `u32`, `f32`, `f64`, or any type satisfying basic arithmetic traits
 - **Multiple series** — overlay multiple data series on a single graph with independent styling
 - **Marker styles** — filled/hollow circles and squares with configurable size and color
-- **Line drawing** — solid connecting lines between points using Bresenham's algorithm
+- **Line drawing** — optional solid connecting lines between points
 - **Axes and grid lines** — automatic axis rendering with numeric tick labels
 - **Axis limits** — optionally constrain x/y ranges with automatic point clipping
 - **Configurable canvas** — set dimensions, background color, and buffer padding
@@ -23,23 +23,33 @@ termplt includes a command-line executable for rendering plots without writing R
 ```bash
 # Simple line plot
 termplt --data "(1,1),(2,4),(3,9),(4,16)"
+```
+<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/64f9f8a0-3631-4c6f-baf4-782694f673e1" />
 
-# Plot from a CSV file
-termplt --data_file data.csv
-
+```
 # Scatter plot (no connecting lines)
-termplt --data_file data.csv --line_style None
+termplt --data_file test_data/random_clusters.csv --line_style None
+```
+<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/97be7e79-5224-44c3-b9a3-e7676887ef4e" />
 
+```
 # Multiple series with automatic color cycling
 termplt --data_file sine.csv --data_file cosine.csv
+```
+<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/4a9a3f03-2ff5-452f-a904-3006e8b4f3ed" />
 
+```
 # Custom styling
-termplt --data_file data.csv --marker_style HollowCircle --marker_color Cyan --marker_size 4 \
+termplt --data_file test_data/lissajous.csv --marker_style HollowCircle --marker_color Cyan --marker_size 4 \
   --line_color Cyan --line_thickness 1
+```
+<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/24d56a94-9013-40bf-b4cb-eaa38082c7a6" />
 
+```
 # Line-only plot (no markers)
 termplt --data_file data.csv --marker_style None --line_color Lime --line_thickness 1
 ```
+<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/18e2f854-94c1-4a8a-ae4e-c446683488cf" />
 
 ### CLI Flags
 
