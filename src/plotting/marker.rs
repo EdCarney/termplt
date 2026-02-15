@@ -51,7 +51,12 @@ impl Marker {
 
     pub fn limits(&self) -> Limits<u32> {
         let size = self.style.size();
-        Limits::new(self.center - size, self.center + size)
+        let min = Point::new(
+            self.center.x.saturating_sub(size),
+            self.center.y.saturating_sub(size),
+        );
+        let max = self.center + size;
+        Limits::new(min, max)
     }
 
     pub fn style(&self) -> &MarkerStyle {
@@ -75,21 +80,25 @@ impl Drawable for Marker {
                 }]
             }
             MarkerStyle::HollowSquare { color, size } => {
+                let x_lo = self.center.x.saturating_sub(size);
+                let y_lo = self.center.y.saturating_sub(size);
+                let x_hi = self.center.x + size;
+                let y_hi = self.center.y + size;
                 let top = Point::<u32>::range(
-                    &Point::new(self.center.x - size, self.center.y + size),
-                    &Point::new(self.center.x + size, self.center.y + size),
+                    &Point::new(x_lo, y_hi),
+                    &Point::new(x_hi, y_hi),
                 );
                 let bottom = Point::<u32>::range(
-                    &Point::new(self.center.x - size, self.center.y - size),
-                    &Point::new(self.center.x + size, self.center.y - size),
+                    &Point::new(x_lo, y_lo),
+                    &Point::new(x_hi, y_lo),
                 );
                 let right = Point::<u32>::range(
-                    &Point::new(self.center.x + size, self.center.y - size),
-                    &Point::new(self.center.x + size, self.center.y + size),
+                    &Point::new(x_hi, y_lo),
+                    &Point::new(x_hi, y_hi),
                 );
                 let left = Point::<u32>::range(
-                    &Point::new(self.center.x - size, self.center.y - size),
-                    &Point::new(self.center.x - size, self.center.y + size),
+                    &Point::new(x_lo, y_lo),
+                    &Point::new(x_lo, y_hi),
                 );
                 vec![
                     MaskPoints {

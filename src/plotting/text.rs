@@ -244,10 +244,19 @@ impl Label {
     pub fn limits(&self) -> Limits<u32> {
         match &self.pos {
             TextPositioning::Centered(center) => {
-                let height_shift = (self.txt.height as f64) / 2.;
-                let width_shift = (self.txt.width as f64) / 2.;
-                let min = *center - Point::new(width_shift, height_shift).floor();
-                let max = *center + Point::new(width_shift, height_shift).ceil();
+                let shift_floor = Point::new(
+                    (self.txt.width as f64 / 2.).floor() as u32,
+                    (self.txt.height as f64 / 2.).floor() as u32,
+                );
+                let shift_ceil = Point::new(
+                    (self.txt.width as f64 / 2.).ceil() as u32,
+                    (self.txt.height as f64 / 2.).ceil() as u32,
+                );
+                let min = Point::new(
+                    center.x.saturating_sub(shift_floor.x),
+                    center.y.saturating_sub(shift_floor.y),
+                );
+                let max = *center + shift_ceil;
                 Limits::new(min, max)
             }
             _ => panic!("Not implemented"),

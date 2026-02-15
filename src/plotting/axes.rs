@@ -95,14 +95,14 @@ impl Axes {
                         if x_label.limits().intersects(y_label.limits()) {
                             let x_lab_max_y = x_label.limits().max().y;
                             let y_lab_min_y = y_label.limits().min().y;
-                            let x_lab_y_shift = x_lab_max_y - y_lab_min_y;
+                            let x_lab_y_shift = x_lab_max_y.saturating_sub(y_lab_min_y);
                             x_lab = x_lab
                                 .iter()
                                 .map(|lab| {
-                                    let current_point = lab.pos().point().clone();
+                                    let current_point = *lab.pos().point();
                                     let shifted_point = Point::new(
                                         current_point.x,
-                                        current_point.y - x_lab_y_shift,
+                                        current_point.y.saturating_sub(x_lab_y_shift),
                                     );
                                     let shifted_pos = lab.pos().clone_with(shifted_point);
                                     Label::new(lab.txt().clone(), shifted_pos)
