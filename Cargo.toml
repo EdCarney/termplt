@@ -3,6 +3,10 @@ name = "termplt"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "termplt"
+path = "src/bin/termplt.rs"
+
 [dependencies]
 crossterm = "0.29.0"
 image = "0.25.6"
