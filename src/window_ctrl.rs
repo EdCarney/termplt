@@ -44,7 +44,7 @@ impl WindowSize {
         let x_pix = ioctl_data[2] as u32;
         let y_pix = ioctl_data[3] as u32;
 
-        if rows == 0 || cols == 0 {
+        if rows == 0 || cols == 0 || x_pix == 0 || y_pix == 0 {
             return Err(WindowCtrlError::InvalidDimensions { rows, cols });
         }
 
@@ -109,6 +109,33 @@ mod tests {
     #[test]
     fn build_from_ioctl_all_zeros_returns_err() {
         let data: [u16; 4] = [0, 0, 0, 0];
+        let result = WindowSize::build_from_ioctl(data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_from_ioctl_zero_pixels_returns_err() {
+        // Nonzero rows/cols but zero pixel dimensions would produce
+        // pix_per_col=0 and pix_per_row=0, causing downstream division-by-zero.
+        let data: [u16; 4] = [24, 80, 0, 0];
+        let result = WindowSize::build_from_ioctl(data);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("invalid dimensions"),
+            "Error should mention invalid dimensions"
+        );
+    }
+
+    #[test]
+    fn build_from_ioctl_zero_x_pix_only_returns_err() {
+        let data: [u16; 4] = [24, 80, 0, 1080];
+        let result = WindowSize::build_from_ioctl(data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_from_ioctl_zero_y_pix_only_returns_err() {
+        let data: [u16; 4] = [24, 80, 1920, 0];
         let result = WindowSize::build_from_ioctl(data);
         assert!(result.is_err());
     }
