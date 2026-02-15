@@ -65,8 +65,6 @@ impl Canvas {
             let x = point.x;
             let y = self.limits.max().y - point.y;
             self.pixels[y as usize][x as usize] = color.clone();
-        } else {
-            println!("Skipping point {:?}", point);
         }
     }
 

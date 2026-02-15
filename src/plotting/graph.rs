@@ -183,14 +183,12 @@ impl<T: Graphable> Graph<T> {
                 .data
                 .iter()
                 .map(|series| {
-                    let mut filtered_data = Vec::new();
-                    for p in series.data() {
-                        if old_limits.contains(p) {
-                            filtered_data.push(*p);
-                        } else {
-                            println!("WARN: point {p:?} outside of old limits {old_limits:?}");
-                        }
-                    }
+                    let filtered_data: Vec<_> = series
+                        .data()
+                        .iter()
+                        .filter(|p| old_limits.contains(p))
+                        .copied()
+                        .collect();
                     series.clone_with(&filtered_data)
                 })
                 .collect::<Vec<_>>();
