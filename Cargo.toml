@@ -1,6 +1,6 @@
 [package]
 name = "termplt"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "A Rust library for rendering 2D plots directly in Kitty-compatible terminals"
 license = "MIT"
