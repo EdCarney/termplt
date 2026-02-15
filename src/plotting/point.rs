@@ -109,16 +109,24 @@ where
         let (old_span_x, old_span_y) = old_limits.span();
         let (new_span_x, new_span_y) = new_limits.span();
 
-        let x_factor = new_span_x / old_span_x;
-        let y_factor = new_span_y / old_span_y;
-
         let x: f64 = self.x.into();
         let y: f64 = self.y.into();
 
-        Point {
-            x: x * x_factor,
-            y: y * y_factor,
-        }
+        // When old_span is 0 (all points identical in that dimension),
+        // map to the midpoint of the new range instead of dividing by zero.
+        let new_x = if old_span_x == 0.0 {
+            (new_limits.min().x + new_limits.max().x) / 2.0
+        } else {
+            x * (new_span_x / old_span_x)
+        };
+
+        let new_y = if old_span_y == 0.0 {
+            (new_limits.min().y + new_limits.max().y) / 2.0
+        } else {
+            y * (new_span_y / old_span_y)
+        };
+
+        Point { x: new_x, y: new_y }
     }
 }
 
@@ -319,5 +327,63 @@ mod tests {
             limits.unwrap(),
             Limits::new(Point::new(-5, -20), Point::new(100, 50))
         );
+    }
+
+    #[test]
+    fn scale_to_normal_case() {
+        let p = Point::new(5.0, 5.0);
+        let old_limits = Limits::new(Point::new(0.0, 0.0), Point::new(10.0, 10.0));
+        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
+
+        let scaled = p.scale_to(&old_limits, &new_limits);
+        assert_eq!(scaled.x, 50.0);
+        assert_eq!(scaled.y, 50.0);
+    }
+
+    #[test]
+    fn scale_to_with_negative_coordinates() {
+        let p = Point::new(0.0, 0.0);
+        let old_limits = Limits::new(Point::new(-10.0, -10.0), Point::new(10.0, 10.0));
+        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
+
+        let scaled = p.scale_to(&old_limits, &new_limits);
+        assert_eq!(scaled.x, 0.0);
+        assert_eq!(scaled.y, 0.0);
+    }
+
+    #[test]
+    fn scale_to_with_zero_x_span() {
+        // All points have the same x value — should map to midpoint of new x range.
+        let p = Point::new(5.0, 5.0);
+        let old_limits = Limits::new(Point::new(5.0, 0.0), Point::new(5.0, 10.0));
+        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
+
+        let scaled = p.scale_to(&old_limits, &new_limits);
+        assert_eq!(scaled.x, 50.0, "Zero x-span should map to midpoint of new x range");
+        assert_eq!(scaled.y, 50.0);
+    }
+
+    #[test]
+    fn scale_to_with_zero_y_span() {
+        // All points have the same y value — should map to midpoint of new y range.
+        let p = Point::new(5.0, 5.0);
+        let old_limits = Limits::new(Point::new(0.0, 5.0), Point::new(10.0, 5.0));
+        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
+
+        let scaled = p.scale_to(&old_limits, &new_limits);
+        assert_eq!(scaled.x, 50.0);
+        assert_eq!(scaled.y, 50.0, "Zero y-span should map to midpoint of new y range");
+    }
+
+    #[test]
+    fn scale_to_with_zero_both_spans() {
+        // Single-point limits — both dimensions should map to midpoints.
+        let p = Point::new(5.0, 5.0);
+        let old_limits = Limits::new(Point::new(5.0, 5.0), Point::new(5.0, 5.0));
+        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
+
+        let scaled = p.scale_to(&old_limits, &new_limits);
+        assert_eq!(scaled.x, 50.0, "Zero x-span should map to midpoint");
+        assert_eq!(scaled.y, 50.0, "Zero y-span should map to midpoint");
     }
 }
