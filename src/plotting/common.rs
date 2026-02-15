@@ -48,14 +48,14 @@ pub trait Drawable {
 
 pub trait Convertable<U> {
     type ConvertTo;
-    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo;
+    fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo;
 }
 
 impl<T: Graphable, U: Graphable> Convertable<U> for T {
     type ConvertTo = U;
-    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+    fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
         let value: f64 = self.clone().into();
-        unsafe { convert_fn(value) }
+        convert_fn(value)
     }
 }
 
@@ -63,9 +63,13 @@ pub trait UIntConvertable: Convertable<u32> {
     fn convert_to_u32(&self) -> Self::ConvertTo;
 }
 
+fn safe_f64_to_u32(v: f64) -> u32 {
+    v.clamp(0.0, u32::MAX as f64) as u32
+}
+
 impl<T: Convertable<u32>> UIntConvertable for T {
     fn convert_to_u32(&self) -> Self::ConvertTo {
-        self.convert_to(f64::to_int_unchecked)
+        self.convert_to(safe_f64_to_u32)
     }
 }
 
@@ -73,9 +77,13 @@ pub trait IntConvertable: Convertable<i32> {
     fn convert_to_i32(&self) -> Self::ConvertTo;
 }
 
+fn safe_f64_to_i32(v: f64) -> i32 {
+    v.clamp(i32::MIN as f64, i32::MAX as f64) as i32
+}
+
 impl<T: Convertable<i32>> IntConvertable for T {
     fn convert_to_i32(&self) -> Self::ConvertTo {
-        self.convert_to(f64::to_int_unchecked)
+        self.convert_to(safe_f64_to_i32)
     }
 }
 

@@ -69,7 +69,7 @@ where
 
 impl<T: Graphable, U: Graphable> Convertable<U> for GraphLimits<T> {
     type ConvertTo = GraphLimits<U>;
-    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+    fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
         match &self {
             Self::XOnly { min, max } => GraphLimits::XOnly {
                 min: min.convert_to(convert_fn),

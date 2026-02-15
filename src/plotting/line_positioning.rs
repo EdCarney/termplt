@@ -36,7 +36,7 @@ impl<T: Graphable> LinePositioning<T> {
 
 impl<T: Graphable, U: Graphable> Convertable<U> for LinePositioning<T> {
     type ConvertTo = LinePositioning<U>;
-    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+    fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
         match &self {
             LinePositioning::Horizontal { start, length } => {
                 let start = start.convert_to(convert_fn);

@@ -11,7 +11,7 @@ pub struct Limits<T: Graphable> {
 
 impl<T: Graphable, U: Graphable> Convertable<U> for Limits<T> {
     type ConvertTo = Limits<U>;
-    fn convert_to(&self, convert_fn: unsafe fn(f64) -> U) -> Self::ConvertTo {
+    fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
         Limits {
             min: self.min().convert_to(convert_fn),
             max: self.max().convert_to(convert_fn),
