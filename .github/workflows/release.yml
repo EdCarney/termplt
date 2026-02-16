@@ -33,7 +33,7 @@ jobs:
             os: ubuntu-latest
             archive_ext: tar.gz
           - target: x86_64-apple-darwin
-            os: macos-13        # Intel runner — avoids cross-compilation for x86 target
+            os: macos-15-intel  # Intel runner — avoids cross-compilation for x86 target
             archive_ext: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest    # ARM64 runner (Apple Silicon)
