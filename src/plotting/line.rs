@@ -215,7 +215,7 @@ impl<T: IntConvertable + Graphable> Drawable for Line<T> {
                 }]
             }
             LineStyle::Dashed {
-                color,
+                color: _,
                 thickness: _,
             } => todo!(),
         };

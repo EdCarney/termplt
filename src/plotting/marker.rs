@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     common::Result,
-    plotting::common::{FloatConvertable, IntConvertable, UIntConvertable},
+    plotting::common::{IntConvertable, UIntConvertable},
 };
 use rgb::RGB8;
 

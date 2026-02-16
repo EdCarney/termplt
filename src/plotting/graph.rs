@@ -1,5 +1,5 @@
 use super::{
-    axes::{Axes, AxesPositioning},
+    axes::Axes,
     common::{
         Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints, Scalable,
         Shiftable,
@@ -9,7 +9,7 @@ use super::{
     limits::Limits,
     point::{Point, PointCollection},
     series::Series,
-    text::{Label, Text},
+    text::Label,
 };
 use crate::common::Result;
 
@@ -512,6 +512,7 @@ mod tests {
 
     #[test]
     fn get_axes_labels_on_empty_graph_with_axes_returns_error() {
+        use crate::plotting::axes::AxesPositioning;
         use crate::plotting::line::LineStyle;
         use crate::plotting::text::TextStyle;
         let axes = Axes::new(
