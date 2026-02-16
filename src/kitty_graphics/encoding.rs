@@ -8,12 +8,15 @@ const B64_CHARS: [u8; 64] = [
 ];
 
 pub fn read_bytes_to_b64(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
-    // every 3 bytes will be 4 6-bit base64 encoded values; the number of base64 values will
-    // [number of bytes] * (4/3), with an extra value if the division is not clean; use this to
-    // preallocate the encoded vector
+    // every 3 bytes produces 4 base64 characters; per RFC 4648, the output length is always a
+    // multiple of 4 (partial groups are padded with '=')
     let num_raw = bytes.len();
     let rem = num_raw % 3;
-    let num_b64 = ((num_raw * 4) / 3) + if rem > 0 { 1 } else { 0 };
+    let num_b64 = if rem > 0 {
+        ((num_raw / 3) + 1) * 4
+    } else {
+        (num_raw / 3) * 4
+    };
     let mut b64_data = vec![0; num_b64];
 
     // iterate first through all full byte sets to allow us to avoid checking the length of the
@@ -24,10 +27,10 @@ pub fn read_bytes_to_b64(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
         convert_full_bytes_to_b64(byte_chunk, &mut b64_data[buf_start..buf_end])
     }
 
-    // encode the last 1 or 2 bytes if present
+    // encode the last 1 or 2 bytes if present, with '=' padding per RFC 4648
     if rem > 0 {
         let raw_start = num_raw - rem;
-        let b64_start = num_b64 - (rem + 1);
+        let b64_start = num_b64 - 4;
         convert_partial_bytes_to_b64(&bytes[raw_start..], &mut b64_data[b64_start..]);
     }
 
@@ -51,11 +54,14 @@ fn convert_partial_bytes_to_b64(bytes: &[u8], buf: &mut [u8]) {
         1 => {
             buf[0] = B64_CHARS[usize::try_from(bytes[0] >> 2).unwrap()];
             buf[1] = B64_CHARS[usize::try_from(bytes[0] << 6 >> 2).unwrap()];
+            buf[2] = b'=';
+            buf[3] = b'=';
         }
         2 => {
             buf[0] = B64_CHARS[usize::try_from(bytes[0] >> 2).unwrap()];
             buf[1] = B64_CHARS[usize::try_from(bytes[0] << 6 >> 2 | bytes[1] >> 4).unwrap()];
             buf[2] = B64_CHARS[usize::try_from(bytes[1] << 4 >> 2).unwrap()];
+            buf[3] = b'=';
         }
         3 => convert_full_bytes_to_b64(bytes, buf),
         _ => panic!("Number of bytes cannot exceed 3"),
@@ -71,8 +77,8 @@ mod tests {
         let text = b"M";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
-        assert_eq!(enc_text.len(), 2, "1 byte should be 2 base64 values");
-        assert_eq!(enc_text, "TQ");
+        assert_eq!(enc_text.len(), 4, "1 byte should be 4 base64 chars (2 data + 2 padding)");
+        assert_eq!(enc_text, "TQ==");
     }
 
     #[test]
@@ -80,8 +86,8 @@ mod tests {
         let text = b"Ma";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
-        assert_eq!(enc_text.len(), 3, "2 bytes should be 3 base64 values");
-        assert_eq!(enc_text, "TWE");
+        assert_eq!(enc_text.len(), 4, "2 bytes should be 4 base64 chars (3 data + 1 padding)");
+        assert_eq!(enc_text, "TWE=");
     }
 
     #[test]
@@ -89,7 +95,36 @@ mod tests {
         let text = b"Man";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
-        assert_eq!(enc_text.len(), 4, "3 bytes should be 4 base64 values");
+        assert_eq!(enc_text.len(), 4, "3 bytes should be 4 base64 chars (no padding)");
         assert_eq!(enc_text, "TWFu");
+    }
+
+    #[test]
+    fn encode_empty_input() {
+        let text = b"";
+        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        assert_eq!(enc_bytes.len(), 0, "empty input should produce empty output");
+    }
+
+    #[test]
+    fn encode_output_length_is_always_multiple_of_4() {
+        for len in 1..=20 {
+            let input: Vec<u8> = (0..len).map(|i| i as u8).collect();
+            let enc_bytes = read_bytes_to_b64(&input).expect("Failed to encode");
+            assert_eq!(
+                enc_bytes.len() % 4,
+                0,
+                "base64 output length should be a multiple of 4 for input length {len}"
+            );
+        }
+    }
+
+    #[test]
+    fn encode_longer_string() {
+        // "Many hands make light work." is a well-known base64 test vector
+        let text = b"Many hands make light work.";
+        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
+        assert_eq!(enc_text, "TWFueSBoYW5kcyBtYWtlIGxpZ2h0IHdvcmsu");
     }
 }
