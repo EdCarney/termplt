@@ -38,6 +38,9 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest    # ARM64 runner (Apple Silicon)
             archive_ext: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive_ext: zip
 
     steps:
       - uses: actions/checkout@v4
@@ -53,11 +56,20 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }} --bin ${{ env.BINARY_NAME }}
 
-      - name: Package binary
+      - name: Package binary (Unix)
+        if: matrix.archive_ext == 'tar.gz'
         run: |
           ARCHIVE="${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
           tar czf "$ARCHIVE" -C "target/${{ matrix.target }}/release" ${{ env.BINARY_NAME }}
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Package binary (Windows)
+        if: matrix.archive_ext == 'zip'
+        shell: pwsh
+        run: |
+          $ARCHIVE = "${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe" -DestinationPath $ARCHIVE
+          echo "ARCHIVE=$ARCHIVE" >> $env:GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
