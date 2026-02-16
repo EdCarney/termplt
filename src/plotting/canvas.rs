@@ -1,6 +1,6 @@
 use super::{
     axes::AxesPositioning,
-    common::{Drawable, FloatConvertable, Graphable},
+    common::{Drawable, FloatConvertable, Graphable, MaskPoints},
     graph::Graph,
     limits::Limits,
     point::Point,
@@ -138,7 +138,10 @@ where
         let canvas_limits = self.get_drawable_limits()?.convert_to_f64();
 
         if let Some(graph) = self.graph.take() {
-            let unscaled_limits = graph.limits().unwrap().convert_to_f64();
+            let unscaled_limits = graph
+                .limits()
+                .ok_or("Graph has no data; cannot compute limits")?
+                .convert_to_f64();
             let scaled_graph = graph.scale(canvas_limits);
 
             scaled_graph
@@ -153,9 +156,14 @@ where
         }
 
         // labels must be drawn after graph since axes labels are added to the canvas
-        self.labels
+        let label_masks: Vec<Vec<MaskPoints>> = self
+            .labels
             .iter()
-            .flat_map(|txt| txt.get_mask().unwrap())
+            .map(|txt| txt.get_mask())
+            .collect::<Result<_>>()?;
+        label_masks
+            .iter()
+            .flatten()
             .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
 
         Ok(self)
@@ -176,7 +184,7 @@ where
                 .iter()
                 .map(|s| s.marker_style().size())
                 .max()
-                .unwrap();
+                .ok_or("Graph has no series data; cannot compute drawable limits")?;
 
             // axes thickness in x/y pixels
             let axes_thickness = match graph.axes() {
