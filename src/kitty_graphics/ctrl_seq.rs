@@ -6,6 +6,7 @@ pub trait CtrlSeq {
 ///
 /// Only `Direct` works when the terminal runs on another machine (e.g. over SSH); the other media
 /// name a file or shared-memory object that the terminal itself must be able to open.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Transmission {
     /// The data is sent inline in the escape sequence.
     Direct(Vec<u8>),
@@ -29,7 +30,7 @@ impl CtrlSeq for Transmission {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
     Png,
     PngBounded { rows: u32, cols: u32 },
@@ -54,6 +55,7 @@ impl CtrlSeq for PixelFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     TransmitDisplay,
     Query,
@@ -68,6 +70,7 @@ impl CtrlSeq for Action {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Metadata {
     Id(u32),
     MoreData(bool),
@@ -91,6 +94,7 @@ impl CtrlSeq for Metadata {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Positioning {
     Current,
     WithCellOffset { offset_x: u32, offset_y: u32 },
@@ -107,6 +111,7 @@ impl CtrlSeq for Positioning {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayRegion {
     Rectangle {
         x: u16,

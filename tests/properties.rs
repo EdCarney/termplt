@@ -109,7 +109,7 @@ proptest! {
         }
         if with_axes {
             graph = graph.with_axes(Axes::new(
-                AxesPositioning::XY(LineStyle::default_with_thickness(1)),
+                AxesPositioning::XY(LineStyle::solid(colors::WHITE, 1)),
                 TextStyle::default(),
             ));
         }

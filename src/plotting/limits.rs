@@ -95,19 +95,17 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
         (self.min.x..=self.max.x).contains(&point.x) && (self.min.y..=self.max.y).contains(&point.y)
     }
 
-    /// Checks if this limit intersects with another limit.
+    /// Checks if this limit intersects with another limit (touching edges count). Two
+    /// rectangles overlap exactly when their ranges overlap on both axes; testing corners alone
+    /// misses cross-shaped overlaps, where no corner of either lies inside the other.
     pub fn intersects<U: FloatConvertable + Graphable>(&self, other: Limits<U>) -> bool {
         let this = self.convert_to_f64();
         let other = other.convert_to_f64();
 
-        this.contains(&other.upper_left())
-            || this.contains(&other.upper_right())
-            || this.contains(&other.lower_right())
-            || this.contains(&other.lower_left())
-            || other.contains(&this.upper_left())
-            || other.contains(&this.upper_right())
-            || other.contains(&this.lower_right())
-            || other.contains(&this.lower_left())
+        this.min.x <= other.max.x
+            && other.min.x <= this.max.x
+            && this.min.y <= other.max.y
+            && other.min.y <= this.max.y
     }
 
     /// Chunks the limits into a collection of x and y points that will split the limit range into
@@ -249,5 +247,18 @@ mod tests {
         assert!(!limits.contains(&Point { x: 1, y: -1 }));
         assert!(!limits.contains(&Point { x: 11, y: 4 }));
         assert!(!limits.contains(&Point { x: 9, y: 6 }));
+    }
+
+    #[test]
+    fn intersects_detects_cross_shaped_overlap() {
+        let wide = Limits::new(Point::new(0, 4), Point::new(10, 6));
+        let tall = Limits::new(Point::new(4, 0), Point::new(6, 10));
+        assert!(wide.intersects(tall.clone()));
+        assert!(tall.intersects(wide.clone()));
+
+        let apart = Limits::new(Point::new(11, 0), Point::new(12, 10));
+        assert!(!wide.intersects(apart));
+        let touching = Limits::new(Point::new(10, 0), Point::new(12, 4));
+        assert!(wide.intersects(touching));
     }
 }

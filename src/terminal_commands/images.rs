@@ -41,6 +41,7 @@ impl fmt::Display for ImageError {
 
 impl Error for ImageError {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PositioningType {
     ExactPixel { x: u32, y: u32 },
     Centered,
@@ -53,6 +54,7 @@ struct PositionDetails {
     offset_y: u32,
 }
 
+#[derive(Debug, Clone)]
 pub struct Image {
     format: PixelFormat,
     transmission: Transmission,

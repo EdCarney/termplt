@@ -82,7 +82,7 @@ _The screenshots above are from an earlier version; axes now use round tick valu
 | `--width <PX>` / `--height <PX>` | Image size (default: fits the terminal, or 800x600 with `--output`) |
 | `--bg <COLOR>` | Background color (default: black) |
 | `--no-grid` | Hide grid lines |
-| `-o, --output <FILE>` | Write an image file (e.g. `plot.png`) instead of displaying; no terminal needed |
+| `-o, --output <FILE>` | Write a PNG file (e.g. `plot.png`) instead of displaying; no terminal needed |
 | `--list-colors` / `--list-markers` | List color names / marker styles |
 | `-v, --verbose` | Print terminal size, canvas and plot area to stderr |
 | `--completions <SHELL>` | Print a completion script for `bash`, `zsh`, `fish`, `powershell` or `elvish` |

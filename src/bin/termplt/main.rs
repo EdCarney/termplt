@@ -63,6 +63,10 @@ fn run(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
+    if let Some(path) = &cli.output {
+        check_output_path(path)?;
+    }
+
     let stdin_is_terminal = io::stdin().is_terminal();
     let specs = collect_specs(&cli, !stdin_is_terminal)?;
     if specs.is_empty() {
@@ -161,8 +165,15 @@ fn run(cli: Cli) -> Result<()> {
 
     match &cli.output {
         Some(path) => {
-            image::save_buffer(path, &bytes, width, height, image::ColorType::Rgb8)
-                .map_err(|e| format!("cannot write '{}': {e}", path.display()))?;
+            image::save_buffer_with_format(
+                path,
+                &bytes,
+                width,
+                height,
+                image::ColorType::Rgb8,
+                image::ImageFormat::Png,
+            )
+            .map_err(|e| format!("cannot write '{}': {e}", path.display()))?;
             if cli.verbose {
                 eprintln!("[verbose] wrote {}", path.display());
             }
@@ -194,6 +205,18 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Only PNG output is supported; catch other extensions before doing any work.
+fn check_output_path(path: &Path) -> Result<()> {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) if ext.eq_ignore_ascii_case("png") => Ok(()),
+        _ => Err(format!(
+            "cannot write '{}': only PNG output is supported; use a .png file name",
+            path.display()
+        )
+        .into()),
+    }
 }
 
 /// Collects the series to plot, in order: FILE arguments (one series per y column), --data,
@@ -387,6 +410,15 @@ mod tests {
     fn legacy_data_file_flag_is_a_file() {
         let specs = collect_specs(&cli(&["--data_file", "a.csv"]), false).unwrap();
         assert_eq!(specs[0].source, Source::File("a.csv".into()));
+    }
+
+    #[test]
+    fn output_must_be_png() {
+        assert!(check_output_path(Path::new("plot.png")).is_ok());
+        assert!(check_output_path(Path::new("out/Plot.PNG")).is_ok());
+        let err = check_output_path(Path::new("plot.jpg")).unwrap_err();
+        assert!(err.to_string().contains("only PNG output is supported"));
+        assert!(check_output_path(Path::new("plot")).is_err());
     }
 
     #[test]

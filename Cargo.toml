@@ -18,7 +18,7 @@ required-features = ["cli"]
 clap = { version = "4", features = ["derive", "string"], optional = true }
 clap_complete = { version = "4", optional = true }
 crossterm = "0.29.0"
-image = "0.25.6"
+image = { version = "0.25.6", default-features = false, features = ["png"] }
 rgb = "0.8.50"
 
 [target.'cfg(unix)'.dependencies]

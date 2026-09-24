@@ -160,8 +160,8 @@ pub struct Cli {
     #[arg(long, help_heading = "Plot")]
     pub no_grid: bool,
 
-    /// Write the plot to an image file (e.g. plot.png) instead of displaying it; no terminal
-    /// is needed
+    /// Write the plot to a PNG file (e.g. plot.png) instead of displaying it; no terminal is
+    /// needed
     #[arg(short, long, value_name = "FILE", value_hint = ValueHint::FilePath, help_heading = "Plot")]
     pub output: Option<PathBuf>,
 

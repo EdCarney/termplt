@@ -17,44 +17,35 @@ pub enum LineStyle {
     Dashed { color: RGB8, thickness: u32 },
 }
 
+impl Default for LineStyle {
+    /// A thin solid white line.
+    fn default() -> LineStyle {
+        LineStyle::solid(colors::WHITE, 0)
+    }
+}
+
 impl LineStyle {
-    pub const fn default() -> LineStyle {
-        Self::Solid {
-            color: colors::WHITE,
-            thickness: 0,
-        }
+    /// A solid line. A thickness of 0 is one pixel wide; each step adds a pixel on both sides.
+    pub const fn solid(color: RGB8, thickness: u32) -> LineStyle {
+        LineStyle::Solid { color, thickness }
     }
 
-    pub const fn default_with_thickness(thickness: u32) -> LineStyle {
-        Self::Solid {
-            color: colors::WHITE,
-            thickness,
-        }
+    /// A dashed line (6 pixels on, 4 off).
+    pub const fn dashed(color: RGB8, thickness: u32) -> LineStyle {
+        LineStyle::Dashed { color, thickness }
     }
 
+    /// The line's thickness (see [`LineStyle::solid`]).
     pub fn thickness(&self) -> u32 {
         match self {
-            LineStyle::Solid {
-                color: _,
-                thickness,
-            } => *thickness,
-            LineStyle::Dashed {
-                color: _,
-                thickness,
-            } => *thickness,
+            LineStyle::Solid { thickness, .. } | LineStyle::Dashed { thickness, .. } => *thickness,
         }
     }
 
+    /// The line's color.
     pub fn color(&self) -> RGB8 {
         match self {
-            LineStyle::Solid {
-                color,
-                thickness: _,
-            } => *color,
-            LineStyle::Dashed {
-                color,
-                thickness: _,
-            } => *color,
+            LineStyle::Solid { color, .. } | LineStyle::Dashed { color, .. } => *color,
         }
     }
 }
@@ -77,13 +68,6 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Line<T> {
 impl<T: Graphable> Line<T> {
     pub fn new(positioning: LinePositioning<T>, style: LineStyle) -> Line<T> {
         Line { style, positioning }
-    }
-
-    pub fn default(positioning: LinePositioning<T>) -> Line<T> {
-        Line {
-            style: LineStyle::default(),
-            positioning,
-        }
     }
 
     pub fn style(&self) -> &LineStyle {
