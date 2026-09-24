@@ -3,7 +3,7 @@ use super::{
     common::{Drawable, Graphable, MaskPoints},
     grid_lines::GridLines,
     limits::Limits,
-    point::{Point, PointCollection},
+    point::Point,
     series::Series,
 };
 use crate::{Error, common::Result};
@@ -87,14 +87,22 @@ impl Graph {
     pub fn limits(&self) -> Result<Limits<f64>> {
         self.validate_limits()?;
 
+        // one pass, without collecting: graphs can have millions of points
         let data_limits = self
             .data
             .iter()
             .flat_map(|series| series.data().iter().copied())
             .filter(is_finite_point)
-            .collect::<Vec<Point<f64>>>()
-            .as_slice()
-            .limits()
+            .fold(None, |acc: Option<(Point<f64>, Point<f64>)>, p| {
+                Some(match acc {
+                    None => (p, p),
+                    Some((min, max)) => (
+                        Point::new(min.x.min(p.x), min.y.min(p.y)),
+                        Point::new(max.x.max(p.x), max.y.max(p.y)),
+                    ),
+                })
+            })
+            .map(|(min, max)| Limits::new(min, max))
             .ok_or(Error::NoData)?;
 
         // explicit limits override data limits

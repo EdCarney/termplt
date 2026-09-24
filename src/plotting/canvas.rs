@@ -60,57 +60,58 @@ impl CanvasBuffer {
     }
 }
 
+/// An RGB8 pixel buffer, stored row-major from the top row, addressed with (0, 0) at the
+/// lower-left corner.
 #[derive(Debug)]
-struct Canvas {
-    pixels: Vec<Vec<RGB8>>,
-    limits: Limits<u32>,
+pub(crate) struct Canvas {
+    bytes: Vec<u8>,
+    width: u32,
+    height: u32,
 }
 
 impl Canvas {
     pub fn new(width: u32, height: u32, background: RGB8) -> Canvas {
+        let pixels = width as usize * height as usize;
+        let mut bytes = Vec::with_capacity(pixels * 3);
+        for _ in 0..pixels {
+            bytes.extend_from_slice(&[background.r, background.g, background.b]);
+        }
         Canvas {
-            pixels: (0..height)
-                .map(|_| vec![background; width as usize])
-                .collect(),
-            limits: Limits::new(
-                Point::new(0, 0),
-                Point::new(width.saturating_sub(1), height.saturating_sub(1)),
-            ),
+            bytes,
+            width,
+            height,
         }
     }
 
-    /// Sets the color for a point in the canvas. The provided point should be zero-indexed with
-    /// the lower-left corner as (0, 0) and the upper-right cornder as (width - 1, height - 1).
-    pub fn set_pixel(&mut self, point: &Point<u32>, color: &RGB8) {
-        if self.limits.contains(point) {
-            // reverse y since higher values means closer to
-            // the top of the canvas
-            let x = point.x as usize;
-            let y = (self.limits.max().y - point.y) as usize;
-            // bounds-checked since a zero-sized canvas still has 0..=0 limits
-            if let Some(pixel) = self.pixels.get_mut(y).and_then(|row| row.get_mut(x)) {
-                *pixel = *color;
-            }
+    fn is_empty(&self) -> bool {
+        self.width == 0 || self.height == 0
+    }
+
+    /// Sets the color of the pixel at (`x`, `y`), with (0, 0) at the lower-left corner. Points
+    /// outside the canvas are ignored.
+    #[inline]
+    pub fn put(&mut self, x: u32, y: u32, color: RGB8) {
+        if x < self.width && y < self.height {
+            // rows are stored from the top
+            let row = (self.height - 1 - y) as usize;
+            let i = (row * self.width as usize + x as usize) * 3;
+            self.bytes[i..i + 3].copy_from_slice(&[color.r, color.g, color.b]);
         }
     }
 
-    /// Sets the color for multiple points in the canvas. The provided points should be zero-indexed
-    /// with the lower-left corner as (0, 0) and the upper-right cornder as (width - 1, height - 1).
+    /// Sets the color for multiple points in the canvas.
     pub fn set_pixels(&mut self, points: &[Point<u32>], color: &RGB8) {
         for point in points {
-            self.set_pixel(point, color);
+            self.put(point.x, point.y, *color);
         }
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
-        self.pixels
-            .iter()
-            .flat_map(|row| {
-                row.iter()
-                    .flat_map(|&rgb| [rgb.r, rgb.g, rgb.b])
-                    .collect::<Vec<u8>>()
-            })
-            .collect()
+        self.bytes.clone()
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
     }
 }
 
@@ -172,13 +173,19 @@ impl TerminalCanvas {
         self
     }
 
+    /// The canvas pixels as RGB8 bytes, row-major from the top row.
     pub fn get_bytes(&self) -> Vec<u8> {
         self.canvas.get_bytes()
     }
 
+    /// Like [`TerminalCanvas::get_bytes`], without copying.
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.canvas.into_bytes()
+    }
+
     /// Consumes all drawable assets and draws them on the canvas.
     pub fn draw(mut self) -> Result<Self> {
-        if self.canvas.pixels.is_empty() || self.canvas.pixels[0].is_empty() {
+        if self.canvas.is_empty() {
             return Err(Error::CanvasTooSmall {
                 plot_width: 0,
                 plot_height: 0,
@@ -206,13 +213,13 @@ impl TerminalCanvas {
             if let Some(axes) = graph.axes() {
                 masks.extend(axes.get_mask(&plot)?);
             }
-            for series in scaled_graph.data() {
-                masks.extend(series.get_mask()?);
-            }
-
             masks
                 .iter()
                 .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
+            // series are drawn straight into the canvas: they can have millions of pixels
+            for series in scaled_graph.data() {
+                series.draw_into(&mut self.canvas)?;
+            }
             self.labels.extend(layout.labels);
         }
 

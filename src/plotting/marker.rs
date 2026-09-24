@@ -1,6 +1,7 @@
 use core::f32;
 
 use super::{
+    canvas::Canvas,
     colors,
     common::{Drawable, MaskPoints},
     limits::Limits,
@@ -97,6 +98,39 @@ impl Marker {
 
     pub fn center(&self) -> &Point<u32> {
         &self.center
+    }
+}
+
+/// The pixel offsets from a marker's center that a marker of this style covers, sorted and
+/// without duplicates. Every marker of a style covers the same offsets (clamped at 0 near the
+/// canvas edge), so they are computed once and stamped at each point.
+pub(crate) fn marker_stamp(style: &MarkerStyle) -> Result<Vec<Point<i32>>> {
+    // far enough from the origin that no offset is clamped
+    let c = style.size().saturating_add(1);
+    let mut offsets: Vec<Point<i32>> = Marker::new(Point::new(c, c), *style)
+        .get_mask()?
+        .iter()
+        .flat_map(|mask| mask.points.iter())
+        .map(|p| Point::new(p.x as i32 - c as i32, p.y as i32 - c as i32))
+        .collect();
+    offsets.sort_by_key(|p| (p.x, p.y));
+    offsets.dedup();
+    Ok(offsets)
+}
+
+/// Draws a marker stamp (from [`marker_stamp`]) centered on `center`; offsets that would fall
+/// below 0 are clamped to 0, like [`Marker::get_mask`].
+pub(crate) fn draw_marker(
+    canvas: &mut Canvas,
+    center: Point<u32>,
+    stamp: &[Point<i32>],
+    color: RGB8,
+) {
+    let clamp = |v: i64| v.clamp(0, u32::MAX as i64) as u32;
+    for offset in stamp {
+        let x = clamp(center.x as i64 + offset.x as i64);
+        let y = clamp(center.y as i64 + offset.y as i64);
+        canvas.put(x, y, color);
     }
 }
 

@@ -186,7 +186,7 @@ impl Plot {
     /// Draws the plot and returns its RGB8 pixels (`width * height * 3` bytes, row-major, top
     /// row first).
     pub fn render(&self, width: u32, height: u32) -> Result<Vec<u8>> {
-        Ok(self.canvas(width, height).draw()?.get_bytes())
+        Ok(self.canvas(width, height).draw()?.into_bytes())
     }
 
     /// Draws the plot and saves it as a PNG file.

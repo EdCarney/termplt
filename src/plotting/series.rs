@@ -1,8 +1,9 @@
 use super::{
+    canvas::Canvas,
     common::{Drawable, Graphable, MaskPoints, UIntConvertable},
-    line::{Line, LineStyle},
+    line::{Line, LineStamp, LineStyle, draw_segment},
     line_positioning::LinePositioning,
-    marker::{Marker, MarkerStyle},
+    marker::{Marker, MarkerStyle, draw_marker, marker_stamp},
     point::Point,
 };
 use crate::common::Result;
@@ -79,6 +80,29 @@ impl Series {
             marker_style: self.marker_style,
             line_style: self.line_style,
         }
+    }
+}
+
+impl Series {
+    /// Draws the series straight into `canvas`: the same pixels, in the same order, as
+    /// [`Drawable::get_mask`], without allocating per marker or segment.
+    pub(crate) fn draw_into(&self, canvas: &mut Canvas) -> Result<()> {
+        if let Some(color) = self.marker_style.color() {
+            let stamp = marker_stamp(&self.marker_style)?;
+            for &p in &self.data {
+                draw_marker(canvas, p.convert_to_u32(), &stamp, color);
+            }
+        }
+
+        if let Some(line_style) = &self.line_style {
+            let stamp = LineStamp::new(line_style);
+            let mut last = None;
+            for pair in self.data.windows(2) {
+                let segment = (pair[0].convert_to_u32(), pair[1].convert_to_u32());
+                draw_segment(canvas, segment, line_style, &stamp, &mut last);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -264,6 +288,70 @@ mod tests {
         let big = 1u64 << 60;
         let series = Series::from_xy(&[big], &[i64::MIN]);
         assert_eq!(series.data()[0], Point::new(big as f64, i64::MIN as f64));
+    }
+
+    #[test]
+    fn draw_into_matches_get_mask() {
+        use crate::plotting::{canvas::Canvas, colors};
+        // includes points at and beyond the canvas edges, where offsets are clamped or dropped
+        let points = [
+            Point::new(0.0, 0.0),
+            Point::new(1.0, 30.0),
+            Point::new(20.4, 20.6),
+            Point::new(21.0, 20.0),
+            Point::new(21.0, 20.0),
+            Point::new(39.0, 2.0),
+            Point::new(45.0, 50.0),
+            Point::new(3.0, 39.0),
+        ];
+        let markers = [
+            MarkerStyle::None,
+            MarkerStyle::FilledSquare {
+                size: 0,
+                color: colors::RED,
+            },
+            MarkerStyle::FilledSquare {
+                size: 3,
+                color: colors::RED,
+            },
+            MarkerStyle::HollowSquare {
+                size: 2,
+                color: colors::RED,
+            },
+            MarkerStyle::FilledCircle {
+                size: 4,
+                color: colors::RED,
+            },
+            MarkerStyle::HollowCircle {
+                size: 3,
+                color: colors::RED,
+            },
+        ];
+        let lines = [
+            None,
+            Some(LineStyle::solid(colors::LIME, 0)),
+            Some(LineStyle::solid(colors::LIME, 2)),
+            Some(LineStyle::dashed(colors::LIME, 0)),
+            Some(LineStyle::dashed(colors::LIME, 3)),
+        ];
+        for marker in markers {
+            for line in lines {
+                let mut series = Series::new(&points).with_marker_style(marker);
+                if let Some(line) = line {
+                    series = series.with_line_style(line);
+                }
+                let mut expected = Canvas::new(40, 40, colors::BLACK);
+                for mask in series.get_mask().unwrap() {
+                    expected.set_pixels(&mask.points, &mask.color);
+                }
+                let mut actual = Canvas::new(40, 40, colors::BLACK);
+                series.draw_into(&mut actual).unwrap();
+                assert!(
+                    expected.get_bytes() == actual.get_bytes(),
+                    "{marker:?} {line:?}"
+                );
+            }
+        }
     }
 
     #[test]
