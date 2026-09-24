@@ -100,16 +100,22 @@ Tab completion covers flags, marker and line styles, and file paths. Generate a 
 
 ```bash
 # bash
+mkdir -p ~/.local/share/bash-completion/completions
 termplt --completions bash > ~/.local/share/bash-completion/completions/termplt
 
-# zsh: any directory in $fpath, e.g. ~/.zfunc with `fpath=(~/.zfunc $fpath)` before `compinit` in ~/.zshrc
+# zsh: add `fpath=(~/.zfunc $fpath)` to ~/.zshrc before `compinit` runs
+# (with oh-my-zsh, before `source $ZSH/oh-my-zsh.sh`)
+mkdir -p ~/.zfunc
 termplt --completions zsh > ~/.zfunc/_termplt
+# or, with Homebrew, into a directory zsh already searches:
+# termplt --completions zsh > "$(brew --prefix)/share/zsh/site-functions/_termplt"
 
 # fish
+mkdir -p ~/.config/fish/completions
 termplt --completions fish > ~/.config/fish/completions/termplt.fish
 ```
 
-Start a new shell afterwards. Values that depend on your data, such as column names, are not completed.
+Start a new shell afterwards (for zsh, `rm -f ~/.zcompdump*` first if completions don't appear). Values that depend on your data, such as column names, are not completed.
 
 Flag spellings from earlier versions (`--data_file`, `--marker_style`, `--line_thickness`, ...) are still accepted.
 
