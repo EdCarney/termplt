@@ -8,6 +8,8 @@ Review of commit `74918e3` (v0.1.2). How the review was done:
 - Wrote throwaway library tests to probe edge cases.
 - Rendered plots to PNG and inspected them.
 
+Phase 1 status (2026-09-24): items 1–6, 8 and 9 are done, and 42 is partly done (see the notes under each item).
+
 Items marked **(reproduced)** were confirmed by running code. The rest come from reading the source.
 
 Priority: **P0** hang, crash or wrong output · **P1** big usability or quality gain · **P2** polish and maintainability.
@@ -17,6 +19,8 @@ Priority: **P0** hang, crash or wrong output · **P1** big usability or quality 
 ## P0: hangs, crashes, wrong output
 
 ### 1. The CLI hangs forever when the terminal doesn't answer a CSI query (reproduced)
+✅ **Done (Phase 1).** `poll(2)` on `/dev/tty` (reader thread on Windows), DA1 sentinel, RAII raw-mode guard, 2 s default timeout. Unix path checked in a pty; the Windows path is compile-checked only.
+
 - `responses.rs:48-65`: `stdin.read_exact` blocks. The 1 s timeout is only checked *between* bytes, so a terminal that never replies blocks forever. Repro: `script -qc "termplt --data '(1,1),(2,2)'" /dev/null` never returns. This affects tmux without passthrough, screen, the VS Code terminal and any xterm that doesn't answer `CSI 14 t`.
 - The query is written *before* raw mode is enabled (`responses.rs:48-49`), so the reply can be echoed to the screen.
 - Nothing guarantees `disable_raw_mode`. A `?` early return or a panic (item 2) leaves the user's shell in raw mode.
@@ -28,23 +32,33 @@ Priority: **P0** hang, crash or wrong output · **P1** big usability or quality 
 - **Trade-off:** a reader thread is portable, but a blocking read can't be cancelled, so the thread leaks until a byte arrives. `poll` is clean but needs a `cfg` split per OS. The DA1 sentinel removes most of the dependence on timeouts.
 
 ### 2. Panics on unexpected terminal replies
+✅ **Done (Phase 1).**
+
 `csi_cmds.rs:48-57, 80-87, 98-105` use `expect`/`assert_eq!` to parse replies. A malformed or interleaved reply (for example, the user presses a key during the query) panics while raw mode may still be on. Return `Err` instead.
 
 ### 3. Non-TTY use gives a cryptic error and writes escape bytes into the pipe (reproduced)
+✅ **Done (Phase 1).** Queries now go to `/dev/tty`, and the CLI checks `IsTerminal` on stdout up front. `--output png` is still Phase 3.
+
 `termplt --data ... </dev/null` prints `\x1b[14t` to stdout, then `Error: No such device or address (os error 6)`. Check `std::io::IsTerminal` up front and print an actionable message, for example "stdout is not a terminal; use `--output plot.png`" (item 18).
 
 ### 4. Degenerate data (one point, or a constant x or y) is drawn off-center, with no axes or grid (reproduced)
+✅ **Done (Phase 1).** `Graph::view_limits()` pads zero-width dimensions; the scale fallback is now relative.
+
 - `Point::scale_to` (`point.rs:117`) returns the *absolute* midpoint of the new range. `Graph::scale_to` then shifts by the new minimum again (`graph.rs:260,270`), so the offset is applied twice. On a 101×101 canvas with buffer 10, a single point lands at pixel (60,40) instead of (50,50). A constant-y series is drawn at 40% height instead of 50%. `graph_limits.rs:62` has the same bug.
 - With zero span the axes and grid lines have zero length and don't render. All the tick labels stack on top of each other.
 - **Fix:** pad degenerate limits before scaling (for example ±0.5, or ±5% of |v|), which is what matplotlib does. The zero-span branch then becomes unreachable, but keep it and make it relative (`new_span / 2`).
 
 ### 5. Explicit axis limits that exclude every point of a series panic (reproduced)
+✅ **Done (Phase 1)** for the panics. Segment clipping (Liang–Barsky) is still open.
+
 - `Graph::scale` filters out points outside the limits (`graph.rs:183-192`). An emptied series then hits `0..self.data.len() - 1` in `series.rs:94`, which underflows: `attempt to subtract with overflow` in debug builds, and an out-of-bounds index in release builds.
 - If *all* points are excluded, `graph.rs:200` panics via `expect`.
 - **Fix:** iterate with `data.windows(2)`, skip empty series, and return `Err` when nothing is left to draw.
 - **Related:** dropping out-of-range *points* also removes line segments that cross the boundary, so lines stop short of the plot edge. Clip *segments* to the limit rectangle with Liang–Barsky [2] instead.
 
 ### 6. NaN or ±∞ in the data crashes rendering (reproduced)
+✅ **Done (Phase 1).** The library ignores non-finite points, the CLI skips them with a warning, and unknown glyphs render as a box.
+
 - The CLI accepts `nan` and `inf`, because `f64::from_str` does.
 - A NaN as the first point poisons the limits: the fold in `point.rs:18-37` compares with `<`, which is always false against NaN.
 - An infinite or NaN value reaches tick labels as `"inf"`/`"NaN"`, and `numbers.rs:204` panics with "Bitmap not defined for character".
@@ -56,6 +70,8 @@ Priority: **P0** hang, crash or wrong output · **P1** big usability or quality 
 - **Fix, option B:** draw offset parallel lines or fill a polygon per segment. This is cheaper, but joins need extra work to avoid gaps.
 
 ### 8. Other panics reachable through the public API
+✅ **Done (Phase 1)**, except `Limits::new`, which is kept as a documented invariant panic. `Limits::try_new` was added for untrusted input.
+
 Each of these crashes the program instead of returning an error:
 - `Limits::new` with inverted bounds (`limits.rs:42`), reachable with `graph.with_x_limits(2.0, 0.0)` (reproduced).
 - `TerminalCanvas::new(0, h)` underflows on `width - 1` (`canvas.rs:72`) (reproduced).
@@ -70,6 +86,8 @@ Each of these crashes the program instead of returning an error:
 **Fix:** make constructors that validate input return `Result`, or make invalid states unrepresentable (`NonZeroU32` for canvas size). Implement `Dashed` by skipping pixels along the Bresenham path with an on/off pattern, or remove the variant until it's implemented.
 
 ### 9. CSV error line numbers are off by one when a header is skipped (reproduced)
+✅ **Done (Phase 1).**
+
 `termplt.rs:352-356` consumes the header *before* `enumerate()`. The input `x,y\n1,2\nfoo,3` reports `bad.csv:2`, but `foo` is on line 3. Enumerate first, then skip.
 
 ---
@@ -247,6 +265,8 @@ Improvements:
 ## P2: testing, CI, release, docs
 
 ### 42. CI gaps
+◐ **Partly done (Phase 1):** rustfmt job and `clippy --all-targets -D warnings` added; all warnings fixed. macOS, doc and MSRV jobs are still open.
+
 - No `cargo fmt --check`.
 - `cargo clippy` runs without `--all-targets -- -D warnings`. There are about 59 warnings today, most of them fixable with `cargo clippy --fix`.
 - macOS binaries are released but never tested.
