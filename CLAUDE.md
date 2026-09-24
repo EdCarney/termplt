@@ -68,7 +68,7 @@ The `Drawable` trait (`fn get_mask(&self) -> Result<Vec<MaskPoints>>`) is implem
 
 ### Kitty Protocol (`kitty_graphics/`)
 
-After rendering, the canvas bytes are sent via Kitty APC sequences: `encoding.rs` does custom RFC 4648 base64 (with padding), `kitty_cmds.rs` chunks to 4096-byte payloads, `ctrl_seq.rs` provides protocol key=value formatting. `TermCommand` writes commands to stdout; `execute_with_response` writes queries to `/dev/tty` (stdin/stdout on Windows) followed by a DA1 sentinel, reads the reply with a timeout under an RAII raw-mode guard, and fails fast with `TerminalCommandError::Unsupported` when the DA1 reply arrives first.
+After rendering, the canvas bytes are sent via Kitty APC sequences: `encoding.rs` does custom RFC 4648 base64 (with padding), `kitty_cmds.rs` chunks to 4096-byte payloads, `ctrl_seq.rs` provides protocol key=value formatting. `TermCommand` writes commands to stdout; `execute_with_response` writes queries to `/dev/tty` (the `CONIN$`/`CONOUT$` console on Windows, so piped stdin does not interfere) followed by a DA1 sentinel, reads the reply with a timeout under an RAII raw-mode guard, and fails fast with `TerminalCommandError::Unsupported` when the DA1 reply arrives first.
 
 ### Line Drawing (`line.rs`)
 
