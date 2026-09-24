@@ -1,9 +1,6 @@
 use super::{
     colors,
-    common::{
-        Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints, Scalable,
-        Shiftable,
-    },
+    common::{Convertable, Drawable, Graphable, IntConvertable, MaskPoints},
     limits::Limits,
     line_positioning::LinePositioning,
     point::Point,
@@ -76,30 +73,6 @@ impl<T: Graphable> Line<T> {
 
     pub fn limits(&self) -> Limits<T> {
         self.positioning.limits()
-    }
-}
-
-impl<T, U> Scalable<T, U> for Line<T>
-where
-    T: FloatConvertable + Graphable,
-    U: FloatConvertable + Graphable,
-{
-    type ScaleTo = Line<f64>;
-    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
-        let style = self.style;
-        let positioning = self.positioning.scale_to(old_limits, new_limits);
-        Line { style, positioning }
-    }
-}
-
-impl<T> Shiftable<T> for Line<T>
-where
-    T: FloatConvertable + Graphable,
-{
-    fn shift_by(self, amount: Point<T>) -> Self {
-        let style = self.style;
-        let positioning = self.positioning.shift_by(amount);
-        Line { style, positioning }
     }
 }
 

@@ -1,4 +1,4 @@
-use super::{limits::Limits, point::Point};
+use super::point::Point;
 use crate::common::Result;
 use rgb::RGB8;
 use std::{
@@ -6,9 +6,33 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
+/// Lossy conversion to `f64` (`as` semantics), for every primitive numeric type. Unlike
+/// `Into<f64>`, it covers `i64`, `u64`, `usize` and friends; values beyond 2^53 lose precision,
+/// which is invisible at plot resolution.
+pub trait ToF64: Copy {
+    /// Converts the value to `f64`.
+    fn to_f64(self) -> f64;
+}
+
+macro_rules! impl_to_f64 {
+    ($($t:ty),*) => {
+        $(impl ToF64 for $t {
+            #[inline]
+            fn to_f64(self) -> f64 {
+                self as f64
+            }
+        })*
+    };
+}
+
+impl_to_f64!(
+    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64
+);
+
+/// Numeric types that can be plotted: every primitive integer and float type.
 pub trait Graphable:
     PartialOrd
-    + Into<f64>
+    + ToF64
     + PartialEq
     + Add<Output = Self>
     + Sub<Output = Self>
@@ -23,7 +47,7 @@ pub trait Graphable:
 
 impl<T> Graphable for T where
     T: PartialOrd
-        + Into<f64>
+        + ToF64
         + PartialEq
         + Add<Output = Self>
         + Sub<Output = Self>
@@ -54,7 +78,7 @@ pub trait Convertable<U> {
 impl<T: Graphable, U: Graphable> Convertable<U> for T {
     type ConvertTo = U;
     fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
-        let value: f64 = (*self).into();
+        let value = self.to_f64();
         convert_fn(value)
     }
 }
@@ -95,20 +119,4 @@ impl<T: Convertable<f64>> FloatConvertable for T {
     fn convert_to_f64(&self) -> Self::ConvertTo {
         self.convert_to(f64::from)
     }
-}
-
-pub trait Scalable<T, U>
-where
-    T: FloatConvertable + Graphable,
-    U: FloatConvertable + Graphable,
-{
-    type ScaleTo;
-    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo;
-}
-
-pub trait Shiftable<T>
-where
-    T: FloatConvertable + Graphable,
-{
-    fn shift_by(self, amount: Point<T>) -> Self;
 }

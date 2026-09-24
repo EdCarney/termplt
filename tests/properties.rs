@@ -79,7 +79,7 @@ fn line() -> impl Strategy<Value = Option<LineStyle>> {
     }))
 }
 
-fn series() -> impl Strategy<Value = Series<f64>> {
+fn series() -> impl Strategy<Value = Series> {
     (points(any_coord()), marker(), line()).prop_map(|(points, marker, line)| {
         let series = Series::new(&points).with_marker_style(marker);
         match line {

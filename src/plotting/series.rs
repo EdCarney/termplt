@@ -1,9 +1,5 @@
 use super::{
-    common::{
-        Convertable, Drawable, FloatConvertable, Graphable, MaskPoints, Scalable, Shiftable,
-        UIntConvertable,
-    },
-    limits::Limits,
+    common::{Drawable, Graphable, MaskPoints, UIntConvertable},
     line::{Line, LineStyle},
     line_positioning::LinePositioning,
     marker::{Marker, MarkerStyle},
@@ -12,69 +8,112 @@ use super::{
 use crate::common::Result;
 use std::ops::{Add, Div, Mul, Sub};
 
-#[derive(Debug, Clone)]
-pub struct Series<T: Graphable> {
-    data: Vec<Point<T>>,
+/// A sequence of data points with a marker style and an optional connecting line.
+///
+/// Values of any primitive numeric type are accepted and stored as `f64`:
+///
+/// ```
+/// use termplt::plotting::{point::Point, series::Series};
+///
+/// let a = Series::new(&[Point::new(1, 2), Point::new(2, 4)]);
+/// let b = Series::from_xy(&[1u64, 2, 3], &[0.5, 1.5, 1.0]);
+/// let c: Series = (0..10).map(|i| (i, i * i)).collect();
+/// let d = Series::from(vec![(1.0, 2.0), (3.0, 4.0)]);
+/// assert_eq!(c.data()[3], Point::new(3.0, 9.0));
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct Series {
+    data: Vec<Point<f64>>,
     marker_style: MarkerStyle,
     line_style: Option<LineStyle>,
 }
 
-impl<T: Graphable, U: Graphable> Convertable<U> for Series<T> {
-    type ConvertTo = Series<U>;
-    fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
-        let data = self
-            .data
-            .iter()
-            .map(|&p| p.convert_to(convert_fn))
-            .collect::<Vec<_>>();
-        self.clone_with(&data)
-    }
-}
-
-impl<T: Graphable> Series<T> {
+impl Series {
     /// Creates a series from the given points. An empty series is valid and draws nothing.
-    pub fn new(data: &[Point<T>]) -> Series<T> {
-        Series {
-            data: Vec::from(data),
-            marker_style: MarkerStyle::default(),
-            line_style: None,
-        }
+    pub fn new<T: Graphable>(data: &[Point<T>]) -> Series {
+        data.iter().map(|p| (p.x, p.y)).collect()
     }
 
-    pub fn clone_with<U: Graphable>(&self, data: &[Point<U>]) -> Series<U> {
-        let marker_style = self.marker_style;
-        let line_style = self.line_style;
-        Series {
-            data: Vec::from(data),
-            marker_style,
-            line_style,
-        }
+    /// Creates a series from separate x and y values, pairing them up in order. If the slices
+    /// have different lengths, the extra values of the longer one are ignored.
+    pub fn from_xy<X: Graphable, Y: Graphable>(xs: &[X], ys: &[Y]) -> Series {
+        xs.iter().copied().zip(ys.iter().copied()).collect()
     }
 
-    pub fn data(&self) -> &[Point<T>] {
+    /// Creates a series from y values, using their indices (0, 1, 2, ...) as x values.
+    pub fn from_y<Y: Graphable>(ys: &[Y]) -> Series {
+        ys.iter().enumerate().map(|(i, &y)| (i as f64, y)).collect()
+    }
+
+    /// The points, in order.
+    pub fn data(&self) -> &[Point<f64>] {
         &self.data
     }
 
+    /// The marker drawn at each point.
     pub fn marker_style(&self) -> &MarkerStyle {
         &self.marker_style
     }
 
-    pub fn line_style(&self) -> &Option<LineStyle> {
-        &self.line_style
+    /// The line connecting consecutive points, if any.
+    pub fn line_style(&self) -> Option<&LineStyle> {
+        self.line_style.as_ref()
     }
 
+    /// Sets the marker drawn at each point ([`MarkerStyle::None`] for a plain line).
     pub fn with_marker_style(mut self, marker_style: MarkerStyle) -> Self {
         self.marker_style = marker_style;
         self
     }
 
+    /// Connects consecutive points with a line.
     pub fn with_line_style(mut self, line_style: LineStyle) -> Self {
         self.line_style = Some(line_style);
         self
     }
+
+    /// A series with the same styles and the points produced by `f`.
+    pub(crate) fn map_points(&self, f: impl FnOnce(&[Point<f64>]) -> Vec<Point<f64>>) -> Series {
+        Series {
+            data: f(&self.data),
+            marker_style: self.marker_style,
+            line_style: self.line_style,
+        }
+    }
 }
 
-impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
+impl<X: Graphable, Y: Graphable> FromIterator<(X, Y)> for Series {
+    fn from_iter<I: IntoIterator<Item = (X, Y)>>(iter: I) -> Series {
+        Series {
+            data: iter
+                .into_iter()
+                .map(|(x, y)| Point::new(x.to_f64(), y.to_f64()))
+                .collect(),
+            ..Series::default()
+        }
+    }
+}
+
+impl<X: Graphable, Y: Graphable> From<Vec<(X, Y)>> for Series {
+    fn from(data: Vec<(X, Y)>) -> Series {
+        data.into_iter().collect()
+    }
+}
+
+impl<X: Graphable, Y: Graphable> From<&[(X, Y)]> for Series {
+    fn from(data: &[(X, Y)]) -> Series {
+        data.iter().copied().collect()
+    }
+}
+
+impl<T: Graphable> From<Vec<Point<T>>> for Series {
+    fn from(data: Vec<Point<T>>) -> Series {
+        Series::new(&data)
+    }
+}
+
+impl Drawable for Series {
+    /// Draws the series in its own coordinates, which must already be pixel coordinates.
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mut mask_points = Vec::new();
         for &p in self.data() {
@@ -95,86 +134,24 @@ impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
     }
 }
 
-impl<T, U> Scalable<T, U> for Series<T>
-where
-    T: FloatConvertable + Graphable,
-    U: FloatConvertable + Graphable,
-{
-    type ScaleTo = Series<f64>;
-    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
-        let scaled_data = self
-            .data
-            .iter()
-            .map(|p| p.scale_to(old_limits, new_limits))
-            .collect::<Vec<_>>();
+macro_rules! impl_series_op {
+    ($trait:ident, $method:ident, $rhs:ty) => {
+        impl $trait<$rhs> for Series {
+            type Output = Series;
 
-        self.clone_with(&scaled_data)
-    }
+            fn $method(self, rhs: $rhs) -> Series {
+                self.map_points(|points| points.iter().map(|&p| p.$method(rhs)).collect())
+            }
+        }
+    };
 }
 
-impl<T> Shiftable<T> for Series<T>
-where
-    T: FloatConvertable + Graphable,
-{
-    fn shift_by(mut self, amount: Point<T>) -> Self {
-        self.data = self.data.iter().map(|&p| p + amount).collect::<Vec<_>>();
-        self
-    }
-}
-
-impl<T: Graphable> Add<T> for Series<T> {
-    type Output = Self;
-
-    fn add(self, rhs: T) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.iter().map(|&p| p + rhs).collect();
-        self.clone_with(&data)
-    }
-}
-
-impl<T: Graphable> Sub<T> for Series<T> {
-    type Output = Self;
-
-    fn sub(self, rhs: T) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.iter().map(|&p| p - rhs).collect();
-        self.clone_with(&data)
-    }
-}
-
-impl<T: Graphable> Mul<T> for Series<T> {
-    type Output = Self;
-
-    fn mul(self, rhs: T) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.iter().map(|&p| p * rhs).collect();
-        self.clone_with(&data)
-    }
-}
-
-impl<T: Graphable> Div<T> for Series<T> {
-    type Output = Self;
-
-    fn div(self, rhs: T) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.iter().map(|&p| p / rhs).collect();
-        self.clone_with(&data)
-    }
-}
-
-impl<T: Graphable> Add<Point<T>> for Series<T> {
-    type Output = Self;
-
-    fn add(self, rhs: Point<T>) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.iter().map(|&p| p + rhs).collect();
-        self.clone_with(&data)
-    }
-}
-
-impl<T: Graphable> Sub<Point<T>> for Series<T> {
-    type Output = Self;
-
-    fn sub(self, rhs: Point<T>) -> Self::Output {
-        let data: Vec<Point<T>> = self.data.iter().map(|&p| p - rhs).collect();
-        self.clone_with(&data)
-    }
-}
+impl_series_op!(Add, add, f64);
+impl_series_op!(Sub, sub, f64);
+impl_series_op!(Mul, mul, f64);
+impl_series_op!(Div, div, f64);
+impl_series_op!(Add, add, Point<f64>);
+impl_series_op!(Sub, sub, Point<f64>);
 
 #[cfg(test)]
 mod tests {
@@ -238,6 +215,34 @@ mod tests {
         assert_eq!(s2.data[0], Point { x: 5.0, y: 10.0 });
         assert_eq!(s2.data[1], Point { x: 6.25, y: 8.75 });
         assert_eq!(s2.data[2], Point { x: 7.5, y: 7.5 });
+    }
+
+    #[test]
+    fn input_shapes_agree() {
+        let expected = [Point::new(1.0, 10.0), Point::new(2.0, 20.0)];
+        let shapes = [
+            Series::new(&[Point::new(1u8, 10u8), Point::new(2, 20)]),
+            Series::from_xy(&[1i64, 2], &[10.0f32, 20.0]),
+            Series::from_xy(&[1usize, 2, 3], &[10u64, 20]),
+            [(1, 10), (2, 20)].into_iter().collect(),
+            Series::from(vec![(1.0, 10.0), (2.0, 20.0)]),
+            Series::from(&[(1i16, 10u32), (2, 20)][..]),
+            Series::from(vec![Point::new(1, 10), Point::new(2, 20)]),
+        ];
+        for series in shapes {
+            assert_eq!(series.data(), expected);
+        }
+        assert_eq!(
+            Series::from_y(&[5, 7]).data(),
+            [Point::new(0.0, 5.0), Point::new(1.0, 7.0)]
+        );
+    }
+
+    #[test]
+    fn large_integers_are_accepted() {
+        let big = 1u64 << 60;
+        let series = Series::from_xy(&[big], &[i64::MIN]);
+        assert_eq!(series.data()[0], Point::new(big as f64, i64::MIN as f64));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use super::{
-    common::{Convertable, FloatConvertable, Graphable, Scalable, Shiftable, UIntConvertable},
+    common::{Convertable, FloatConvertable, Graphable, UIntConvertable},
     limits::Limits,
 };
 use std::ops::{Add, Div, Mul, Sub};
@@ -93,51 +93,6 @@ where
         let x = self.x.convert_to_f64().floor().convert_to_u32();
         let y = self.y.convert_to_f64().floor().convert_to_u32();
         Point { x, y }
-    }
-}
-
-impl<T, U> Scalable<T, U> for Point<T>
-where
-    T: FloatConvertable + Graphable,
-    U: FloatConvertable + Graphable,
-{
-    type ScaleTo = Point<f64>;
-    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
-        let old_limits = old_limits.convert_to_f64();
-        let new_limits = new_limits.convert_to_f64();
-
-        let (old_span_x, old_span_y) = old_limits.span();
-        let (new_span_x, new_span_y) = new_limits.span();
-
-        let x: f64 = self.x.into();
-        let y: f64 = self.y.into();
-
-        // When old_span is 0 (all points identical in that dimension), map to the middle of the
-        // new span instead of dividing by zero. Like the regular branch, the result is relative
-        // to the origin of the new limits; callers shift by the new minimum afterwards.
-        let new_x = if old_span_x == 0.0 {
-            new_span_x / 2.0
-        } else {
-            // divide first: new_span / old_span overflows when old_span is tiny
-            x / old_span_x * new_span_x
-        };
-
-        let new_y = if old_span_y == 0.0 {
-            new_span_y / 2.0
-        } else {
-            y / old_span_y * new_span_y
-        };
-
-        Point { x: new_x, y: new_y }
-    }
-}
-
-impl<T> Shiftable<T> for Point<T>
-where
-    T: FloatConvertable + Graphable,
-{
-    fn shift_by(self, amount: Point<T>) -> Self {
-        self + amount
     }
 }
 
@@ -329,69 +284,5 @@ mod tests {
             limits.unwrap(),
             Limits::new(Point::new(-5, -20), Point::new(100, 50))
         );
-    }
-
-    #[test]
-    fn scale_to_normal_case() {
-        let p = Point::new(5.0, 5.0);
-        let old_limits = Limits::new(Point::new(0.0, 0.0), Point::new(10.0, 10.0));
-        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
-
-        let scaled = p.scale_to(&old_limits, &new_limits);
-        assert_eq!(scaled.x, 50.0);
-        assert_eq!(scaled.y, 50.0);
-    }
-
-    #[test]
-    fn scale_to_with_negative_coordinates() {
-        let p = Point::new(0.0, 0.0);
-        let old_limits = Limits::new(Point::new(-10.0, -10.0), Point::new(10.0, 10.0));
-        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
-
-        let scaled = p.scale_to(&old_limits, &new_limits);
-        assert_eq!(scaled.x, 0.0);
-        assert_eq!(scaled.y, 0.0);
-    }
-
-    #[test]
-    fn scale_to_with_zero_x_span() {
-        // All points have the same x value — should map to midpoint of new x range.
-        let p = Point::new(5.0, 5.0);
-        let old_limits = Limits::new(Point::new(5.0, 0.0), Point::new(5.0, 10.0));
-        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
-
-        let scaled = p.scale_to(&old_limits, &new_limits);
-        assert_eq!(
-            scaled.x, 50.0,
-            "Zero x-span should map to midpoint of new x range"
-        );
-        assert_eq!(scaled.y, 50.0);
-    }
-
-    #[test]
-    fn scale_to_with_zero_y_span() {
-        // All points have the same y value — should map to midpoint of new y range.
-        let p = Point::new(5.0, 5.0);
-        let old_limits = Limits::new(Point::new(0.0, 5.0), Point::new(10.0, 5.0));
-        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
-
-        let scaled = p.scale_to(&old_limits, &new_limits);
-        assert_eq!(scaled.x, 50.0);
-        assert_eq!(
-            scaled.y, 50.0,
-            "Zero y-span should map to midpoint of new y range"
-        );
-    }
-
-    #[test]
-    fn scale_to_with_zero_both_spans() {
-        // Single-point limits — both dimensions should map to midpoints.
-        let p = Point::new(5.0, 5.0);
-        let old_limits = Limits::new(Point::new(5.0, 5.0), Point::new(5.0, 5.0));
-        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
-
-        let scaled = p.scale_to(&old_limits, &new_limits);
-        assert_eq!(scaled.x, 50.0, "Zero x-span should map to midpoint");
-        assert_eq!(scaled.y, 50.0, "Zero y-span should map to midpoint");
     }
 }

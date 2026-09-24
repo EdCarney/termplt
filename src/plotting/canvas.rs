@@ -1,7 +1,7 @@
 use super::{
     axes::{Axes, AxesPositioning},
     colors,
-    common::{Drawable, FloatConvertable, Graphable, MaskPoints},
+    common::{Drawable, FloatConvertable, MaskPoints},
     graph::Graph,
     limits::Limits,
     point::Point,
@@ -131,20 +131,17 @@ struct Layout {
 }
 
 #[derive(Debug)]
-pub struct TerminalCanvas<T: Graphable> {
+pub struct TerminalCanvas {
     canvas: Canvas,
     background: RGB8,
     buffer: CanvasBuffer,
-    graph: Option<Graph<T>>,
+    graph: Option<Graph>,
     labels: Vec<Label>,
     limits: Limits<u32>,
 }
 
-impl<T> TerminalCanvas<T>
-where
-    T: Graphable + FloatConvertable,
-{
-    pub fn new(width: u32, height: u32, background: RGB8) -> TerminalCanvas<T> {
+impl TerminalCanvas {
+    pub fn new(width: u32, height: u32, background: RGB8) -> TerminalCanvas {
         TerminalCanvas {
             canvas: Canvas::new(width, height, background),
             background,
@@ -165,7 +162,7 @@ where
         self
     }
 
-    pub fn with_graph(mut self, graph: Graph<T>) -> Self {
+    pub fn with_graph(mut self, graph: Graph) -> Self {
         self.graph = Some(graph);
         self
     }
@@ -274,7 +271,7 @@ where
         TextStyle::new(color, style.scale(), style.padding())
     }
 
-    fn layout(&self, graph: &Graph<T>, view: &Limits<f64>) -> Result<Layout> {
+    fn layout(&self, graph: &Graph, view: &Limits<f64>) -> Result<Layout> {
         let (outer_min, outer_max) = self.buffered_area();
 
         let largest_marker_sz = graph
@@ -289,7 +286,7 @@ where
             .ok_or("Graph has no series data; cannot compute drawable limits")?;
 
         // axes are drawn just outside the plot area, so leave room for their thickness
-        let axes = graph.axes();
+        let axes = graph.axes().cloned();
         let (axes_inset, show_x_labels, show_y_labels) =
             match axes.as_ref().map(|a| a.positioning()) {
                 Some(AxesPositioning::XOnly(line)) => ((0, 2 * line.thickness()), true, false),
@@ -446,7 +443,7 @@ mod tests {
     #[test]
     fn empty_graph_returns_error() {
         let result = TerminalCanvas::new(100, 100, colors::BLACK)
-            .with_graph(Graph::<u32>::new())
+            .with_graph(Graph::new())
             .draw();
         assert!(result.is_err());
     }

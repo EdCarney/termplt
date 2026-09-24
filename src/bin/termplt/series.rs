@@ -270,7 +270,7 @@ pub fn parse_color(name: &str) -> Result<RGB8> {
 
 /// Builds a series from its points and style. `index` selects the palette entry used for
 /// anything the style leaves unset.
-pub fn build_series(points: &[Point<f64>], style: &Style, index: usize) -> Result<Series<f64>> {
+pub fn build_series(points: &[Point<f64>], style: &Style, index: usize) -> Result<Series> {
     let (palette_color, palette_marker) = PALETTE[index % PALETTE.len()];
 
     let color = style.color.as_deref().map(parse_color).transpose()?;
@@ -426,7 +426,7 @@ mod tests {
             }
         );
         assert_eq!(
-            *series.line_style(),
+            series.line_style().copied(),
             Some(LineStyle::Solid {
                 color: colors::RED,
                 thickness: DEFAULT_LINE_THICKNESS
