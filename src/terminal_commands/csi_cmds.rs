@@ -1,4 +1,4 @@
-use super::responses::TermCommand;
+use super::responses::{TermCommand, TerminalCommandError};
 use crate::common::Result;
 
 const CMD_START: &[u8] = b"\x1b[";
@@ -43,22 +43,11 @@ impl TermCommand for CsiCommand {
 }
 
 pub fn get_cursor_pos() -> Result<TermPosition> {
-    let resp: Vec<u32> = CsiCommand::new("6n", "R")
-        .execute_with_response()
-        .expect("Error getting cursor position.")
-        .split(';')
-        .map(|c| c.parse::<u32>().expect("Failure parsing cursor position"))
-        .collect();
-
-    assert_eq!(
-        resp.len(),
-        2,
-        "Expect cursor position return to have 2 elements"
-    );
-
+    let resp = CsiCommand::new("6n", "R").execute_with_response()?;
+    let vals = parse_numeric_response(&resp, 2, "cursor position")?;
     Ok(TermPosition {
-        row: resp[0],
-        col: resp[1],
+        row: vals[0],
+        col: vals[1],
     })
 }
 
@@ -74,41 +63,73 @@ pub fn clear_screen() -> Result<()> {
 /// Query terminal text area size in pixels using xterm CSI 14 t.
 /// Returns (width_px, height_px).
 pub fn get_text_area_size_pixels() -> Result<(u32, u32)> {
-    let resp: Vec<u32> = CsiCommand::new("14t", "t")
-        .execute_with_response()?
-        .split(';')
-        .map(|c| {
-            c.parse::<u32>()
-                .expect("Failure parsing pixel size response")
-        })
-        .collect();
-
-    assert_eq!(
-        resp.len(),
-        3,
-        "Expect pixel size response to have 3 elements (prefix;height;width)"
-    );
-
-    Ok((resp[2], resp[1]))
+    let resp = CsiCommand::new("14t", "t").execute_with_response()?;
+    // response format: 4;height;width
+    let vals = parse_numeric_response(&resp, 3, "text area size in pixels")?;
+    check_prefix(&vals, 4, &resp)?;
+    Ok((vals[2], vals[1]))
 }
 
 /// Query terminal text area size in character cells using xterm CSI 18 t.
 /// Returns (rows, cols).
 pub fn get_text_area_size_cells() -> Result<(u32, u32)> {
-    let resp: Vec<u32> = CsiCommand::new("18t", "t")
-        .execute_with_response()?
+    let resp = CsiCommand::new("18t", "t").execute_with_response()?;
+    // response format: 8;rows;cols
+    let vals = parse_numeric_response(&resp, 3, "text area size in cells")?;
+    check_prefix(&vals, 8, &resp)?;
+    Ok((vals[1], vals[2]))
+}
+
+/// Parses a `;`-separated list of exactly `expected_len` unsigned integers.
+fn parse_numeric_response(resp: &str, expected_len: usize, what: &str) -> Result<Vec<u32>> {
+    let invalid = || TerminalCommandError::InvalidResponse(format!("{what}: {resp:?}"));
+    let vals = resp
         .split(';')
-        .map(|c| {
-            c.parse::<u32>()
-                .expect("Failure parsing cell size response")
-        })
-        .collect();
+        .map(|c| c.parse::<u32>())
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|_| invalid())?;
+    if vals.len() != expected_len {
+        return Err(invalid().into());
+    }
+    Ok(vals)
+}
 
-    assert_eq!(
-        resp.len(),
-        3,
-        "Expect cell size response to have 3 elements (prefix;rows;cols)"
-    );
+fn check_prefix(vals: &[u32], expected: u32, resp: &str) -> Result<()> {
+    if vals[0] != expected {
+        return Err(TerminalCommandError::InvalidResponse(format!(
+            "expected reply type {expected}, got {resp:?}"
+        ))
+        .into());
+    }
+    Ok(())
+}
 
-    Ok((resp[1], resp[2]))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_numeric_response_valid() {
+        assert_eq!(
+            parse_numeric_response("4;600;800", 3, "size").unwrap(),
+            vec![4, 600, 800]
+        );
+    }
+
+    #[test]
+    fn parse_numeric_response_wrong_length_errors() {
+        assert!(parse_numeric_response("4;600", 3, "size").is_err());
+    }
+
+    #[test]
+    fn parse_numeric_response_non_numeric_errors() {
+        assert!(parse_numeric_response("4;abc;800", 3, "size").is_err());
+        assert!(parse_numeric_response("", 1, "size").is_err());
+    }
+
+    #[test]
+    fn check_prefix_mismatch_errors() {
+        assert!(check_prefix(&[8, 1, 2], 4, "8;1;2").is_err());
+        assert!(check_prefix(&[4, 1, 2], 4, "4;1;2").is_ok());
+    }
 }
