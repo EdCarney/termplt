@@ -51,7 +51,7 @@ fn run(cli: Cli) -> Result<()> {
     if cli.list_colors {
         println!("Colors (names ignore case and separators, e.g. DarkRed, dark-red):\n");
         for (name, _) in colors::all_names() {
-            println!("  {}", name.to_ascii_lowercase().replace('_', "-"));
+            println!("  {}", cli::color_display_name(name));
         }
         println!("\nAny #RRGGBB or #RGB hex color is also accepted.");
         return Ok(());

@@ -80,7 +80,7 @@ Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters r
 
 ### CLI (`src/bin/termplt/`)
 
-- `cli.rs`: clap derive definition; `--completions <SHELL>` prints a `clap_complete` script (static: flags, `--marker`/`--line` possible values, file-path hints). Style options (`--color`, `--marker`, `--line`, ...) are defaults for every series; old snake_case flags are hidden aliases.
+- `cli.rs`: clap derive definition; `--completions <SHELL>` prints a `clap_complete` script (static: flags, `--marker`/`--line` possible values, color names via `ColorParser`, file-path hints). Style options (`--color`, `--marker`, `--line`, ...) are defaults for every series; old snake_case flags are hidden aliases.
 - `series.rs`: `--series` spec parsing (`key=value` pairs; a `,`/`;` only splits when followed by `key=`, so `data=(1,2),(3,4)` works), style resolution, palette, marker/line name parsing.
 - `data.rs`: inline point parsing and `Table` (CSV/TSV/whitespace, header detection, columns by name or 1-based index, `index` = row number, missing values skipped).
 - `main.rs`: collects series (FILE args × y columns, then `--data`, then `--series`; piped stdin when nothing else is given, read once and cached), sizes the canvas (fits the terminal, or 800x600 with `--output`), then displays via Kitty or writes an image.

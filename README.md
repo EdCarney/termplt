@@ -96,7 +96,7 @@ Data files may have a header row (detected automatically), `#` comments and blan
 
 ### Shell completions
 
-Tab completion covers flags, marker and line styles, and file paths. Generate a script for your shell once (and again after upgrading):
+Tab completion covers flags, marker and line styles, color names and file paths. Generate a script for your shell once (and again after upgrading):
 
 ```bash
 # bash

@@ -2,10 +2,13 @@
 
 use clap::{
     Parser, ValueHint,
-    builder::{PossibleValue, PossibleValuesParser},
+    builder::{PossibleValue, PossibleValuesParser, TypedValueParser},
+    error::ErrorKind,
 };
 use clap_complete::Shell;
+use std::ffi::OsStr;
 use std::path::PathBuf;
+use termplt::plotting::colors;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -64,7 +67,7 @@ pub struct Cli {
     pub y_col: Vec<String>,
 
     /// Color for markers and lines of every series (name or #RRGGBB); cycles by default
-    #[arg(short, long, value_name = "COLOR", help_heading = "Style")]
+    #[arg(short, long, value_name = "COLOR", value_parser = ColorParser, hide_possible_values = true, help_heading = "Style")]
     pub color: Option<String>,
 
     /// Marker style
@@ -87,6 +90,8 @@ pub struct Cli {
     #[arg(
         long,
         value_name = "COLOR",
+        value_parser = ColorParser,
+        hide_possible_values = true,
         alias = "marker_color",
         help_heading = "Style"
     )]
@@ -108,6 +113,8 @@ pub struct Cli {
     #[arg(
         long,
         value_name = "COLOR",
+        value_parser = ColorParser,
+        hide_possible_values = true,
         alias = "line_color",
         help_heading = "Style"
     )]
@@ -142,6 +149,8 @@ pub struct Cli {
     #[arg(
         long,
         value_name = "COLOR",
+        value_parser = ColorParser,
+        hide_possible_values = true,
         default_value = "black",
         help_heading = "Plot"
     )]
@@ -175,6 +184,51 @@ pub struct Cli {
     /// Print a shell completion script and exit, e.g. `termplt --completions zsh > _termplt`
     #[arg(long, value_name = "SHELL")]
     pub completions: Option<Shell>,
+}
+
+/// Accepts color names (ignoring case and separators) and hex colors. The color names are
+/// offered as possible values so shells can complete them; hex values are accepted too, so
+/// the names are hidden from `--help` rather than enforced as the only choices.
+#[derive(Clone)]
+struct ColorParser;
+
+impl TypedValueParser for ColorParser {
+    type Value = String;
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &OsStr,
+    ) -> Result<String, clap::Error> {
+        let value = value.to_string_lossy();
+        if colors::parse(&value).is_some() {
+            return Ok(value.into_owned());
+        }
+        let flag = arg
+            .and_then(|a| a.get_long())
+            .map(|l| format!(" for '--{l}'"))
+            .unwrap_or_default();
+        Err(clap::Error::raw(
+            ErrorKind::InvalidValue,
+            format!(
+                "unknown color '{value}'{flag}; use a color name or #RRGGBB (run 'termplt \
+                 --list-colors' for the names)\n"
+            ),
+        )
+        .with_cmd(cmd))
+    }
+
+    fn possible_values(&self) -> Option<Box<dyn Iterator<Item = PossibleValue> + '_>> {
+        Some(Box::new(colors::all_names().iter().map(|(name, _)| {
+            PossibleValue::new(color_display_name(name))
+        })))
+    }
+}
+
+/// The spelling used in help, completions and `--list-colors`: lowercase with hyphens.
+pub fn color_display_name(name: &str) -> String {
+    name.to_ascii_lowercase().replace('_', "-")
 }
 
 /// Marker styles; the aliases keep earlier spellings such as FilledCircle working (clap also
@@ -340,6 +394,42 @@ mod tests {
             // hidden aliases stay out of completions
             assert!(!script.contains("filledcircle"), "{shell}: leaked alias");
         }
+    }
+
+    #[test]
+    fn colors_accept_names_and_hex() {
+        let cli = parse(&[
+            "a.csv",
+            "-c",
+            "DarkRed",
+            "--line-color",
+            "#1e90ff",
+            "--bg",
+            "white",
+        ])
+        .unwrap();
+        assert_eq!(cli.color.as_deref(), Some("DarkRed"));
+        assert_eq!(cli.line_color.as_deref(), Some("#1e90ff"));
+        assert_eq!(cli.bg, "white");
+    }
+
+    #[test]
+    fn unknown_colors_are_rejected_when_parsing() {
+        let err = parse(&["a.csv", "--marker-color", "notacolor"])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown color 'notacolor'"), "{err}");
+        assert!(parse(&["a.csv", "--bg", "#12345"]).is_err());
+    }
+
+    #[test]
+    fn color_names_are_completed_but_not_listed_in_help() {
+        let mut script = Vec::new();
+        clap_complete::generate(Shell::Zsh, &mut Cli::command(), "termplt", &mut script);
+        let script = String::from_utf8(script).unwrap();
+        assert!(script.contains("dark-red"), "zsh script lacks color names");
+        let help = Cli::command().render_long_help().to_string();
+        assert!(!help.contains("dark-red"), "help lists every color");
     }
 
     #[test]
