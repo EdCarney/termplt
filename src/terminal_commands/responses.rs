@@ -288,7 +288,8 @@ mod sys {
 mod sys {
     use super::ByteSource;
     use std::{
-        io::{self, IsTerminal, Read, Write},
+        fs::{File, OpenOptions},
+        io::{self, Read, Write},
         sync::{
             Mutex, OnceLock,
             mpsc::{self, Receiver, RecvTimeoutError},
@@ -297,8 +298,13 @@ mod sys {
         time::Duration,
     };
 
+    /// The console's input and output buffers. Opened by name rather than through stdin/stdout
+    /// so queries still work when those are redirected (e.g. data piped into the CLI).
+    const CONSOLE_IN: &str = "CONIN$";
+    const CONSOLE_OUT: &str = "CONOUT$";
+
     /// Console input cannot be polled with a timeout using only the standard library, so a
-    /// background thread performs blocking reads from stdin and forwards the bytes over a
+    /// background thread performs blocking reads from the console and forwards the bytes over a
     /// channel. The thread is shared by all queries and lives for the rest of the process.
     static INPUT: OnceLock<Mutex<Receiver<io::Result<Vec<u8>>>>> = OnceLock::new();
 
@@ -306,9 +312,16 @@ mod sys {
         INPUT.get_or_init(|| {
             let (tx, rx) = mpsc::channel();
             thread::spawn(move || {
+                let mut console = match File::open(CONSOLE_IN) {
+                    Ok(console) => console,
+                    Err(e) => {
+                        let _ = tx.send(Err(e));
+                        return;
+                    }
+                };
                 let mut buf = [0u8; 256];
                 loop {
-                    let res = io::stdin().lock().read(&mut buf).map(|n| buf[..n].to_vec());
+                    let res = console.read(&mut buf).map(|n| buf[..n].to_vec());
                     let done = !matches!(&res, Ok(bytes) if !bytes.is_empty());
                     if tx.send(res).is_err() || done {
                         break;
@@ -319,27 +332,26 @@ mod sys {
         })
     }
 
-    pub struct Tty;
+    pub struct Tty {
+        out: File,
+    }
 
     impl Tty {
         pub fn open() -> io::Result<Tty> {
-            if !io::stdin().is_terminal() {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "stdin is not a terminal",
-                ));
-            }
-            Ok(Tty)
+            // fails when the process has no console (e.g. running as a service)
+            File::open(CONSOLE_IN)?;
+            let out = OpenOptions::new().write(true).open(CONSOLE_OUT)?;
+            Ok(Tty { out })
         }
     }
 
     impl Write for Tty {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            io::stdout().write(buf)
+            self.out.write(buf)
         }
 
         fn flush(&mut self) -> io::Result<()> {
-            io::stdout().flush()
+            self.out.flush()
         }
     }
 

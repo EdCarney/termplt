@@ -8,7 +8,7 @@ Review of commit `74918e3` (v0.1.2). How the review was done:
 - Wrote throwaway library tests to probe edge cases.
 - Rendered plots to PNG and inspected them.
 
-Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42) and Phase 2 (items 7, 10–12, 14, 15, 23 and 43) are done. See the note under each item.
+Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42), Phase 2 (items 7, 10–12, 14, 15, 23 and 43) and Phase 3 (items 16, 17 and 19–24, plus most of 18) are done. See the note under each item.
 
 Items marked **(reproduced)** were confirmed by running code. The rest come from reading the source.
 
@@ -144,26 +144,38 @@ The bitmap font covers only `0-9 . - e` and space. Add a small ASCII bitmap font
 ## P1: CLI usability
 
 ### 16. Read data from stdin
+✅ **Done (Phase 3).** `-` or piped stdin is read once and cached.
+
 Piping (`some_cmd | termplt`) is the most common workflow in a terminal. Accept `-` or detect a non-TTY stdin. This requires terminal queries to go through `/dev/tty` rather than stdin (item 1).
 
 ### 17. Column selection
+✅ **Done (Phase 3):** `-x/--x-col`, `-y/--y-col` (name, 1-based index, or `index`), comma-separated y columns, and single-column files plotted against the row number.
+
 - Add `--x-col` and `--y-col`, by header name or index.
 - Allow several y columns, producing one series per column from a single file.
 - Plot single-column data as y against the row index.
 
 ### 18. Output and layout flags
+◐ **Mostly done (Phase 3):** `--width`, `--height`, `-o/--output`, `--xlim`, `--ylim`, `--bg` and `--no-grid` are in. `--title` still needs a text font (item 13), and `--log-x`/`--log-y` still need log scaling in the library; both are deferred.
+
 - `--width` and `--height` (or `--rows` and `--cols` in cells).
 - `--output plot.png`: the `image` crate is already a dependency. This also covers non-kitty terminals, CI and reports.
 - `--xlim` and `--ylim` (the library supports limits, but the CLI doesn't expose them).
 - `--title`, `--bg`, `--no-grid`, `--log-x` and `--log-y`.
 
 ### 19. The inline data parser is too strict (reproduced)
+✅ **Done (Phase 3).**
+
 `"(1,1), (2,2)"` fails because `termplt.rs:307` splits on the literal `"),("`. Tokenize on parentheses instead, and also accept the `1,1 2,2` form.
 
 ### 20. Color names are too strict (reproduced)
+✅ **Done (Phase 3).** Added `colors::from_name` normalization and `colors::parse` (hex).
+
 `DarkRed` fails and only `DARK_RED` works (`colors.rs:286`). Normalize names by removing `_`, `-` and spaces before comparing. Also accept `#RRGGBB`.
 
 ### 21. Argument parser: missing `--version`, non-standard snake_case flags, no suggestions
+✅ **Done (Phase 3):** clap, with grouped `-s/--series "file=...,color=..."` specs. Old flag spellings are kept as aliases, and the CLI sits behind the default `cli` feature.
+
 The parser is hand-rolled.
 
 | Option | Pros | Cons |
@@ -175,6 +187,8 @@ The parser is hand-rolled.
 **Recommendation:** `clap`, if you're willing to replace the per-series flag order with explicit grouping (for example `--series "file=a.csv,color=red"`). Otherwise `lexopt`.
 
 ### 22. Hard-coded canvas size
+✅ **Done (Phase 3).** The default size is the terminal's full width by 60% of its height, at most 2:1.
+
 `termplt.rs:583` always draws a square at half the smaller window dimension, which wastes most of the width in a wide terminal. Default to something like the full width × about 60% of the height, capped by the window, and let flags override it.
 
 ### 23. `--verbose` duplicates the layout math
@@ -183,6 +197,8 @@ The parser is hand-rolled.
 `termplt.rs:593-617` re-implements `get_drawable_limits`, so the two can drift apart. Call `TerminalCanvas::get_drawable_limits()` instead.
 
 ### 24. Missing values abort the whole file
+✅ **Done (Phase 3).** Empty, `NA`, `n/a`, `null`, `none`, `-` and `?` are skipped with a count.
+
 An empty field or `NA` stops parsing. Offer a skip-and-warn mode, or at least a flag for it, and report how many rows were skipped.
 
 ---

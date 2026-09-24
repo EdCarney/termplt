@@ -19,7 +19,7 @@ def write_csv(filename, header, rows):
 
 
 def random_scatter(n=80, seed=42):
-    """Uniform random points -- good for testing scatter plots (--line_style None)."""
+    """Uniform random points -- good for testing scatter plots (--line none)."""
     rng = random.Random(seed)
     return [(rng.uniform(-10, 10), rng.uniform(-10, 10)) for _ in range(n)]
 
@@ -147,23 +147,23 @@ def main():
 
     print(f"\nDone! Example commands:\n")
     print(f"  # Single series with lines")
-    print(f"  cargo run -- --data_file test_data/sine.csv")
+    print(f"  cargo run -- test_data/sine.csv")
     print()
     print(f"  # Scatter plot (no lines)")
-    print(f"  cargo run -- --data_file test_data/random_scatter.csv --line_style None")
+    print(f"  cargo run -- test_data/random_scatter.csv --line none")
     print()
     print(f"  # Multi-series overlay")
-    print(f"  cargo run -- --data_file test_data/sine.csv --data_file test_data/cosine.csv")
+    print(f"  cargo run -- test_data/sine.csv test_data/cosine.csv")
     print()
     print(f"  # Styled scatter")
-    print(f"  cargo run -- --data_file test_data/random_clusters.csv \\")
-    print(f"    --line_style None --marker_style FilledCircle --marker_color Cyan --marker_size 3")
+    print(f"  cargo run -- test_data/random_clusters.csv \\")
+    print(f"    --line none --marker filled-circle --color cyan --marker-size 3")
     print()
     print(f"  # Parametric curves")
-    print(f"  cargo run -- --data_file test_data/circle.csv --marker_style None --line_thickness 1")
+    print(f"  cargo run -- test_data/circle.csv --marker none --line-thickness 1")
     print()
     print(f"  # Damped oscillation")
-    print(f"  cargo run -- --data_file test_data/damped_sine.csv --marker_style None --line_color Lime")
+    print(f"  cargo run -- test_data/damped_sine.csv --marker none --color lime")
 
 
 if __name__ == "__main__":

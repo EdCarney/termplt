@@ -30,6 +30,9 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+      - name: Test library without the CLI feature
+        run: cargo test --verbose --no-default-features
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

@@ -11,9 +11,12 @@ exclude = ["test_data/", "scripts/", ".claude/", "CLAUDE.md"]
 
 [[bin]]
 name = "termplt"
-path = "src/bin/termplt.rs"
+path = "src/bin/termplt/main.rs"
+required-features = ["cli"]
 
 [dependencies]
+clap = { version = "4", features = ["derive", "string"], optional = true }
+clap_complete = { version = "4", optional = true }
 crossterm = "0.29.0"
 image = "0.25.6"
 rgb = "0.8.50"
@@ -23,3 +26,9 @@ libc = "0.2"
 
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }
+
+[features]
+default = ["cli"]
+# The command-line tool. Library users can disable it with `default-features = false` to avoid
+# compiling its dependencies.
+cli = ["dep:clap", "dep:clap_complete"]
