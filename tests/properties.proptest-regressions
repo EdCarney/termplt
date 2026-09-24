@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d6996e7cf5666901fecac0e0a3e0740f2693226423828063b6051253368569e7 # shrinks to series = [Series { data: [Point { x: 2.2250738585072014e-308, y: 0.0 }], marker_style: FilledSquare { size: 1, color: Rgb { r: 255, g: 0, b: 0 } }, line_style: None }], width = 32, height = 32, buffer = 0, with_axes = false, with_grid = false, x_limits = None, y_limits = None

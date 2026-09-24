@@ -118,13 +118,14 @@ where
         let new_x = if old_span_x == 0.0 {
             new_span_x / 2.0
         } else {
-            x * (new_span_x / old_span_x)
+            // divide first: new_span / old_span overflows when old_span is tiny
+            x / old_span_x * new_span_x
         };
 
         let new_y = if old_span_y == 0.0 {
             new_span_y / 2.0
         } else {
-            y * (new_span_y / old_span_y)
+            y / old_span_y * new_span_y
         };
 
         Point { x: new_x, y: new_y }

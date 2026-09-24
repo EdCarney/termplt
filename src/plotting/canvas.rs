@@ -623,4 +623,28 @@ mod tests {
             .draw();
         assert!(result.is_err());
     }
+
+    #[test]
+    fn tiny_value_single_point_is_centered() {
+        // a single point at the smallest normal f64 has a subnormal padded span; scaling must
+        // not overflow (found by property testing)
+        let bytes = TerminalCanvas::new(101, 101, colors::BLACK)
+            .with_buffer(BufferType::Uniform(10))
+            .with_graph(Graph::new().with_series(
+                Series::new(&[Point::new(f64::MIN_POSITIVE, 0.0)]).with_marker_style(red_marker()),
+            ))
+            .draw()
+            .unwrap()
+            .get_bytes();
+        assert_eq!(red_pixels(&bytes, 101), vec![(50, 50)]);
+    }
+
+    #[test]
+    fn data_range_exceeding_f64_returns_error() {
+        let points = [Point::new(-f64::MAX, 0.0), Point::new(f64::MAX, 1.0)];
+        let result = TerminalCanvas::new(100, 100, colors::BLACK)
+            .with_graph(Graph::new().with_series(Series::new(&points)))
+            .draw();
+        assert!(result.is_err());
+    }
 }

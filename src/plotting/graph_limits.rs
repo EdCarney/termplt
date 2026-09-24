@@ -48,15 +48,15 @@ where
 
         // When old_span is 0 (all points identical in that dimension),
         // map to the midpoint of the new range instead of dividing by zero.
-        let x_factor = if old_span_x == 0.0 {
+        let x_spans = if old_span_x == 0.0 {
             None
         } else {
-            Some(new_span_x / old_span_x)
+            Some((old_span_x, new_span_x))
         };
-        let y_factor = if old_span_y == 0.0 {
+        let y_spans = if old_span_y == 0.0 {
             None
         } else {
-            Some(new_span_y / old_span_y)
+            Some((old_span_y, new_span_y))
         };
 
         // relative to the origin of the new limits, matching the regular (scaled) branch
@@ -65,12 +65,12 @@ where
 
         match self.convert_to_f64() {
             GraphLimits::XOnly { min, max } => GraphLimits::XOnly {
-                min: x_factor.map_or(new_mid_x, |f| min * f),
-                max: x_factor.map_or(new_mid_x, |f| max * f),
+                min: x_spans.map_or(new_mid_x, |(old, new)| min / old * new),
+                max: x_spans.map_or(new_mid_x, |(old, new)| max / old * new),
             },
             GraphLimits::YOnly { min, max } => GraphLimits::YOnly {
-                min: y_factor.map_or(new_mid_y, |f| min * f),
-                max: y_factor.map_or(new_mid_y, |f| max * f),
+                min: y_spans.map_or(new_mid_y, |(old, new)| min / old * new),
+                max: y_spans.map_or(new_mid_y, |(old, new)| max / old * new),
             },
             GraphLimits::XY { min, max } => GraphLimits::XY {
                 min: min.scale_to(&old_limits, &new_limits),

@@ -73,7 +73,10 @@ impl Marker {
             self.center.x.saturating_sub(size),
             self.center.y.saturating_sub(size),
         );
-        let max = self.center + size;
+        let max = Point::new(
+            self.center.x.saturating_add(size),
+            self.center.y.saturating_add(size),
+        );
         Limits::new(min, max)
     }
 
@@ -98,8 +101,8 @@ impl Drawable for Marker {
             MarkerStyle::HollowSquare { color, size } => {
                 let x_lo = self.center.x.saturating_sub(size);
                 let y_lo = self.center.y.saturating_sub(size);
-                let x_hi = self.center.x + size;
-                let y_hi = self.center.y + size;
+                let x_hi = self.center.x.saturating_add(size);
+                let y_hi = self.center.y.saturating_add(size);
                 let top = Point::<u32>::range(&Point::new(x_lo, y_hi), &Point::new(x_hi, y_hi));
                 let bottom = Point::<u32>::range(&Point::new(x_lo, y_lo), &Point::new(x_hi, y_lo));
                 let right = Point::<u32>::range(&Point::new(x_hi, y_lo), &Point::new(x_hi, y_hi));

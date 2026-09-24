@@ -273,9 +273,13 @@ impl<T: Graphable> Graph<T> {
                 span_y * DATA_MARGIN
             },
         );
-        let limits = Limits::new(*limits.min() - margin, *limits.max() + margin);
+        let limits = pad_degenerate(Limits::new(*limits.min() - margin, *limits.max() + margin));
 
-        Ok(pad_degenerate(limits))
+        let (span_x, span_y) = limits.span();
+        if !span_x.is_finite() || !span_y.is_finite() {
+            return Err("Data range is too large to plot (exceeds the range of f64)".into());
+        }
+        Ok(limits)
     }
 
     /// Scales the visible data so that [`Graph::view_limits`] maps onto `new_limits`.
