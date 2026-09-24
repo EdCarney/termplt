@@ -62,10 +62,10 @@ Each of these crashes the program instead of returning an error:
 - `with_graph` on an empty graph (`canvas.rs:138`).
 - `Series::new(&[])` (`series.rs:37`).
 - `LineStyle::Dashed` is a `todo!()` (`line.rs:220`) (reproduced).
-- `TextPositioning::LeftAligned` (`text.rs:278,285`).
+- `TextPositioning::LeftAligned` (`text.rs:262,285`).
 - `Image::new`/`display` with `TempFile`/`SharedMemory` (`images.rs:55,119`).
 - `PositioningType::Centered` underflows when the image is bigger than the window (`images.rs:106`).
-- `.unwrap()` inside `Result`-returning code: `series.rs:88`, `grid_lines.rs:31,38`, `text.rs:262,271-272`, `kitty_cmds.rs:30`.
+- `.unwrap()` inside `Result`-returning code: `series.rs:88`, `grid_lines.rs:31,38`, `text.rs:271-272,278`, `kitty_cmds.rs:30`.
 
 **Fix:** make constructors that validate input return `Result`, or make invalid states unrepresentable (`NonZeroU32` for canvas size). Implement `Dashed` by skipping pixels along the Bresenham path with an on/off pattern, or remove the variant until it's implemented.
 
