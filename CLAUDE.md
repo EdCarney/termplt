@@ -6,11 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 cargo build                          # Build
-cargo test                           # Run all tests (unit tests, co-located in modules)
+cargo test                           # Run all tests (unit tests in modules + tests/golden.rs + tests/properties.rs)
 cargo test plotting::graph_limits    # Run tests for a specific module
 cargo test scale_to_with_zero_x_span # Run a single test by name
 cargo clippy --all-targets -- -D warnings  # Lint (CI fails on any warning)
 cargo fmt --check                    # Formatting (enforced in CI)
+TERMPLT_UPDATE_SNAPSHOTS=1 cargo test --test golden  # Regenerate golden PNGs after an intentional rendering change (review them!)
+PROPTEST_CASES=20000 cargo test --test properties    # Longer property-test run
 cargo run -- --data "(1,1),(2,4)"    # Render a plot via the CLI (needs a Kitty-protocol terminal)
 ```
 
@@ -41,16 +43,20 @@ Both are implemented recursively on composite types (Graph shifts all its Series
 
 ```
 TerminalCanvas::draw()
-  ├── get_drawable_limits()          # canvas area minus buffers/marker/axes thickness
-  ├── graph.view_limits()            # finite data limits + GraphLimits overrides, clipped, padded
-  ├── graph.scale_with_view(..)      # clip → shift-to-origin → proportional scale → shift-to-canvas
-  ├── scaled_graph.get_mask()        # Drawable trait: returns Vec<MaskPoints> (colored pixel sets)
-  │     ├── axes.get_mask()          # axis lines
-  │     ├── grid_lines.get_mask()    # grid lines
-  │     └── series.get_mask()        # markers + connecting lines per series
+  ├── graph.view_limits()            # finite data limits + GraphLimits overrides, clipped,
+  │                                  #   5% margin on automatic axes, zero spans padded
+  ├── layout()                       # y ticks (fit plot height) → left margin from widest y label
+  │                                  #   → x ticks (fit plot width); bottom band for x labels;
+  │                                  #   inset for markers/thick lines/axes → plot area
+  ├── graph.scale_with_view(..)      # clip → shift-to-origin → proportional scale → shift-to-plot
+  ├── grid_lines.get_mask_at(..)     # grid at tick positions (drawn first)
+  ├── axes.get_mask(plot)            # axis lines just outside the plot area
+  ├── series.get_mask()              # markers + connecting lines per series
   ├── Canvas::set_pixels()           # write RGB8 into 2D pixel buffer
-  └── labels → get_mask → set_pixels # axis tick labels (bitmap font)
+  └── labels → get_mask → set_pixels # tick labels (bitmap font), drawn last
 ```
+
+Ticks (`ticks.rs`): values are k × step with step ∈ {1, 2, 5} × 10^k (Heckbert); `fit_ticks` picks the densest count (≤ `MAX_TICKS`) whose labels don't overlap at the actual pixel size. Labels on an axis share decimal places; scientific notation when |v| ≥ 1e6 or step < 1e-4. A label color equal to the background is replaced with black/white. `get_drawable_limits()` returns the plot area from the same layout.
 
 The `Drawable` trait (`fn get_mask(&self) -> Result<Vec<MaskPoints>>`) is implemented by `Series`, `Line`, `Marker`, `Label`, and `Graph`. Each returns pixel coordinates + colors; the canvas composites them.
 
@@ -64,19 +70,23 @@ After rendering, the canvas bytes are sent via Kitty APC sequences: `encoding.rs
 
 ### Line Drawing (`line.rs`)
 
-`BetweenPoints` lines use Bresenham's algorithm. `Horizontal`/`Vertical` lines use range iteration. Thickness is applied by shifting parallel copies (flat lines only). `LineStyle::Dashed` filters the ordered path with a 6-on/4-off pattern. Thickness is not yet applied to `BetweenPoints` lines (so series line thickness has no effect).
+`BetweenPoints` lines use Bresenham's algorithm; thickness stamps a disc of radius `thickness` at each pixel (round joins). `Horizontal`/`Vertical` lines use range iteration; thickness shifts parallel copies. `LineStyle::Dashed` filters the ordered path with a 6-on/4-off pattern. `MarkerStyle::None` draws no marker.
 
 ### Text/Number Rendering (`text.rs`, `numbers.rs`)
 
 Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters render as a placeholder box. Supports scaling (pixel replication) and padding. `num_to_str` uses decimal when `0.1^sig_figs < |x| < 10^sig_figs`, otherwise scientific notation, with trailing zero stripping.
 
+## Testing
+
+- Unit tests are co-located in modules (`#[cfg(test)] mod tests`).
+- `tests/golden.rs` renders fixed scenes and compares them with `tests/snapshots/*.png` (≤0.1% of pixels may differ). After an intentional visual change, regenerate with `TERMPLT_UPDATE_SNAPSHOTS=1` and inspect the PNGs before committing; mismatches are written to `target/snapshots/`.
+- `tests/properties.rs` (proptest) checks that drawing never panics for arbitrary data/styles/sizes (including NaN/∞/extremes) and that scaled points stay within the target limits. Run in debug mode too — release builds disable integer-overflow checks.
+
 ## Known Issues
 
 See `IMPROVEMENTS.md` for the full prioritized list and status. Key open items:
-- Tick labels are evenly spaced raw values (not "nice" numbers) and overlap or clip at small sizes
-- Series line thickness is ignored for `BetweenPoints` lines
 - Clipping to explicit limits drops points rather than clipping line segments
 - `Limits::new` panics on inverted bounds (internal invariant); use `Limits::try_new` for untrusted input
 - `Graph::shift_by` doesn't shift `grid_lines`
 - No crate-level error type (uses `Box<dyn Error>` everywhere)
-- No integration tests; all tests are unit tests co-located in source files
+- Bitmap font only covers `0-9 . - e`, so there are no titles, axis names or legends yet
