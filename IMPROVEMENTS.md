@@ -8,7 +8,7 @@ Review of commit `74918e3` (v0.1.2). How the review was done:
 - Wrote throwaway library tests to probe edge cases.
 - Rendered plots to PNG and inspected them.
 
-Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42), Phase 2 (items 7, 10–12, 14, 15, 23 and 43) and Phase 3 (items 16, 17 and 19–24, plus most of 18) are done. See the note under each item.
+Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42), Phase 2 (items 7, 10–12, 14, 15, 23 and 43), Phase 3 (items 16, 17 and 19–24, plus most of 18) and Phase 4 (items 25–31; Unicode fallback renderer and tmux Unicode placeholders deferred) are done. See the note under each item.
 
 Items marked **(reproduced)** were confirmed by running code. The rest come from reading the source.
 
@@ -206,14 +206,20 @@ An empty field or `NA` stops parsing. Offer a skip-and-warn mode, or at least a 
 ## P1: terminal and protocol robustness
 
 ### 25. Detect graphics support before rendering
+✅ **Done (Phase 4):** `kitty_cmds::query_support()` sends an `a=q` query plus DA1. The CLI stops with a hint to use `--output` when the terminal answers DA1 but not the query, and warns and draws anyway when it answers nothing. The braille/half-block fallback renderer is not done.
+
 Send an `a=q` query with an image id, followed by DA1 [1]. If the terminal doesn't support the protocol, show a clear error or fall back. Fallback options:
 - `--output png`.
 - A Unicode braille or half-block renderer. Resolution is lower, but it works everywhere, including in tmux and CI logs.
 
 ### 26. Window-size lookup
+✅ **Done (Phase 4).** `get_window_size()` uses `crossterm::terminal::window_size()` (`TIOCGWINSZ`) and queries only the missing parts (`CSI 14t` for pixels, `18t` for cells). If both fail, the CLI estimates the size from the cell count with a warning.
+
 Commit `4926cc0` replaced the ioctl with CSI queries for Windows. On Unix, prefer `TIOCGWINSZ` (`crossterm::terminal::window_size()` returns pixel sizes). It needs no terminal round trip, so it can't hang. Fall back to `CSI 14t`/`18t`, then to a default size with a warning. Use `cfg` to keep both paths.
 
 ### 27. Compress the image data sent to the terminal (measured)
+✅ **Done (Phase 4):** `Image::png_from_rgb` with `f=100`. Measured on a dense 1600×800 plot (release build): raw 3.84 MB; PNG with default compression and adaptive filtering 27 KB in 11 ms; the fast setting gives 68 KB in 3 ms. The CLI's typical plot drops from 2.16 MB to about 7 KB.
+
 An 800×800 plot is 1.92 MB raw, or 2.56 MB after base64, sent on *every* render. The same 500 px plot saved as PNG is about 12.6 KB, versus 750 KB raw: roughly 60× smaller. Over SSH this is the difference between instant and multi-second.
 
 Two ways to fix it:
@@ -223,16 +229,24 @@ Two ways to fix it:
 **Trade-off:** a few ms of CPU to encode, in exchange for 1–2 orders of magnitude less bandwidth. PNG is lossless.
 
 ### 28. tmux and screen
+✅ **Done (Phase 4)** for tmux: `Passthrough::Tmux` (from `$TMUX`) wraps every chunk. The CLI checks `allow-passthrough` (via `tmux show-options -pAv`) and stops with the fix when it's off, then draws with `C=1` and moves the cursor down itself. Checked with tmux 3.4 inside a pty: the PNG reaches the outer terminal unchanged. Not done: Unicode placeholders (the image still vanishes on a tmux redraw) and GNU screen.
+
 - When `$TMUX` is set, wrap the APC sequence in DCS passthrough (`\ePtmux;` plus doubled ESC, then `\e\\`). The user must also set `allow-passthrough on`.
 - Kitty's Unicode-placeholder mode (`U=1`) [1] keeps the image in place when tmux redraws. Document the setup either way.
 
 ### 29. Suppress terminal replies
+✅ **Done (Phase 4).** Display commands send `q=2`.
+
 Add `q=2` to transmit commands. Without an image id the terminal doesn't reply today, but this becomes necessary once ids are used, for example to replace a plot in place.
 
 ### 30. File transmission
+✅ **Done (Phase 4).** `Image::new` makes `File`/`TempFile` paths absolute (`std::path::absolute`, which doesn't need the file to exist). The `Transmission` docs note that the file media need the terminal on the same machine (not SSH).
+
 `Transmission::File` sends the path unchanged, but kitty requires an absolute path. Canonicalize it first. Also document that file transmission doesn't work over SSH.
 
 ### 31. Windows is untested
+✅ **Done (Phase 4)** as documentation. The README lists supported terminals and gives a three-step manual checklist for Windows. The window size uses the console API for cells. Still not verified interactively.
+
 Reading VT replies from a raw console stdin depends on VT input mode. CI only runs unit tests on Windows, so this path is unverified. Add a manual test checklist, or state in the README which Windows terminals are supported (for example WezTerm).
 
 ---
