@@ -425,13 +425,13 @@ fn resolve_color(name: &str) -> Result<RGB8> {
     })
 }
 
-fn resolve_marker_style(name: &str, size: u32, color: RGB8) -> Result<Option<MarkerStyle>> {
+fn resolve_marker_style(name: &str, size: u32, color: RGB8) -> Result<MarkerStyle> {
     match name.to_ascii_lowercase().as_str() {
-        "filledcircle" => Ok(Some(MarkerStyle::FilledCircle { size, color })),
-        "hollowcircle" => Ok(Some(MarkerStyle::HollowCircle { size, color })),
-        "filledsquare" => Ok(Some(MarkerStyle::FilledSquare { size, color })),
-        "hollowsquare" => Ok(Some(MarkerStyle::HollowSquare { size, color })),
-        "none" => Ok(None),
+        "filledcircle" => Ok(MarkerStyle::FilledCircle { size, color }),
+        "hollowcircle" => Ok(MarkerStyle::HollowCircle { size, color }),
+        "filledsquare" => Ok(MarkerStyle::FilledSquare { size, color }),
+        "hollowsquare" => Ok(MarkerStyle::HollowSquare { size, color }),
+        "none" => Ok(MarkerStyle::None),
         _ => Err(format!(
             "Unknown marker style '{}'. Valid styles: FilledCircle, HollowCircle, \
              FilledSquare, HollowSquare, None",
@@ -487,20 +487,10 @@ fn build_series(spec: SeriesSpec, index: usize) -> Result<Series<f64>> {
     let marker_style = if let Some(style_name) = &spec.marker_style {
         resolve_marker_style(style_name, marker_size, effective_marker_color)?
     } else {
-        Some((palette.marker_fn)(marker_size, effective_marker_color))
+        (palette.marker_fn)(marker_size, effective_marker_color)
     };
 
-    let mut series = Series::new(&points);
-
-    if let Some(ms) = marker_style {
-        series = series.with_marker_style(ms);
-    } else {
-        // "None" marker — use zero-size invisible marker
-        series = series.with_marker_style(MarkerStyle::FilledSquare {
-            size: 0,
-            color: RGB8::new(0, 0, 0),
-        });
-    }
+    let mut series = Series::new(&points).with_marker_style(marker_style);
 
     // Resolve line style — "None" means no connecting lines (scatter plot)
     let wants_line = match spec.line_style.as_deref() {
@@ -870,22 +860,13 @@ mod tests {
     #[test]
     fn resolve_marker_style_valid() {
         let color = colors::RED;
-        assert!(
-            resolve_marker_style("FilledCircle", 2, color)
-                .unwrap()
-                .is_some()
+        assert!(resolve_marker_style("FilledCircle", 2, color).unwrap() != MarkerStyle::None);
+        assert!(resolve_marker_style("hollowcircle", 2, color).unwrap() != MarkerStyle::None);
+        assert!(resolve_marker_style("FILLEDSQUARE", 2, color).unwrap() != MarkerStyle::None);
+        assert_eq!(
+            resolve_marker_style("None", 2, color).unwrap(),
+            MarkerStyle::None
         );
-        assert!(
-            resolve_marker_style("hollowcircle", 2, color)
-                .unwrap()
-                .is_some()
-        );
-        assert!(
-            resolve_marker_style("FILLEDSQUARE", 2, color)
-                .unwrap()
-                .is_some()
-        );
-        assert!(resolve_marker_style("None", 2, color).unwrap().is_none());
     }
 
     #[test]
@@ -985,8 +966,7 @@ mod tests {
         let mut spec = SeriesSpec::new(DataSource::Inline("(1,2),(3,4)".into()));
         spec.marker_style = Some("None".into());
         let series = build_series(spec, 0).unwrap();
-        // Should have zero-size marker
-        assert_eq!(series.marker_style().size(), 0);
+        assert_eq!(*series.marker_style(), MarkerStyle::None);
     }
 
     #[test]

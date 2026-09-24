@@ -12,12 +12,26 @@ use crate::{
 };
 use rgb::RGB8;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MarkerStyle {
-    FilledSquare { size: u32, color: RGB8 },
-    HollowSquare { size: u32, color: RGB8 },
-    FilledCircle { size: u32, color: RGB8 },
-    HollowCircle { size: u32, color: RGB8 },
+    /// No marker is drawn (e.g. for a line-only series).
+    None,
+    FilledSquare {
+        size: u32,
+        color: RGB8,
+    },
+    HollowSquare {
+        size: u32,
+        color: RGB8,
+    },
+    FilledCircle {
+        size: u32,
+        color: RGB8,
+    },
+    HollowCircle {
+        size: u32,
+        color: RGB8,
+    },
 }
 
 #[derive(Debug)]
@@ -36,8 +50,10 @@ impl Default for MarkerStyle {
 }
 
 impl MarkerStyle {
+    /// Marker radius in pixels; zero for [`MarkerStyle::None`].
     pub fn size(&self) -> u32 {
         match self {
+            MarkerStyle::None => 0,
             MarkerStyle::FilledSquare { size, .. }
             | MarkerStyle::HollowSquare { size, .. }
             | MarkerStyle::FilledCircle { size, .. }
@@ -73,6 +89,7 @@ impl Marker {
 impl Drawable for Marker {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mask_points = match self.style {
+            MarkerStyle::None => Vec::new(),
             MarkerStyle::FilledSquare { color, size: _ } => {
                 let limits = self.limits();
                 let points = Point::<u32>::limit_range(limits);
@@ -183,5 +200,27 @@ impl Drawable for Marker {
             }
         };
         Ok(mask_points)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn none_marker_draws_nothing() {
+        let marker = Marker::new(Point::new(10, 10), MarkerStyle::None);
+        assert_eq!(MarkerStyle::None.size(), 0);
+        assert!(marker.get_mask().unwrap().is_empty());
+    }
+
+    #[test]
+    fn filled_square_covers_its_limits() {
+        let style = MarkerStyle::FilledSquare {
+            size: 2,
+            color: colors::RED,
+        };
+        let mask = Marker::new(Point::new(10, 10), style).get_mask().unwrap();
+        assert_eq!(mask[0].points.len(), 25);
     }
 }
