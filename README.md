@@ -2,7 +2,7 @@
 
 A Rust library for rendering 2D plots directly in [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminals. Data goes in, pixel-perfect graphs come out; no GUI, no image files, no browser!
 
-termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) to transmit rendered plots as RGB pixel data via APC escape sequences, so graphs display inline in your terminal.
+termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) to transmit rendered plots (PNG-compressed, so they are fast over SSH too) via APC escape sequences, so graphs display inline in your terminal.
 
 ## Features
 
@@ -121,8 +121,34 @@ Flag spellings from earlier versions (`--data_file`, `--marker_style`, `--line_t
 
 ## Requirements
 
-- A Kitty-compatible terminal (Kitty, WezTerm, or any terminal supporting the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/))
-- Rust 2024 edition
+- A terminal implementing the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) (see below)
+- Rust 2024 edition (Rust 1.88 or later)
+
+### Terminal support
+
+| Terminal | Status |
+|---|---|
+| Kitty, Ghostty, WezTerm | Supported |
+| Konsole (22.04+) | Implements the protocol; less tested |
+| Inside tmux 3.3+ | Supported with `set -g allow-passthrough on` (see below) |
+| GNU screen, Alacritty, GNOME Terminal, Terminal.app, iTerm2, Windows Terminal, xterm | Not supported: use `--output plot.png` |
+
+The CLI checks for graphics support before drawing (a Kitty `a=q` query) and says so instead of printing garbage when the terminal lacks it. Plots are sent as PNG, so a full-screen plot is tens of kilobytes rather than megabytes, which keeps it quick over SSH. The terminal size comes from the operating system (`TIOCGWINSZ`) when it reports pixel sizes, otherwise from `CSI 14t`/`18t` queries, otherwise it is estimated from the number of rows and columns (with a warning; set `--width`/`--height` if the plot comes out the wrong size).
+
+**tmux.** termplt wraps its output in tmux's passthrough sequence, which tmux only forwards when allowed:
+
+```bash
+tmux set -g allow-passthrough on          # current server
+echo 'set -g allow-passthrough on' >> ~/.tmux.conf   # permanently
+```
+
+The CLI stops with that hint when passthrough is off. tmux doesn't track the image itself, so it disappears when tmux redraws the pane (switching windows, resizing, scrolling in copy mode); run the command again to redraw it.
+
+**Windows.** Rendering works in terminals that implement the protocol on Windows, such as WezTerm. Terminal queries are read from the console (`CONIN$`) with VT input; this path is compiled and unit-tested in CI but has not been verified interactively yet. Windows Terminal does not implement the Kitty protocol, so use `--output` there. If you try it, please report what works:
+
+1. `termplt --data "(1,1),(2,4)" -v` shows a plot and prints the detected terminal size.
+2. `Get-Content data.csv | termplt -v` (PowerShell) works with piped input (queries still reach the console).
+3. The console is left in its normal mode afterwards (typing echoes, Ctrl-C works).
 
 ## Quick Start
 
@@ -151,8 +177,7 @@ use termplt::plotting::{
     series::Series,
     text::TextStyle,
 };
-use termplt::kitty_graphics::ctrl_seq::{PixelFormat, Transmission};
-use termplt::terminal_commands::{images::Image, responses::TermCommand};
+use termplt::terminal_commands::images::Image;
 
 fn main() {
     let num_points = 100;
@@ -196,13 +221,11 @@ fn main() {
         .unwrap()
         .get_bytes();
 
-    Image::new(
-        PixelFormat::Rgb { width, height },
-        Transmission::Direct(bytes),
-    )
-    .unwrap()
-    .display()
-    .unwrap();
+    // PNG-compress the pixels (~100x smaller than raw RGB) and display them at the cursor
+    Image::png_from_rgb(&bytes, width, height)
+        .unwrap()
+        .display()
+        .unwrap();
 }
 ```
 

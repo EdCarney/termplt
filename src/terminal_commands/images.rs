@@ -4,7 +4,10 @@ use crate::{
     terminal_commands::{csi_cmds, kitty_cmds::KittyCommand, responses::TermCommand},
     window_ctrl::{self, WindowSize},
 };
-use image::{self, ImageFormat, ImageReader};
+use image::{
+    self, ExtendedColorType, ImageEncoder, ImageFormat, ImageReader,
+    codecs::png::{CompressionType, FilterType, PngEncoder},
+};
 use std::{error::Error, fmt, io::Cursor, path::Path};
 
 #[derive(Debug)]
@@ -12,6 +15,8 @@ pub enum ImageError {
     PositioningOutsideTerminalWindow,
     DisplayRegionExceedsImageBounds,
     KittyFormatUnsupported,
+    /// A file path that cannot be sent to the terminal (it must be valid UTF-8).
+    InvalidPath(String),
 }
 
 impl fmt::Display for ImageError {
@@ -27,6 +32,9 @@ impl fmt::Display for ImageError {
                 f,
                 "Unsupported combination of pixel format and transmission medium"
             ),
+            ImageError::InvalidPath(path) => {
+                write!(f, "Image path is not valid UTF-8: {path}")
+            }
         }
     }
 }
@@ -54,6 +62,7 @@ pub struct Image {
 
 impl Image {
     pub fn new(format: PixelFormat, transmission: Transmission) -> Result<Image> {
+        let transmission = absolute_paths(transmission)?;
         let (width_pix, height_pix) = match format {
             PixelFormat::Png => match transmission {
                 Transmission::File(ref file_path) | Transmission::TempFile(ref file_path) => {
@@ -85,13 +94,48 @@ impl Image {
         })
     }
 
+    /// Encodes RGB8 pixel data (`width * height * 3` bytes, row-major) as a PNG to be sent
+    /// directly. Plots compress well (typically ~100x; a 1600x800 plot is about 30 KB instead of 3.8 MB), which matters over slow links such
+    /// as SSH, where raw pixel data can take seconds to transmit.
+    pub fn png_from_rgb(rgb: &[u8], width: u32, height: u32) -> Result<Image> {
+        let mut png = Vec::new();
+        PngEncoder::new_with_quality(&mut png, CompressionType::Default, FilterType::Adaptive)
+            .write_image(rgb, width, height, ExtendedColorType::Rgb8)?;
+        Image::new(PixelFormat::Png, Transmission::Direct(png))
+    }
+
+    /// The number of bytes of image data sent to the terminal (before base64 encoding), or the
+    /// length of the path/name for other transmission media.
+    pub fn payload_len(&self) -> usize {
+        match &self.transmission {
+            Transmission::Direct(bytes) => bytes.len(),
+            Transmission::File(name)
+            | Transmission::TempFile(name)
+            | Transmission::SharedMemory(name) => name.len(),
+        }
+    }
+
+    /// Displays the image at the cursor. The terminal moves the cursor below the image.
     pub fn display(&self) -> Result<()> {
-        let attributes = vec![
+        self.display_with_attributes(&self.base_attributes())
+    }
+
+    /// Displays the image at the cursor and leaves the cursor where it was, e.g. to move it
+    /// past the image with newlines inside a multiplexer that doesn't know the image is there.
+    pub fn display_without_moving_cursor(&self) -> Result<()> {
+        let mut attributes = self.base_attributes();
+        attributes.push(Metadata::NoCursorMovement.get_ctrl_seq());
+        self.display_with_attributes(&attributes)
+    }
+
+    fn base_attributes(&self) -> Vec<String> {
+        vec![
             Action::TransmitDisplay.get_ctrl_seq(),
             self.format.get_ctrl_seq(),
             self.transmission.get_ctrl_seq(),
-        ];
-        self.display_with_attributes(&attributes)
+            // nothing reads replies to display commands
+            Metadata::Quiet(2).get_ctrl_seq(),
+        ]
     }
 
     pub fn display_at_position(&self, positioning: PositioningType) -> Result<()> {
@@ -105,12 +149,8 @@ impl Image {
                     offset_y,
                 } = Self::get_positioning_details(&window_sz, x, y)?;
 
-                let attributes = vec![
-                    self.format.get_ctrl_seq(),
-                    self.transmission.get_ctrl_seq(),
-                    Positioning::WithCellOffset { offset_x, offset_y }.get_ctrl_seq(),
-                    Action::TransmitDisplay.get_ctrl_seq(),
-                ];
+                let mut attributes = self.base_attributes();
+                attributes.push(Positioning::WithCellOffset { offset_x, offset_y }.get_ctrl_seq());
 
                 // move cursor, write data, then move back to original position
                 let cursor_pos = csi_cmds::get_cursor_pos()?;
@@ -161,5 +201,67 @@ impl Image {
                 offset_y,
             })
         }
+    }
+}
+
+/// Kitty requires absolute paths for file transmission (relative paths would be resolved against
+/// the terminal's working directory, not ours).
+fn absolute_paths(transmission: Transmission) -> Result<Transmission> {
+    let absolute = |name: String| -> Result<String> {
+        let path = std::path::absolute(&name)?;
+        path.to_str()
+            .map(str::to_string)
+            .ok_or_else(|| ImageError::InvalidPath(path.display().to_string()).into())
+    };
+    Ok(match transmission {
+        Transmission::File(name) => Transmission::File(absolute(name)?),
+        Transmission::TempFile(name) => Transmission::TempFile(absolute(name)?),
+        other => other,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_paths_are_made_absolute() {
+        let Transmission::File(path) =
+            absolute_paths(Transmission::File(String::from("plot.png"))).unwrap()
+        else {
+            panic!("transmission type changed");
+        };
+        assert!(Path::new(&path).is_absolute());
+        assert!(path.ends_with("plot.png"));
+    }
+
+    #[test]
+    fn png_from_rgb_round_trips() {
+        let (w, h) = (40u32, 30u32);
+        let rgb: Vec<u8> = (0..w * h * 3).map(|i| (i % 251) as u8).collect();
+        let image = Image::png_from_rgb(&rgb, w, h).unwrap();
+        assert_eq!((image.width_pix, image.height_pix), (w, h));
+        let Transmission::Direct(ref png) = image.transmission else {
+            panic!("expected direct transmission");
+        };
+        let decoded = image::load_from_memory_with_format(png, ImageFormat::Png)
+            .unwrap()
+            .to_rgb8();
+        assert_eq!(decoded.as_raw(), &rgb);
+    }
+
+    #[test]
+    fn display_commands_suppress_replies() {
+        let image = Image::new(
+            PixelFormat::Rgb {
+                width: 1,
+                height: 1,
+            },
+            Transmission::Direct(vec![0, 0, 0]),
+        )
+        .unwrap();
+        let attributes = image.base_attributes();
+        assert!(attributes.contains(&String::from("q=2")));
+        assert!(attributes.contains(&String::from("a=T")));
     }
 }

@@ -2,10 +2,19 @@ pub trait CtrlSeq {
     fn get_ctrl_seq(&self) -> String;
 }
 
+/// How image data reaches the terminal.
+///
+/// Only `Direct` works when the terminal runs on another machine (e.g. over SSH); the other media
+/// name a file or shared-memory object that the terminal itself must be able to open.
 pub enum Transmission {
+    /// The data is sent inline in the escape sequence.
     Direct(Vec<u8>),
+    /// A file the terminal reads (made absolute by `Image::new`).
     File(String),
+    /// A temporary file the terminal reads and then deletes. Kitty only deletes files in a known
+    /// temporary directory whose name contains `tty-graphics-protocol`.
     TempFile(String),
+    /// A POSIX shared-memory object name.
     SharedMemory(String),
 }
 
@@ -63,6 +72,11 @@ pub enum Metadata {
     Id(u32),
     MoreData(bool),
     StackingOrder(u16),
+    /// Suppresses the terminal's replies: `Quiet(1)` suppresses `OK` replies, `Quiet(2)` also
+    /// suppresses errors. Replies nobody reads would otherwise show up as typed input.
+    Quiet(u8),
+    /// Leaves the cursor where it is instead of moving it past the image.
+    NoCursorMovement,
 }
 
 impl CtrlSeq for Metadata {
@@ -71,6 +85,8 @@ impl CtrlSeq for Metadata {
             Metadata::Id(id) => format!("i={id}"),
             Metadata::MoreData(more) => format!("m={}", if *more { 1 } else { 0 }),
             Metadata::StackingOrder(z) => format!("z={z}"),
+            Metadata::Quiet(level) => format!("q={level}"),
+            Metadata::NoCursorMovement => String::from("C=1"),
         }
     }
 }

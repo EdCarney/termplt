@@ -1,6 +1,7 @@
 mod cli;
 mod data;
 mod series;
+mod terminal;
 
 use clap::{CommandFactory, Parser};
 use cli::Cli;
@@ -14,8 +15,7 @@ use std::{
     path::Path,
 };
 use termplt::{
-    WindowSize, get_window_size,
-    kitty_graphics::ctrl_seq::{PixelFormat, Transmission},
+    WindowSize,
     plotting::{
         axes::{Axes, AxesPositioning},
         canvas::{BufferType, TerminalCanvas},
@@ -25,7 +25,7 @@ use termplt::{
         line::LineStyle,
         text::TextStyle,
     },
-    terminal_commands::images::Image,
+    terminal_commands::{images::Image, kitty_cmds::Passthrough},
 };
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -34,7 +34,6 @@ pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const DEFAULT_OUTPUT_SIZE: (u32, u32) = (800, 600);
 /// Smallest size used when fitting the image to the terminal.
 const MIN_SIZE: (u32, u32) = (200, 150);
-
 fn main() {
     let cli = Cli::parse();
     if let Err(e) = run(cli) {
@@ -125,32 +124,14 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     // an image file needs no terminal; displaying one needs a terminal to size it and draw on
+    let passthrough = Passthrough::detect();
     let window = match &cli.output {
         Some(_) => None,
-        None => {
-            if !io::stdout().is_terminal() {
-                return Err(
-                    "stdout is not a terminal. termplt draws plots using the Kitty \
-                            graphics protocol and must write to a terminal that supports it \
-                            (e.g. Kitty, WezTerm, Ghostty); use --output plot.png to write an \
-                            image file instead."
-                        .into(),
-                );
-            }
-            let window = get_window_size()?;
-            if cli.verbose {
-                eprintln!(
-                    "[verbose] terminal: {}x{} cells, {}x{} pixels ({} px/col, {} px/row)",
-                    window.cols,
-                    window.rows,
-                    window.x_pix,
-                    window.y_pix,
-                    window.pix_per_col,
-                    window.pix_per_row
-                );
-            }
-            Some(window)
-        }
+        None => Some(terminal::prepare(
+            &terminal::Tty,
+            cli.verbose,
+            &mut io::stderr(),
+        )?),
     };
 
     let (width, height) = canvas_size(cli.width, cli.height, window.as_ref());
@@ -187,13 +168,28 @@ fn run(cli: Cli) -> Result<()> {
             }
         }
         None => {
-            Image::new(
-                PixelFormat::Rgb { width, height },
-                Transmission::Direct(bytes),
-            )?
-            .display()?;
-            // Print a newline so the shell prompt appears below the image
-            println!();
+            let image = Image::png_from_rgb(&bytes, width, height)?;
+            if cli.verbose {
+                eprintln!(
+                    "[verbose] sending {} bytes of PNG data ({} bytes uncompressed)",
+                    image.payload_len(),
+                    bytes.len()
+                );
+            }
+            match (passthrough, &window) {
+                (Passthrough::Tmux, Some(window)) => {
+                    // tmux doesn't know the image is there, so it wouldn't account for the
+                    // terminal moving the cursor below it; move the cursor ourselves instead
+                    image.display_without_moving_cursor()?;
+                    let rows = terminal::rows_covered(height, window);
+                    print!("{}", "\n".repeat(rows as usize));
+                }
+                _ => {
+                    image.display()?;
+                    // Print a newline so the shell prompt appears below the image
+                    println!();
+                }
+            }
         }
     }
 

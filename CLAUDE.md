@@ -68,7 +68,14 @@ The `Drawable` trait (`fn get_mask(&self) -> Result<Vec<MaskPoints>>`) is implem
 
 ### Kitty Protocol (`kitty_graphics/`)
 
-After rendering, the canvas bytes are sent via Kitty APC sequences: `encoding.rs` does custom RFC 4648 base64 (with padding), `kitty_cmds.rs` chunks to 4096-byte payloads, `ctrl_seq.rs` provides protocol key=value formatting. `TermCommand` writes commands to stdout; `execute_with_response` writes queries to `/dev/tty` (the `CONIN$`/`CONOUT$` console on Windows, so piped stdin does not interfere) followed by a DA1 sentinel, reads the reply with a timeout under an RAII raw-mode guard, and fails fast with `TerminalCommandError::Unsupported` when the DA1 reply arrives first.
+After rendering, the canvas bytes are PNG-encoded (`Image::png_from_rgb`, `f=100`: about 100x smaller than raw RGB) and sent via Kitty APC sequences. `encoding.rs` does custom RFC 4648 base64 (with padding). `kitty_cmds.rs` chunks to 4096-byte payloads, wraps each chunk in tmux DCS passthrough when `$TMUX` is set (`Passthrough`), and provides `query_support()` (an `a=q` query). `ctrl_seq.rs` provides protocol key=value formatting. Display commands send `q=2` so no replies are left in the input; `File`/`TempFile` paths are made absolute. `TermCommand` writes commands to stdout. `execute_with_response` writes queries to `/dev/tty` (the `CONIN$`/`CONOUT$` console on Windows, so piped stdin does not interfere) followed by a DA1 sentinel, and reads the reply with a timeout under an RAII raw-mode guard. It fails fast with `TerminalCommandError::Unsupported` when the DA1 reply arrives first.
+
+`get_window_size()` (`window_ctrl.rs`) takes the size from the OS (`TIOCGWINSZ` via crossterm) and only queries what is missing (`CSI 14t` pixels, `18t` cells). The CLI's `terminal::prepare` (`src/bin/termplt/terminal.rs`; terminal and OS access goes through the `Terminal` trait so every branch is unit-tested with a fake) does the following, in order:
+- checks stdout is a TTY;
+- runs the graphics query, or in tmux checks `allow-passthrough`;
+- gets the window size, falling back to an estimate from the cell count.
+
+In tmux it draws with `C=1` and prints the newlines itself.
 
 ### Line Drawing (`line.rs`)
 
@@ -83,6 +90,7 @@ Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters r
 - `cli.rs`: clap derive definition; `--completions <SHELL>` prints a `clap_complete` script (static: flags, `--marker`/`--line` possible values, color names via `ColorParser`, file-path hints). Style options (`--color`, `--marker`, `--line`, ...) are defaults for every series; old snake_case flags are hidden aliases.
 - `series.rs`: `--series` spec parsing (`key=value` pairs; a `,`/`;` only splits when followed by `key=`, so `data=(1,2),(3,4)` works), style resolution, palette, marker/line name parsing.
 - `data.rs`: inline point parsing and `Table` (CSV/TSV/whitespace, header detection, columns by name or 1-based index, `index` = row number, missing values skipped).
+- `terminal.rs`: graphics-support check, tmux passthrough check, window size with estimate fallback (see Kitty Protocol above).
 - `main.rs`: collects series (FILE args × y columns, then `--data`, then `--series`; piped stdin when nothing else is given, read once and cached), sizes the canvas (fits the terminal, or 800x600 with `--output`), then displays via Kitty or writes an image.
 
 ## Testing
