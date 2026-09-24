@@ -6,7 +6,7 @@ use super::{
     point::{Point, PointCollection},
     series::Series,
 };
-use crate::common::Result;
+use crate::{Error, common::Result};
 
 /// A set of series drawn on shared axes, with optional axis limits, axes and grid lines.
 #[derive(Debug, Clone, Default)]
@@ -95,7 +95,7 @@ impl Graph {
             .collect::<Vec<Point<f64>>>()
             .as_slice()
             .limits()
-            .ok_or("Graph has no data points to plot (non-finite values are ignored)")?;
+            .ok_or(Error::NoData)?;
 
         // explicit limits override data limits
         let (x_min, x_max) = self
@@ -111,15 +111,9 @@ impl Graph {
     }
 
     fn validate_limits(&self) -> Result<()> {
-        let check = |axis: &str, (min, max): (f64, f64)| -> Result<()> {
-            if !min.is_finite() || !max.is_finite() {
-                return Err(format!("{axis} limits must be finite, got {min}..{max}").into());
-            }
-            if min > max {
-                return Err(format!(
-                    "{axis} limits are inverted: min ({min}) is greater than max ({max})"
-                )
-                .into());
+        let check = |axis: &'static str, (min, max): (f64, f64)| -> Result<()> {
+            if !min.is_finite() || !max.is_finite() || min > max {
+                return Err(Error::InvalidLimits { axis, min, max });
             }
             Ok(())
         };
@@ -171,10 +165,7 @@ impl Graph {
     /// axes without explicit limits (so data does not touch the axes), and zero-width
     /// dimensions (e.g. a single point or a constant series) expanded so the data is centered.
     pub fn view_limits(&self) -> Result<Limits<f64>> {
-        let limits = self
-            .visible()?
-            .limits()
-            .map_err(|_| "No data points lie within the specified graph limits")?;
+        let limits = self.visible()?.limits().map_err(|_| Error::NoVisibleData)?;
 
         let (span_x, span_y) = limits.span();
         let margin = Point::new(
@@ -193,7 +184,7 @@ impl Graph {
 
         let (span_x, span_y) = limits.span();
         if !span_x.is_finite() || !span_y.is_finite() {
-            return Err("Data range is too large to plot (exceeds the range of f64)".into());
+            return Err(Error::DataRangeTooLarge);
         }
         Ok(limits)
     }
@@ -635,9 +626,6 @@ mod tests {
         let g = graph_with_data().with_x_limits(100, 200);
         let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
         let err = g.scale(new_limits).unwrap_err();
-        assert!(
-            err.to_string().contains("No data points lie within"),
-            "{err}"
-        );
+        assert!(matches!(err, Error::NoVisibleData), "{err}");
     }
 }

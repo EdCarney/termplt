@@ -6,9 +6,9 @@
 use crate::Result;
 use std::io::{self, IsTerminal, Write};
 use termplt::{
-    WindowSize,
+    Error, WindowSize,
     terminal_commands::{
-        kitty_cmds::{self, GraphicsSupportError, Passthrough},
+        kitty_cmds::{self, Passthrough},
         responses::TerminalCommandError,
     },
 };
@@ -22,11 +22,11 @@ pub trait Terminal {
     fn stdout_is_terminal(&self) -> bool;
     fn passthrough(&self) -> Passthrough;
     /// See [`kitty_cmds::query_support`].
-    fn query_support(&self) -> Result<()>;
+    fn query_support(&self) -> termplt::Result<()>;
     /// Whether tmux would drop the image because `allow-passthrough` is off.
     fn tmux_passthrough_disabled(&self) -> bool;
     /// See [`termplt::get_window_size`].
-    fn window_size(&self) -> Result<WindowSize>;
+    fn window_size(&self) -> termplt::Result<WindowSize>;
     /// The size in cells, as (cols, rows).
     fn cell_count(&self) -> Option<(u16, u16)>;
 }
@@ -43,7 +43,7 @@ impl Terminal for Tty {
         Passthrough::detect()
     }
 
-    fn query_support(&self) -> Result<()> {
+    fn query_support(&self) -> termplt::Result<()> {
         kitty_cmds::query_support()
     }
 
@@ -57,7 +57,7 @@ impl Terminal for Tty {
             })
     }
 
-    fn window_size(&self) -> Result<WindowSize> {
+    fn window_size(&self) -> termplt::Result<WindowSize> {
         termplt::get_window_size()
     }
 
@@ -96,20 +96,17 @@ pub fn prepare(term: &impl Terminal, verbose: bool, log: &mut impl Write) -> Res
                     )?;
                 }
             }
-            Err(e) if e.is::<GraphicsSupportError>() => {
+            Err(e @ (Error::GraphicsUnsupported | Error::GraphicsRejected(_))) => {
                 return Err(
                     format!("{e}. Use --output plot.png to write an image file instead.").into(),
                 );
             }
             // a terminal that answers nothing at all may still draw images; try anyway
-            Err(e) => match e.downcast_ref::<TerminalCommandError>() {
-                Some(TerminalCommandError::Timeout(_)) => writeln!(
-                    log,
-                    "warning: the terminal did not answer a graphics support query; \
-                     drawing anyway"
-                )?,
-                _ => writeln!(log, "warning: could not check for graphics support: {e}")?,
-            },
+            Err(Error::Terminal(TerminalCommandError::Timeout(_))) => writeln!(
+                log,
+                "warning: the terminal did not answer a graphics support query; drawing anyway"
+            )?,
+            Err(e) => writeln!(log, "warning: could not check for graphics support: {e}")?,
         },
         Passthrough::Tmux => {
             if term.tmux_passthrough_disabled() {
@@ -190,9 +187,9 @@ mod tests {
     struct FakeTerminal {
         stdout_is_terminal: bool,
         passthrough: Passthrough,
-        support: fn() -> Result<()>,
+        support: fn() -> termplt::Result<()>,
         passthrough_disabled: bool,
-        window_size: fn() -> Result<WindowSize>,
+        window_size: fn() -> termplt::Result<WindowSize>,
         cell_count: Option<(u16, u16)>,
         queries: Cell<u32>,
         tmux_checks: Cell<u32>,
@@ -222,7 +219,7 @@ mod tests {
             self.passthrough
         }
 
-        fn query_support(&self) -> Result<()> {
+        fn query_support(&self) -> termplt::Result<()> {
             self.queries.set(self.queries.get() + 1);
             (self.support)()
         }
@@ -232,7 +229,7 @@ mod tests {
             self.passthrough_disabled
         }
 
-        fn window_size(&self) -> Result<WindowSize> {
+        fn window_size(&self) -> termplt::Result<WindowSize> {
             (self.window_size)()
         }
 
@@ -252,8 +249,10 @@ mod tests {
         }
     }
 
-    fn no_window_size() -> Result<WindowSize> {
-        Err("no reply to CSI 14t".into())
+    fn no_window_size() -> termplt::Result<WindowSize> {
+        Err(Error::Terminal(TerminalCommandError::InvalidResponse(
+            "no reply to CSI 14t".into(),
+        )))
     }
 
     /// Runs `prepare`, returning its result and everything it logged.
@@ -296,7 +295,7 @@ mod tests {
     #[test]
     fn unsupported_terminal_is_an_error_with_output_hint() {
         let term = FakeTerminal {
-            support: || Err(Box::new(GraphicsSupportError::Unsupported)),
+            support: || Err(Error::GraphicsUnsupported),
             ..Default::default()
         };
         let err = run(&term, false).0.unwrap_err().to_string();
@@ -307,7 +306,7 @@ mod tests {
     #[test]
     fn rejected_test_image_is_an_error() {
         let term = FakeTerminal {
-            support: || Err(Box::new(GraphicsSupportError::Rejected("EINVAL".into()))),
+            support: || Err(Error::GraphicsRejected("EINVAL".into())),
             ..Default::default()
         };
         let err = run(&term, false).0.unwrap_err().to_string();
@@ -318,7 +317,7 @@ mod tests {
     fn silent_terminal_warns_and_continues() {
         let term = FakeTerminal {
             support: || {
-                Err(Box::new(TerminalCommandError::Timeout(
+                Err(Error::Terminal(TerminalCommandError::Timeout(
                     Duration::from_secs(2),
                 )))
             },
@@ -332,7 +331,7 @@ mod tests {
     #[test]
     fn other_query_failures_warn_and_continue() {
         let term = FakeTerminal {
-            support: || Err("terminal input closed".into()),
+            support: || Err(Error::Io(std::io::Error::other("terminal input closed"))),
             ..Default::default()
         };
         let (result, log) = run(&term, false);

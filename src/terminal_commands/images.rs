@@ -1,4 +1,5 @@
 use crate::{
+    Error,
     common::Result,
     kitty_graphics::ctrl_seq::*,
     terminal_commands::{csi_cmds, kitty_cmds::KittyCommand, responses::TermCommand},
@@ -8,38 +9,7 @@ use image::{
     self, ExtendedColorType, ImageEncoder, ImageFormat, ImageReader,
     codecs::png::{CompressionType, FilterType, PngEncoder},
 };
-use std::{error::Error, fmt, io::Cursor, path::Path};
-
-#[derive(Debug)]
-pub enum ImageError {
-    PositioningOutsideTerminalWindow,
-    DisplayRegionExceedsImageBounds,
-    KittyFormatUnsupported,
-    /// A file path that cannot be sent to the terminal (it must be valid UTF-8).
-    InvalidPath(String),
-}
-
-impl fmt::Display for ImageError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ImageError::PositioningOutsideTerminalWindow => {
-                write!(f, "Image position lies outside the terminal window")
-            }
-            ImageError::DisplayRegionExceedsImageBounds => {
-                write!(f, "Display region exceeds the image bounds")
-            }
-            ImageError::KittyFormatUnsupported => write!(
-                f,
-                "Unsupported combination of pixel format and transmission medium"
-            ),
-            ImageError::InvalidPath(path) => {
-                write!(f, "Image path is not valid UTF-8: {path}")
-            }
-        }
-    }
-}
-
-impl Error for ImageError {}
+use std::{io::Cursor, path::Path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PositioningType {
@@ -76,7 +46,7 @@ impl Image {
                 }
                 // the size of a PNG in shared memory cannot be read without mapping it
                 Transmission::SharedMemory(_) => {
-                    return Err(Box::new(ImageError::KittyFormatUnsupported));
+                    return Err(Error::UnsupportedTransmission);
                 }
             },
             PixelFormat::PngBounded { cols, rows } => {
@@ -190,7 +160,7 @@ impl Image {
     ) -> Result<PositionDetails> {
         // check positioning specification is valid
         if x_pix > window_sz.x_pix || y_pix > window_sz.y_pix {
-            Err(Box::new(ImageError::PositioningOutsideTerminalWindow))
+            Err(Error::PositionOutsideWindow)
         } else {
             let row = (y_pix / window_sz.pix_per_row) + 1;
             let col = (x_pix / window_sz.pix_per_col) + 1;
@@ -213,7 +183,7 @@ fn absolute_paths(transmission: Transmission) -> Result<Transmission> {
         let path = std::path::absolute(&name)?;
         path.to_str()
             .map(str::to_string)
-            .ok_or_else(|| ImageError::InvalidPath(path.display().to_string()).into())
+            .ok_or_else(|| Error::InvalidPath(path.display().to_string()))
     };
     Ok(match transmission {
         Transmission::File(name) => Transmission::File(absolute(name)?),

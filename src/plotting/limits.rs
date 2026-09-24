@@ -32,14 +32,29 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
         Limits { min, max }
     }
 
-    /// Creates a new instance, returning an error if `min` exceeds `max` in either dimension or
-    /// if either point is not comparable (e.g. contains NaN).
-    pub fn try_new(min: Point<T>, max: Point<T>) -> crate::common::Result<Limits<T>> {
-        if min.x <= max.x && min.y <= max.y {
-            Ok(Limits { min, max })
-        } else {
-            Err(format!("Invalid limits: min {min:?} must not exceed max {max:?}").into())
+    /// Creates a new instance, returning [`Error::InvalidLimits`](crate::Error::InvalidLimits)
+    /// if `min` exceeds `max` in either dimension or if either point is not comparable (e.g.
+    /// contains NaN).
+    pub fn try_new(min: Point<T>, max: Point<T>) -> crate::Result<Limits<T>> {
+        let invalid = |axis, min: T, max: T| crate::Error::InvalidLimits {
+            axis,
+            min: min.to_f64(),
+            max: max.to_f64(),
+        };
+        // NaN compares as unordered, which is also invalid
+        let ordered = |a: T, b: T| {
+            matches!(
+                a.partial_cmp(&b),
+                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            )
+        };
+        if !ordered(min.x, max.x) {
+            return Err(invalid("x", min.x, max.x));
         }
+        if !ordered(min.y, max.y) {
+            return Err(invalid("y", min.y, max.y));
+        }
+        Ok(Limits { min, max })
     }
 
     pub fn update_min(&mut self, new_min: Point<T>) {

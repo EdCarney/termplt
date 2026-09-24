@@ -8,7 +8,7 @@ use super::{
     text::{Label, Text, TextPositioning, TextStyle},
     ticks::{AxisTicks, fit_ticks},
 };
-use crate::common::Result;
+use crate::{Error, common::Result};
 use rgb::RGB8;
 
 #[derive(Debug)]
@@ -179,7 +179,10 @@ impl TerminalCanvas {
     /// Consumes all drawable assets and draws them on the canvas.
     pub fn draw(mut self) -> Result<Self> {
         if self.canvas.pixels.is_empty() || self.canvas.pixels[0].is_empty() {
-            return Err("Canvas width and height must be nonzero".into());
+            return Err(Error::CanvasTooSmall {
+                plot_width: 0,
+                plot_height: 0,
+            });
         }
 
         if let Some(graph) = self.graph.take() {
@@ -283,7 +286,7 @@ impl TerminalCanvas {
                 s.marker_style().size().max(line_thickness)
             })
             .max()
-            .ok_or("Graph has no series data; cannot compute drawable limits")?;
+            .ok_or(Error::NoData)?;
 
         // axes are drawn just outside the plot area, so leave room for their thickness
         let axes = graph.axes().cloned();
@@ -421,16 +424,10 @@ fn to_canvas(value: f64, view_min: f64, view_max: f64, plot_min: f64, plot_max: 
 
 fn check_area(min: &Point<u32>, max: &Point<u32>) -> Result<()> {
     if min.x >= max.x || min.y >= max.y {
-        return Err(format!(
-            "Canvas too small for the configured buffer and graph elements. \
-             Drawable area would be {}x{} pixels (min={:?}, max={:?}). \
-             Try a larger terminal window or smaller buffer/marker sizes.",
-            max.x.saturating_sub(min.x),
-            max.y.saturating_sub(min.y),
-            min,
-            max,
-        )
-        .into());
+        return Err(Error::CanvasTooSmall {
+            plot_width: max.x.saturating_sub(min.x),
+            plot_height: max.y.saturating_sub(min.y),
+        });
     }
     Ok(())
 }
@@ -476,8 +473,13 @@ mod tests {
             .with_buffer(BufferType::Uniform(30))
             .with_graph(Graph::new().with_series(Series::new(&points)))
             .draw();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Canvas too small"));
+        assert!(matches!(result, Err(Error::CanvasTooSmall { .. })));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("canvas is too small")
+        );
     }
 
     #[test]

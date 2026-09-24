@@ -268,10 +268,14 @@ impl Label {
 
 impl Drawable for Label {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
-        let height_shift = i32::try_from(self.txt.height / 2)?;
+        // text sizes are bounded by the canvas, so these conversions saturate only in theory
+        let height_shift = i32::try_from(self.txt.height / 2).unwrap_or(i32::MAX);
         // horizontal offset of the text's left edge from the anchor point
         let (anchor, mut x_offset) = match &self.pos {
-            TextPositioning::Centered(center) => (center, -i32::try_from(self.txt.width / 2)?),
+            TextPositioning::Centered(center) => (
+                center,
+                -i32::try_from(self.txt.width / 2).unwrap_or(i32::MAX),
+            ),
             TextPositioning::LeftAligned(left) => (left, 0),
         };
 
@@ -279,7 +283,7 @@ impl Drawable for Label {
         for c in &self.txt.chars {
             let char_lower_left = anchor.convert_to_i32() + Point::new(x_offset, -height_shift);
             masks.extend(c.get_mask(char_lower_left.convert_to_u32(), self.txt.style.clone())?);
-            x_offset += i32::try_from(c.width())?;
+            x_offset = x_offset.saturating_add(i32::try_from(c.width()).unwrap_or(i32::MAX));
         }
         Ok(masks)
     }
