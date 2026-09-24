@@ -19,12 +19,18 @@ struct CanvasBuffer {
     bottom: u32,
 }
 
+/// Empty space left around the edges of the canvas, in pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BufferType {
+    /// No space.
     None,
+    /// The same space on every side.
     Uniform(u32),
+    /// Space at the top and bottom.
     TopBottom(u32, u32),
+    /// Space on the left and right.
     LeftRight(u32, u32),
+    /// Space on each side: top, bottom, left, right.
     TopBottomLeftRight(u32, u32, u32, u32),
 }
 
@@ -131,6 +137,8 @@ struct Layout {
     labels: Vec<Label>,
 }
 
+/// A pixel canvas that a [`Graph`] and [`Label`]s are drawn on. [`Plot`](crate::Plot) builds
+/// one for you; use it directly for full control over the layout.
 #[derive(Debug)]
 pub struct TerminalCanvas {
     canvas: Canvas,
@@ -142,6 +150,7 @@ pub struct TerminalCanvas {
 }
 
 impl TerminalCanvas {
+    /// Creates a canvas of `width` x `height` pixels filled with `background`.
     pub fn new(width: u32, height: u32, background: RGB8) -> TerminalCanvas {
         TerminalCanvas {
             canvas: Canvas::new(width, height, background),
@@ -163,11 +172,13 @@ impl TerminalCanvas {
         self
     }
 
+    /// Sets the graph to draw.
     pub fn with_graph(mut self, graph: Graph) -> Self {
         self.graph = Some(graph);
         self
     }
 
+    /// Adds a text label, drawn after (over) the graph.
     pub fn with_label(mut self, label: Label) -> Self {
         self.labels.push(label);
         self

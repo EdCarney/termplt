@@ -2,17 +2,30 @@ use super::{
     canvas::Canvas,
     colors,
     common::{Convertable, Drawable, Graphable, IntConvertable, MaskPoints},
-    limits::Limits,
     line_positioning::LinePositioning,
     point::Point,
 };
 use crate::{common::Result, plotting::common::UIntConvertable};
 use rgb::RGB8;
 
+/// How a line is drawn. A thickness of 0 is one pixel wide; each step adds a pixel on both
+/// sides.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum LineStyle {
-    Solid { color: RGB8, thickness: u32 },
-    Dashed { color: RGB8, thickness: u32 },
+    /// A continuous line.
+    Solid {
+        /// Line color.
+        color: RGB8,
+        /// Extra pixels on each side of a one-pixel line.
+        thickness: u32,
+    },
+    /// A dashed line (6 pixels on, 4 off).
+    Dashed {
+        /// Line color.
+        color: RGB8,
+        /// Extra pixels on each side of a one-pixel line.
+        thickness: u32,
+    },
 }
 
 impl Default for LineStyle {
@@ -49,7 +62,7 @@ impl LineStyle {
 }
 
 #[derive(Debug, Clone)]
-pub struct Line<T: Graphable> {
+pub(crate) struct Line<T: Graphable> {
     style: LineStyle,
     positioning: LinePositioning<T>,
 }
@@ -64,32 +77,20 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Line<T> {
 }
 
 impl<T: Graphable> Line<T> {
-    pub fn new(positioning: LinePositioning<T>, style: LineStyle) -> Line<T> {
+    pub(crate) fn new(positioning: LinePositioning<T>, style: LineStyle) -> Line<T> {
         Line { style, positioning }
     }
 
-    pub fn style(&self) -> &LineStyle {
+    pub(crate) fn style(&self) -> &LineStyle {
         &self.style
-    }
-
-    pub fn limits(&self) -> Limits<T> {
-        self.positioning.limits()
     }
 }
 
 impl Line<i32> {
-    /// Gets drawable limits for the line.
-    pub fn drawable_limits(&self) -> Limits<u32> {
-        let limits = self.limits().convert_to_u32();
-        let min = *limits.min() - self.style.thickness();
-        let max = *limits.max() + self.style.thickness();
-        Limits::new(min, max)
-    }
-
     // Gets the full point set between the start and end of the line. Note that this does not
     // take into account empy space for dashed lines. Additionally this fn assumes the line is
     // already in a plottable space.
-    pub fn full_drawable_points(&self) -> Vec<Point<u32>> {
+    pub(crate) fn full_drawable_points(&self) -> Vec<Point<u32>> {
         match self.positioning {
             LinePositioning::Vertical { .. } | LinePositioning::Horizontal { .. } => {
                 Point::limit_range(self.positioning.limits())

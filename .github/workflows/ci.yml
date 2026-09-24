@@ -48,6 +48,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Docs (missing docs and broken links fail)
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

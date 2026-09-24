@@ -60,13 +60,18 @@ impl<T> Graphable for T where
 {
 }
 
+/// Pixels (in canvas coordinates, with (0, 0) at the lower left) to paint in one color.
 #[derive(Debug)]
 pub struct MaskPoints {
+    /// The pixels.
     pub points: Vec<Point<u32>>,
+    /// Their color.
     pub color: RGB8,
 }
 
+/// Something that can be rendered to pixels.
 pub trait Drawable {
+    /// The pixels to paint, in drawing order.
     fn get_mask(&self) -> Result<Vec<MaskPoints>>;
 }
 

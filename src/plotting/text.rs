@@ -8,14 +8,18 @@ use super::{
 use crate::common::Result;
 use rgb::RGB8;
 
+/// Where a label is anchored.
 #[derive(Debug, Clone)]
 pub enum TextPositioning {
+    /// Centered on the point.
     Centered(Point<u32>),
+    /// The left edge at the point, vertically centered.
     LeftAligned(Point<u32>),
     // to add...
 }
 
 impl TextPositioning {
+    /// The same kind of positioning at another point.
     pub fn clone_with(&self, new_point: Point<u32>) -> Self {
         match self {
             Self::Centered(_) => Self::Centered(new_point),
@@ -23,6 +27,7 @@ impl TextPositioning {
         }
     }
 
+    /// The anchor point.
     pub fn point(&self) -> &Point<u32> {
         match self {
             Self::Centered(point) => point,
@@ -32,30 +37,29 @@ impl TextPositioning {
 }
 
 #[derive(Debug, Clone)]
-pub struct TextChar {
-    value: char,
+pub(crate) struct TextChar {
     bitmap: Vec<Vec<bool>>,
 }
 
 impl TextChar {
-    pub fn new(value: char, style: &TextStyle) -> TextChar {
+    pub(crate) fn new(value: char, style: &TextStyle) -> TextChar {
         let bitmap = numbers::get_bitmap(value, style);
-        TextChar { value, bitmap }
+        TextChar { bitmap }
     }
 
-    pub fn width(&self) -> usize {
+    pub(crate) fn width(&self) -> usize {
         self.bitmap.iter().map(|row| row.len()).max().unwrap_or(0)
     }
 
-    pub fn height(&self) -> usize {
+    pub(crate) fn height(&self) -> usize {
         self.bitmap.len()
     }
 
-    pub fn value(&self) -> char {
-        self.value
-    }
-
-    pub fn get_mask(&self, lower_left: Point<u32>, style: TextStyle) -> Result<Vec<MaskPoints>> {
+    pub(crate) fn get_mask(
+        &self,
+        lower_left: Point<u32>,
+        style: TextStyle,
+    ) -> Result<Vec<MaskPoints>> {
         let mut points = Vec::new();
         for i in 0..self.height() {
             for j in 0..self.width() {
@@ -71,6 +75,7 @@ impl TextChar {
     }
 }
 
+/// Color, scale and padding of bitmap text.
 #[derive(Debug, Clone)]
 pub struct TextStyle {
     color: RGB8,
@@ -99,6 +104,7 @@ impl TextStyle {
         }
     }
 
+    /// White-on-nothing text of scale 1 without padding, in `color`.
     pub fn with_color(color: RGB8) -> TextStyle {
         TextStyle {
             color,
@@ -107,19 +113,24 @@ impl TextStyle {
         }
     }
 
+    /// The text color.
     pub fn color(&self) -> RGB8 {
         self.color
     }
 
+    /// The pixel scale factor (each font pixel becomes `scale` x `scale` pixels).
     pub fn scale(&self) -> usize {
         self.scale
     }
 
+    /// Padding in pixels around each character.
     pub fn padding(&self) -> usize {
         self.padding
     }
 }
 
+/// A line of bitmap text. The font covers `0-9 . - e` and space; other characters are drawn
+/// as a box.
 #[derive(Debug, Clone)]
 pub struct Text {
     style: TextStyle,
@@ -129,6 +140,7 @@ pub struct Text {
 }
 
 impl Text {
+    /// Creates text in the given style.
     pub fn new(text: &str, style: TextStyle) -> Text {
         let chars = text
             .chars()
@@ -145,16 +157,14 @@ impl Text {
         }
     }
 
+    /// Height in pixels.
     pub fn height(&self) -> usize {
         self.height
     }
 
+    /// Width in pixels.
     pub fn width(&self) -> usize {
         self.width
-    }
-
-    pub fn chars(&self) -> &[TextChar] {
-        &self.chars
     }
 
     /// Renders a number with `sig_figs` significant figures (at least 1).
@@ -218,6 +228,7 @@ fn num_to_str(number: f64, sig_figs: usize) -> String {
     String::from_iter(trunc_str)
 }
 
+/// Text placed on the canvas.
 #[derive(Debug, Clone)]
 pub struct Label {
     txt: Text,
@@ -225,18 +236,22 @@ pub struct Label {
 }
 
 impl Label {
+    /// Places `txt` at `pos`.
     pub fn new(txt: Text, pos: TextPositioning) -> Label {
         Label { txt, pos }
     }
 
+    /// The text.
     pub fn txt(&self) -> &Text {
         &self.txt
     }
 
+    /// Where it is placed.
     pub fn pos(&self) -> &TextPositioning {
         &self.pos
     }
 
+    /// The pixels the label covers.
     pub fn limits(&self) -> Limits<u32> {
         match &self.pos {
             TextPositioning::Centered(center) => {

@@ -1,7 +1,10 @@
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
 mod common;
 mod error;
 mod kitty_graphics;
 mod plot;
+/// The building blocks: series, graphs, styles and the canvas they are drawn on.
 pub mod plotting;
 pub mod prelude;
 pub mod terminal;

@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build                          # Build
 cargo test                           # Run all tests (unit tests in modules + tests/golden.rs + tests/properties.rs)
-cargo test plotting::graph_limits    # Run tests for a specific module
-cargo test scale_to_with_zero_x_span # Run a single test by name
+cargo test plotting::graph          # Run tests for a specific module
+cargo test draw_into_matches_get_mask # Run a single test by name
 cargo clippy --all-targets -- -D warnings  # Lint (CI fails on any warning)
 cargo fmt --check                    # Formatting (enforced in CI)
 TERMPLT_UPDATE_SNAPSHOTS=1 cargo test --test golden  # Regenerate golden PNGs after an intentional rendering change (review them!)
@@ -18,34 +18,31 @@ cargo run -- data.csv -o plot.png    # Write a PNG instead (no terminal needed; 
 cargo test --no-default-features     # Library only, without the clap-based CLI
 ```
 
-CI (`.github/workflows/ci.yml`): build + test on Linux and Windows (also with `--no-default-features`), clippy, rustfmt. One feature, `cli` (default), gates the binary and its `clap` dependency. No custom build scripts. Edition 2024 (let-chains are used, so Rust >= 1.88).
+CI (`.github/workflows/ci.yml`): build + test on Linux and Windows (also with `--no-default-features`), clippy, `cargo doc` with `-D warnings` (the crate has `#![warn(missing_docs)]`, and README.md is the crate doc, so its Rust examples are doctests), rustfmt. One feature, `cli` (default), gates the binary and its `clap` dependency. No custom build scripts. Edition 2024 (let-chains are used, so Rust >= 1.88).
 
 ## Architecture
 
-**termplt** is a Rust library for rendering 2D plots directly in Kitty-compatible terminals using the Kitty graphics protocol. User data flows through a generic type system, gets scaled to pixel coordinates, rendered to an in-memory canvas, then transmitted as RGB pixel data via Kitty APC escape sequences.
+**termplt** is a Rust library for rendering 2D plots directly in Kitty-compatible terminals using the Kitty graphics protocol. User data of any numeric type is stored as `f64`, scaled to pixel coordinates, rendered to an in-memory RGB canvas, then PNG-encoded and transmitted via Kitty APC escape sequences.
 
-### Core Trait Hierarchy (`plotting/common.rs`)
+Public API layers, top-down:
+- `Plot` (`plot.rs`): one-call builder (`line`/`scatter`/`line_points`/`series`, limits, size, background, grid; `show`, `save_png`, `render`). The CLI uses it too.
+- `plotting::{series::Series, graph::Graph, canvas::TerminalCanvas}` and the style types; `prelude` re-exports the common ones.
+- `terminal`: `Terminal` (support check, size, tmux handling, display) plus re-exported `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
+- `Error`/`Result` (`error.rs`): one `#[non_exhaustive]` enum for the whole crate.
 
-`Graphable` is a blanket trait auto-implemented for any numeric type (`i32`, `u32`, `f32`, `f64`) satisfying arithmetic + comparison + `Into<f64>` + `Copy`. All data structures (`Point<T>`, `Limits<T>`, `Series<T>`, `Graph<T>`) are generic over `T: Graphable`.
+`kitty_graphics`, `terminal_commands` and `plotting::{common, numbers, ticks}` are private; re-export what users need rather than making them public.
 
-Type conversion uses a layered system:
-- `Convertable<U>` — base trait, converts via `fn(f64) -> U` function pointer
-- `UIntConvertable` / `IntConvertable` / `FloatConvertable` — specialized with safe clamped casts (`v.clamp(0.0, u32::MAX as f64) as u32`)
-- Implemented for scalars, `Point`, `Limits`, `Series`, `Graph`, `GraphLimits`, `Line`, `LinePositioning` — so the entire scene graph can be type-converted in one call
+### Numeric Types (`plotting/common.rs`)
 
-Coordinate transforms use two traits:
-- `Scalable<T, U>` — proportional mapping between two `Limits` (old → new coordinate space)
-- `Shiftable<T>` — translation by a `Point<T>` offset
+`Series`, `Graph` and `TerminalCanvas` are not generic: data is converted to `f64` at the boundary (`Series::new`, `from_xy`, `from_y`, `FromIterator<(x, y)>`, `From<Vec<(x, y)>>`, `From<(xs, ys)>`). `Graphable` covers every primitive integer and float type via the crate's `ToF64` trait (`as` casts), so `i64`/`u64`/`usize` work. `Point<T>`, `Limits<T>` and the internal `Line<T>` stay generic because the pixel math uses them with `u32`/`i32`; the `Convertable`/`UIntConvertable`/`IntConvertable`/`FloatConvertable` traits do clamped casts between those (`v.clamp(0.0, u32::MAX as f64) as u32`).
 
-Both are implemented recursively on composite types (Graph shifts all its Series, each Series shifts all its Points).
-
-**Zero-span safety:** `Graph::view_limits()` pads zero-width dimensions (5% of the value, or ±0.5 around zero) before scaling, so single points and constant series are centered. As a fallback, `Point::scale_to` and `GraphLimits::scale_to` map a zero old span to `new_span / 2` (relative to the new origin, like the regular branch; callers shift afterwards).
+**Zero-span safety:** `Graph::view_limits()` pads zero-width dimensions (5% of the value, or ±0.5 around zero) before scaling, so single points and constant series are centered. As a fallback, `Graph::scale_with_view` maps a zero span to the middle of the target range.
 
 ### Rendering Pipeline (`canvas.rs` → `graph.rs`)
 
 ```
 TerminalCanvas::draw()
-  ├── graph.view_limits()            # finite data limits + GraphLimits overrides, clipped,
+  ├── graph.view_limits()            # finite data limits + explicit limits, clipped,
   │                                  #   5% margin on automatic axes, zero spans padded
   ├── layout()                       # y ticks (fit plot height) → left margin from widest y label
   │                                  #   → x ticks (fit plot width); bottom band for x labels;
@@ -53,7 +50,7 @@ TerminalCanvas::draw()
   ├── graph.scale_with_view(..)      # clip → shift-to-origin → proportional scale → shift-to-plot
   ├── grid_lines.get_mask_at(..)     # grid at tick positions (drawn first)
   ├── axes.get_mask(plot)            # axis lines just outside the plot area
-  ├── series.get_mask()              # markers + connecting lines per series
+  ├── series.draw_into(canvas)       # markers, then lines, straight into the canvas
   ├── Canvas::set_pixels()           # write RGB8 into 2D pixel buffer
   └── labels → get_mask → set_pixels # tick labels (bitmap font), drawn last
 ```
@@ -62,15 +59,15 @@ Ticks (`ticks.rs`): values are k × step with step ∈ {1, 2, 5} × 10^k (Heckbe
 
 The `Drawable` trait (`fn get_mask(&self) -> Result<Vec<MaskPoints>>`) is implemented by `Series`, `Line`, `Marker`, `Label`, and `Graph`. Each returns pixel coordinates + colors; the canvas composites them.
 
-### GraphLimits State Machine (`graph.rs`, `graph_limits.rs`)
+### Limits and performance
 
-`Graph` manages `Option<GraphLimits<T>>` with transitions: `None` → `XOnly`/`YOnly` → `XY`. Calling `with_x_limits` on a `YOnly` graph produces `XY`; calling it on `XY` updates only x. `Graph::limits()` merges these overrides with data-derived limits. Explicit limits also trigger point clipping during `Graph::scale`.
+`Graph` keeps explicit limits as `x_limits`/`y_limits: Option<(f64, f64)>`; `Graph::limits()` merges them with the data extent, and explicit limits also clip points. `Series::draw_into` is the fast path used by the canvas (flat RGB buffer, marker offsets stamped once per style, line discs stamped incrementally, repeated pixels skipped); it must produce exactly the pixels of `Drawable::get_mask` (a test checks every style), so change both together.
 
 ### Kitty Protocol (`kitty_graphics/`)
 
 After rendering, the canvas bytes are PNG-encoded (`Image::png_from_rgb`, `f=100`: about 100x smaller than raw RGB) and sent via Kitty APC sequences. `encoding.rs` does custom RFC 4648 base64 (with padding). `kitty_cmds.rs` chunks to 4096-byte payloads, wraps each chunk in tmux DCS passthrough when `$TMUX` is set (`Passthrough`), and provides `query_support()` (an `a=q` query). `ctrl_seq.rs` provides protocol key=value formatting. Display commands send `q=2` so no replies are left in the input; `File`/`TempFile` paths are made absolute. `TermCommand` writes commands to stdout. `execute_with_response` writes queries to `/dev/tty` (the `CONIN$`/`CONOUT$` console on Windows, so piped stdin does not interfere) followed by a DA1 sentinel, and reads the reply with a timeout under an RAII raw-mode guard. It fails fast with `TerminalCommandError::Unsupported` when the DA1 reply arrives first.
 
-`get_window_size()` (`window_ctrl.rs`) takes the size from the OS (`TIOCGWINSZ` via crossterm) and only queries what is missing (`CSI 14t` pixels, `18t` cells). The CLI's `terminal::prepare` (`src/bin/termplt/terminal.rs`; terminal and OS access goes through the `Terminal` trait so every branch is unit-tested with a fake) does the following, in order:
+`get_window_size()` (`window_ctrl.rs`) takes the size from the OS (`TIOCGWINSZ` via crossterm) and only queries what is missing (`CSI 14t` pixels, `18t` cells). `terminal::Terminal::connect` (`src/terminal.rs`; terminal and OS access goes through a private `Backend` trait so every branch is unit-tested with a fake) does the following, in order:
 - checks stdout is a TTY;
 - runs the graphics query, or in tmux checks `allow-passthrough`;
 - gets the window size, falling back to an estimate from the cell count.
@@ -90,8 +87,7 @@ Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters r
 - `cli.rs`: clap derive definition; `--completions <SHELL>` prints a `clap_complete` script (static: flags, `--marker`/`--line` possible values, color names via `ColorParser`, file-path hints). Style options (`--color`, `--marker`, `--line`, ...) are defaults for every series; old snake_case flags are hidden aliases.
 - `series.rs`: `--series` spec parsing (`key=value` pairs; a `,`/`;` only splits when followed by `key=`, so `data=(1,2),(3,4)` works), style resolution, palette, marker/line name parsing.
 - `data.rs`: inline point parsing and `Table` (CSV/TSV/whitespace, header detection, columns by name or 1-based index, `index` = row number, missing values skipped).
-- `terminal.rs`: graphics-support check, tmux passthrough check, window size with estimate fallback (see Kitty Protocol above).
-- `main.rs`: collects series (FILE args × y columns, then `--data`, then `--series`; piped stdin when nothing else is given, read once and cached), sizes the canvas (fits the terminal, or 800x600 with `--output`), then displays via Kitty or writes an image.
+- `main.rs`: collects series (FILE args × y columns, then `--data`, then `--series`; piped stdin when nothing else is given, read once and cached) into a `Plot`, connects a `Terminal` (errors get a `--output` hint) or writes a PNG with `--output`.
 
 ## Testing
 
@@ -104,6 +100,4 @@ Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters r
 See `IMPROVEMENTS.md` for the full prioritized list and status. Key open items:
 - Clipping to explicit limits drops points rather than clipping line segments
 - `Limits::new` panics on inverted bounds (internal invariant); use `Limits::try_new` for untrusted input
-- `Graph::shift_by` doesn't shift `grid_lines`
-- No crate-level error type (uses `Box<dyn Error>` everywhere)
 - Bitmap font only covers `0-9 . - e`, so there are no titles, axis names or legends yet

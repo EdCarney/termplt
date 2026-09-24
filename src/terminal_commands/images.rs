@@ -11,9 +11,17 @@ use image::{
 };
 use std::{io::Cursor, path::Path};
 
+/// Where [`Image::display_at_position`] places an image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PositioningType {
-    ExactPixel { x: u32, y: u32 },
+    /// With the top-left corner at pixel (`x`, `y`) of the window.
+    ExactPixel {
+        /// Pixels from the left edge.
+        x: u32,
+        /// Pixels from the top edge.
+        y: u32,
+    },
+    /// Centered in the window.
     Centered,
 }
 
@@ -24,6 +32,7 @@ struct PositionDetails {
     offset_y: u32,
 }
 
+/// An image ready to be sent to the terminal with the Kitty graphics protocol.
 #[derive(Debug, Clone)]
 pub struct Image {
     format: PixelFormat,
@@ -33,6 +42,8 @@ pub struct Image {
 }
 
 impl Image {
+    /// Prepares an image; reads its size from PNG data or files, or from the terminal for
+    /// [`PixelFormat::PngBounded`].
     pub fn new(format: PixelFormat, transmission: Transmission) -> Result<Image> {
         let transmission = absolute_paths(transmission)?;
         let (width_pix, height_pix) = match format {
@@ -120,6 +131,7 @@ impl Image {
         ]
     }
 
+    /// Displays the image at a position in the window, then restores the cursor.
     pub fn display_at_position(&self, positioning: PositioningType) -> Result<()> {
         let window_sz = window_ctrl::get_window_size()?;
         match positioning {

@@ -7,12 +7,17 @@ use super::{
 };
 use crate::common::Result;
 
+/// Number of sections [`GridLines::get_mask`] divides the area into.
 pub const NUM_GRID_SECTIONS: u32 = 10;
 
+/// Which grid lines to draw, and their line style.
 #[derive(Debug, Clone)]
 pub enum GridLines {
+    /// Vertical lines at the x ticks.
     XOnly(LineStyle),
+    /// Horizontal lines at the y ticks.
     YOnly(LineStyle),
+    /// Both.
     XY(LineStyle),
 }
 

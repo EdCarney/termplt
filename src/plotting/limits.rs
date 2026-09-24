@@ -3,6 +3,7 @@ use super::{
     point::Point,
 };
 
+/// An axis-aligned rectangle given by its lower-left (`min`) and upper-right (`max`) corners.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Limits<T: Graphable> {
     min: Point<T>,
@@ -57,16 +58,6 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
         Ok(Limits { min, max })
     }
 
-    pub fn update_min(&mut self, new_min: Point<T>) {
-        Self::validate_limit(&new_min, &self.max);
-        self.min = new_min;
-    }
-
-    pub fn update_max(&mut self, new_max: Point<T>) {
-        Self::validate_limit(&self.min, &new_max);
-        self.max = new_max;
-    }
-
     fn validate_limit(min: &Point<T>, max: &Point<T>) {
         if min.x > max.x || min.y > max.y {
             panic!(
@@ -76,31 +67,38 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
         }
     }
 
+    /// Width and height (`max - min`).
     pub fn span(&self) -> (T, T) {
         let diff = self.max - self.min;
         (diff.x, diff.y)
     }
 
+    /// The lower-left corner.
     pub fn min(&self) -> &Point<T> {
         &self.min
     }
 
+    /// The upper-right corner.
     pub fn max(&self) -> &Point<T> {
         &self.max
     }
 
+    /// The upper-left corner.
     pub fn upper_left(&self) -> Point<T> {
         Point::new(self.min().x, self.max().y)
     }
 
+    /// The upper-right corner.
     pub fn upper_right(&self) -> Point<T> {
         *self.max()
     }
 
+    /// The lower-right corner.
     pub fn lower_right(&self) -> Point<T> {
         Point::new(self.max().x, self.min().y)
     }
 
+    /// The lower-left corner.
     pub fn lower_left(&self) -> Point<T> {
         *self.min()
     }
@@ -169,50 +167,6 @@ mod tests {
         let min = Point { x: 5, y: 5 };
         let max = Point { x: 7, y: 4 };
         Limits::new(min, max);
-    }
-
-    #[test]
-    fn update_min_valid() {
-        let min = Point { x: 0, y: 0 };
-        let max = Point { x: 10, y: 5 };
-        let mut limits = Limits::new(min, max);
-        assert_eq!(limits.span(), (10, 5));
-
-        limits.update_min(Point { x: 1, y: 1 });
-        assert_eq!(limits.span(), (9, 4));
-    }
-
-    #[test]
-    #[should_panic]
-    fn update_min_invalid() {
-        let min = Point { x: 0, y: 0 };
-        let max = Point { x: 10, y: 5 };
-        let mut limits = Limits::new(min, max);
-        assert_eq!(limits.span(), (10, 5));
-
-        limits.update_min(Point { x: 11, y: 1 });
-    }
-
-    #[test]
-    fn update_max_valid() {
-        let min = Point { x: 0, y: 0 };
-        let max = Point { x: 10, y: 5 };
-        let mut limits = Limits::new(min, max);
-        assert_eq!(limits.span(), (10, 5));
-
-        limits.update_max(Point { x: 15, y: 10 });
-        assert_eq!(limits.span(), (15, 10));
-    }
-
-    #[test]
-    #[should_panic]
-    fn update_max_invalid() {
-        let min = Point { x: 0, y: 0 };
-        let max = Point { x: 10, y: 5 };
-        let mut limits = Limits::new(min, max);
-        assert_eq!(limits.span(), (10, 5));
-
-        limits.update_max(Point { x: -1, y: 10 });
     }
 
     #[test]

@@ -6,7 +6,8 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 
 ## Features
 
-- **Generic numeric types** — plot `i32`, `u32`, `f32`, `f64`, or any type satisfying basic arithmetic traits
+- **One call to plot** — `Plot::new().line((&xs, &ys)).show()?` sizes itself to the terminal; `.save_png(path)` writes a file
+- **Any numeric data** — `i32`, `i64`, `u64`, `usize`, `f32`, `f64`, ... given as `(xs, ys)`, `(x, y)` tuples or points
 - **Multiple series** — overlay multiple data series on a single graph with independent styling
 - **Marker styles** — filled/hollow circles and squares with configurable size and color
 - **Line drawing** — optional solid or dashed connecting lines of any thickness
@@ -14,7 +15,8 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 - **Axis limits** — optionally constrain x/y ranges with automatic point clipping
 - **Configurable canvas** — set dimensions, background color, and buffer padding
 - **Bitmap text** — built-in 10x11 pixel font for labels and numeric annotations
-- **Image display** — render PNG, RGB, and RGBA images inline via Kitty protocol
+- **Typed errors** — match on `termplt::Error` (no data, canvas too small, terminal unsupported, ...)
+- **Fast** — a million points render in about 0.1-0.3 s
 
 ## CLI Usage
 
@@ -156,76 +158,86 @@ Add `termplt` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-termplt = { version = "0.1", default-features = false }
+termplt = { version = "0.2", default-features = false }
 ```
 
 The default `cli` feature builds the command-line tool; `default-features = false` skips its dependencies when you only need the library.
 
-### Plotting a sine wave
+### Plotting in one call
+
+```rust,no_run
+use termplt::prelude::*;
+
+fn main() -> termplt::Result<()> {
+    let xs: Vec<f64> = (0..=200).map(|i| i as f64 * 0.05).collect();
+    let sin: Vec<f64> = xs.iter().map(|x| x.sin()).collect();
+    let cos: Vec<f64> = xs.iter().map(|x| x.cos()).collect();
+
+    Plot::new()
+        .line((&xs, &sin)) // a line in the first palette color
+        .line_points((&xs, &cos)) // a line with markers in the next one
+        .scatter(vec![(2, 0.5), (7, -0.5)]) // any numeric types
+        .show()?; // sized to fit the terminal
+
+    // or write a PNG; no terminal needed
+    Plot::new()
+        .line((&xs, &sin))
+        .size(800, 600)
+        .save_png("sine.png")?;
+    Ok(())
+}
+```
+
+`Plot` draws axes with tick labels and a grid, picks colors from `colors::PALETTE`, and adapts the axes to light backgrounds (`.background(colors::WHITE)`). Other options: `.x_limits(min, max)`, `.y_limits(min, max)`, `.grid(false)`, and `.series(s)` for a series with your own styles.
+
+### Full control
+
+`Plot` is built on lower-level types that you can use directly: `Series` (points and styles), `Graph` (series, axes, grid, limits) and `TerminalCanvas` (pixel size, background, margins).
 
 ```rust
-use std::f32;
-use termplt::plotting::{
-    axes::{Axes, AxesPositioning},
-    canvas::{BufferType, TerminalCanvas},
-    colors,
-    graph::Graph,
-    grid_lines::GridLines,
-    line::LineStyle,
-    marker::MarkerStyle,
-    point::Point,
-    series::Series,
-    text::TextStyle,
-};
-use termplt::terminal_commands::images::Image;
+use termplt::prelude::*;
 
-fn main() {
-    let num_points = 100;
-    let points: Vec<Point<f32>> = (0..=num_points)
-        .map(|x| {
-            let x = (x as f32) * (360. / (num_points as f32));
-            Point::new(x, (x * f32::consts::PI / 180.).sin())
-        })
-        .collect();
+fn main() -> termplt::Result<()> {
+    let series = Series::from_xy(&[1, 2, 3, 4], &[1.0, 4.0, 9.0, 16.0])
+        .with_marker_style(MarkerStyle::HollowCircle { size: 3, color: colors::ORANGE })
+        .with_line_style(LineStyle::dashed(colors::ORANGE, 1));
 
-    let width = 800;
-    let height = 600;
-    let bytes = TerminalCanvas::new(width, height, colors::BLACK)
-        .with_buffer(BufferType::Uniform(80))
-        .with_graph(
-            Graph::new()
-                .with_series(
-                    Series::new(&points)
-                        .with_marker_style(MarkerStyle::FilledCircle {
-                            size: 2,
-                            color: colors::LIME,
-                        })
-                        .with_line_style(LineStyle::Solid {
-                            color: colors::LIME,
-                            thickness: 0,
-                        }),
-                )
-                .with_axes(Axes::new(
-                    AxesPositioning::XY(LineStyle::Solid {
-                        color: colors::GHOST_WHITE,
-                        thickness: 1,
-                    }),
-                    TextStyle::with_color(colors::WHITE),
-                ))
-                .with_grid_lines(GridLines::XY(LineStyle::Solid {
-                    color: colors::GRAY,
-                    thickness: 0,
-                })),
-        )
-        .draw()
-        .unwrap()
-        .get_bytes();
+    let graph = Graph::new()
+        .with_series(series)
+        .with_y_limits(0, 20)
+        .with_axes(Axes::new(
+            AxesPositioning::XY(LineStyle::solid(colors::WHITE, 1)),
+            TextStyle::with_color(colors::WHITE),
+        ))
+        .with_grid_lines(GridLines::XY(LineStyle::solid(colors::DIM_GRAY, 0)));
 
-    // PNG-compress the pixels (~100x smaller than raw RGB) and display them at the cursor
-    Image::png_from_rgb(&bytes, width, height)
-        .unwrap()
-        .display()
-        .unwrap();
+    // RGB8 pixels, row-major from the top row
+    let rgb = TerminalCanvas::new(640, 480, colors::BLACK)
+        .with_buffer(BufferType::Uniform(12))
+        .with_graph(graph)
+        .draw()?
+        .into_bytes();
+    assert_eq!(rgb.len(), 640 * 480 * 3);
+
+    // to display them: Terminal::connect()?.show_rgb(&rgb, 640, 480)?;
+    Ok(())
+}
+```
+
+### Errors
+
+Every fallible call returns `termplt::Result<T>`. `termplt::Error` says what went wrong, so you can, for example, fall back to a file when the terminal can't show images:
+
+```rust,no_run
+use termplt::{Error, Plot};
+
+let plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+match plot.show() {
+    Err(Error::NotATerminal | Error::GraphicsUnsupported | Error::TmuxPassthroughDisabled) => {
+        plot.save_png("plot.png").expect("cannot write plot.png");
+        eprintln!("this terminal can't show images; wrote plot.png");
+    }
+    other => other.expect("cannot draw the plot"),
 }
 ```
 
@@ -233,23 +245,24 @@ fn main() {
 
 The rendering pipeline flows through four stages:
 
-```
-User data (generic T: Graphable)
+```text
+User data (any numeric type, stored as f64)
   → Scale to pixel coordinates
-    → Render to in-memory canvas (RGB pixel buffer)
-      → Transmit via Kitty APC escape sequences
+    → Render to an in-memory canvas (RGB pixel buffer)
+      → PNG-encode and transmit via Kitty APC escape sequences
 ```
 
 Key abstractions:
 
 | Module | Purpose |
 |---|---|
-| `plotting::common` | `Graphable` trait, type conversion, coordinate transforms |
-| `plotting::graph` | `Graph` — composes series, axes, grid lines, and limits |
-| `plotting::canvas` | `TerminalCanvas` — orchestrates rendering to pixel buffer |
-| `plotting::series` | `Series` — data points with marker and line styles |
-| `kitty_graphics` | Kitty protocol encoding and command chunking |
-| `terminal_commands` | Image display and terminal interaction |
+| `Plot` | One-call builder: series, limits, size, background; `show`, `save_png`, `render` |
+| `prelude` | The types most plots need |
+| `plotting::series` | `Series`: data points with marker and line styles, built from any numeric input |
+| `plotting::graph` | `Graph`: series, axes, grid lines and limits |
+| `plotting::canvas` | `TerminalCanvas`: layout (ticks, labels, margins) and rendering to RGB pixels |
+| `terminal` | `Terminal` (support check, size, tmux handling, display) and `Image` (Kitty protocol) |
+| `Error` | Everything that can go wrong |
 
 ## Building and Testing
 
@@ -273,4 +286,4 @@ This creates 13 data files in `test_data/` covering sine/cosine, polynomials, ex
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](https://github.com/EdCarney/termplt/blob/main/LICENSE).

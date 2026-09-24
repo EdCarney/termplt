@@ -30,12 +30,32 @@ impl CtrlSeq for Transmission {
     }
 }
 
+/// The format of the image data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
+    /// PNG data; the terminal reads the size from it.
     Png,
-    PngBounded { rows: u32, cols: u32 },
-    Rgb { width: u32, height: u32 },
-    Rgba { width: u32, height: u32 },
+    /// PNG data scaled to fit a number of terminal rows and columns.
+    PngBounded {
+        /// Rows of text the image covers.
+        rows: u32,
+        /// Columns of text the image covers.
+        cols: u32,
+    },
+    /// Raw 8-bit RGB pixels, row-major from the top row.
+    Rgb {
+        /// Width in pixels.
+        width: u32,
+        /// Height in pixels.
+        height: u32,
+    },
+    /// Raw 8-bit RGBA pixels, row-major from the top row.
+    Rgba {
+        /// Width in pixels.
+        width: u32,
+        /// Height in pixels.
+        height: u32,
+    },
 }
 
 impl CtrlSeq for PixelFormat {

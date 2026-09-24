@@ -1,13 +1,20 @@
 use crate::terminal_commands::csi_cmds;
 use crate::{Error, Result};
 
+/// The terminal's size in cells and pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowSize {
+    /// Rows of text.
     pub rows: u32,
+    /// Columns of text.
     pub cols: u32,
+    /// Width in pixels.
     pub x_pix: u32,
+    /// Height in pixels.
     pub y_pix: u32,
+    /// Pixels per row (cell height).
     pub pix_per_row: u32,
+    /// Pixels per column (cell width).
     pub pix_per_col: u32,
 }
 

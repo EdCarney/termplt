@@ -13,30 +13,43 @@ use crate::{
 };
 use rgb::RGB8;
 
+/// The marker drawn at each data point. `size` is the radius in pixels (0 is a single pixel).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MarkerStyle {
     /// No marker is drawn (e.g. for a line-only series).
     None,
+    /// A filled square.
     FilledSquare {
+        /// Radius in pixels (0 is a single pixel).
         size: u32,
+        /// Marker color.
         color: RGB8,
     },
+    /// An outlined square.
     HollowSquare {
+        /// Radius in pixels (0 is a single pixel).
         size: u32,
+        /// Marker color.
         color: RGB8,
     },
+    /// A filled circle.
     FilledCircle {
+        /// Radius in pixels (0 is a single pixel).
         size: u32,
+        /// Marker color.
         color: RGB8,
     },
+    /// An outlined circle.
     HollowCircle {
+        /// Radius in pixels (0 is a single pixel).
         size: u32,
+        /// Marker color.
         color: RGB8,
     },
 }
 
 #[derive(Debug)]
-pub struct Marker {
+pub(crate) struct Marker {
     style: MarkerStyle,
     center: Point<u32>,
 }
@@ -75,11 +88,11 @@ impl MarkerStyle {
 }
 
 impl Marker {
-    pub fn new(center: Point<u32>, style: MarkerStyle) -> Marker {
+    pub(crate) fn new(center: Point<u32>, style: MarkerStyle) -> Marker {
         Marker { center, style }
     }
 
-    pub fn limits(&self) -> Limits<u32> {
+    pub(crate) fn limits(&self) -> Limits<u32> {
         let size = self.style.size();
         let min = Point::new(
             self.center.x.saturating_sub(size),
@@ -90,14 +103,6 @@ impl Marker {
             self.center.y.saturating_add(size),
         );
         Limits::new(min, max)
-    }
-
-    pub fn style(&self) -> &MarkerStyle {
-        &self.style
-    }
-
-    pub fn center(&self) -> &Point<u32> {
-        &self.center
     }
 }
 

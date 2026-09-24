@@ -18,6 +18,7 @@ const DA1_REQUEST: &[u8] = b"\x1b[c";
 
 const ESC: u8 = 0x1b;
 
+/// Failures talking to the terminal.
 #[derive(Debug)]
 pub enum TerminalCommandError {
     /// No terminal is attached to send the query to (e.g. running from a pipe, cron or CI).
