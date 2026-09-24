@@ -1,6 +1,10 @@
 //! Command-line arguments.
 
-use clap::Parser;
+use clap::{
+    Parser, ValueHint,
+    builder::{PossibleValue, PossibleValuesParser},
+};
+use clap_complete::Shell;
 use std::path::PathBuf;
 
 const EXAMPLES: &str = "\
@@ -31,7 +35,7 @@ A file with a single column is plotted against the row number.";
 pub struct Cli {
     /// Data files (CSV, TSV or whitespace-delimited); '-' reads stdin. Piped stdin is read
     /// automatically when no other data is given
-    #[arg(value_name = "FILE")]
+    #[arg(value_name = "FILE", value_hint = ValueHint::FilePath)]
     pub files: Vec<String>,
 
     /// Inline points, e.g. "(1,2),(3,4)" or "1,2 3,4" (repeatable)
@@ -63,10 +67,12 @@ pub struct Cli {
     #[arg(short, long, value_name = "COLOR", help_heading = "Style")]
     pub color: Option<String>,
 
-    /// Marker style: filled-circle, hollow-circle, filled-square, hollow-square or none
+    /// Marker style
     #[arg(
         long,
         value_name = "STYLE",
+        value_parser = marker_values(),
+        ignore_case = true,
         alias = "marker-style",
         alias = "marker_style",
         help_heading = "Style"
@@ -86,10 +92,12 @@ pub struct Cli {
     )]
     pub marker_color: Option<String>,
 
-    /// Line style: solid, dashed or none (scatter plot) [default: solid]
+    /// Line style; none draws a scatter plot [default: solid]
     #[arg(
         long,
         value_name = "STYLE",
+        value_parser = PossibleValuesParser::new(["solid", "dashed", "none"]),
+        ignore_case = true,
         alias = "line-style",
         alias = "line_style",
         help_heading = "Style"
@@ -145,7 +153,7 @@ pub struct Cli {
 
     /// Write the plot to an image file (e.g. plot.png) instead of displaying it; no terminal
     /// is needed
-    #[arg(short, long, value_name = "FILE", help_heading = "Plot")]
+    #[arg(short, long, value_name = "FILE", value_hint = ValueHint::FilePath, help_heading = "Plot")]
     pub output: Option<PathBuf>,
 
     /// List the available color names
@@ -161,8 +169,24 @@ pub struct Cli {
     pub verbose: bool,
 
     /// Same as FILE (kept for compatibility with earlier versions)
-    #[arg(long, value_name = "FILE", alias = "data_file", hide = true)]
+    #[arg(long, value_name = "FILE", value_hint = ValueHint::FilePath, alias = "data_file", hide = true)]
     pub data_file: Vec<String>,
+
+    /// Print a shell completion script and exit, e.g. `termplt --completions zsh > _termplt`
+    #[arg(long, value_name = "SHELL")]
+    pub completions: Option<Shell>,
+}
+
+/// Marker styles; the aliases keep earlier spellings such as FilledCircle working (clap also
+/// ignores case) without cluttering help and completions.
+fn marker_values() -> PossibleValuesParser {
+    PossibleValuesParser::new([
+        PossibleValue::new("filled-circle").aliases(["filledcircle", "filled_circle", "circle"]),
+        PossibleValue::new("hollow-circle").aliases(["hollowcircle", "hollow_circle"]),
+        PossibleValue::new("filled-square").aliases(["filledsquare", "filled_square", "square"]),
+        PossibleValue::new("hollow-square").aliases(["hollowsquare", "hollow_square"]),
+        PossibleValue::new("none").help("no markers (line only)"),
+    ])
 }
 
 /// Parses "MIN,MAX" (or "MIN:MAX") into an increasing pair of finite numbers.
@@ -263,6 +287,59 @@ mod tests {
     #[test]
     fn zero_width_is_rejected() {
         assert!(parse(&["--width", "0"]).is_err());
+    }
+
+    #[test]
+    fn marker_and_line_accept_known_styles_in_any_spelling() {
+        // clap validates the spelling; the value is passed through unchanged and normalized
+        // when the series style is built
+        for given in [
+            "FilledCircle",
+            "filled_circle",
+            "circle",
+            "HOLLOW-SQUARE",
+            "None",
+        ] {
+            let cli = parse(&["a.csv", "--marker", given]).unwrap();
+            assert_eq!(cli.marker.as_deref(), Some(given));
+        }
+        assert!(parse(&["a.csv", "--line", "Dashed"]).is_ok());
+    }
+
+    #[test]
+    fn unknown_marker_and_line_styles_list_possible_values() {
+        let err = parse(&["--marker", "triangle"]).unwrap_err().to_string();
+        assert!(err.contains("filled-circle"), "{err}");
+        let err = parse(&["--line", "wavy"]).unwrap_err().to_string();
+        assert!(err.contains("dashed"), "{err}");
+    }
+
+    #[test]
+    fn completion_scripts_include_flags_and_values() {
+        for shell in [
+            Shell::Bash,
+            Shell::Zsh,
+            Shell::Fish,
+            Shell::PowerShell,
+            Shell::Elvish,
+        ] {
+            let mut script = Vec::new();
+            clap_complete::generate(shell, &mut Cli::command(), "termplt", &mut script);
+            let script = String::from_utf8(script).unwrap();
+            // fish writes long flags as `-l xlim`, the others as `--xlim`
+            for expected in ["xlim", "series", "completions"] {
+                assert!(script.contains(expected), "{shell}: missing {expected}");
+            }
+            // possible values are listed where the shell's format supports it
+            if !matches!(shell, Shell::PowerShell | Shell::Elvish) {
+                assert!(
+                    script.contains("hollow-square"),
+                    "{shell}: missing marker values"
+                );
+            }
+            // hidden aliases stay out of completions
+            assert!(!script.contains("filledcircle"), "{shell}: leaked alias");
+        }
     }
 
     #[test]

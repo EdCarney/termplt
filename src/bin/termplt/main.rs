@@ -44,6 +44,10 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<()> {
+    if let Some(shell) = cli.completions {
+        clap_complete::generate(shell, &mut Cli::command(), "termplt", &mut io::stdout());
+        return Ok(());
+    }
     if cli.list_colors {
         println!("Colors (names ignore case and separators, e.g. DarkRed, dark-red):\n");
         for (name, _) in colors::all_names() {

@@ -85,6 +85,7 @@ _The screenshots above are from an earlier version; axes now use round tick valu
 | `-o, --output <FILE>` | Write an image file (e.g. `plot.png`) instead of displaying; no terminal needed |
 | `--list-colors` / `--list-markers` | List color names / marker styles |
 | `-v, --verbose` | Print terminal size, canvas and plot area to stderr |
+| `--completions <SHELL>` | Print a completion script for `bash`, `zsh`, `fish`, `powershell` or `elvish` |
 | `-h, --help` / `-V, --version` | Help / version |
 
 Style options apply to every series. Unset colors and markers cycle through a palette.
@@ -92,6 +93,23 @@ Style options apply to every series. Unset colors and markers cycle through a pa
 A `--series` spec is a list of `key=value` pairs separated by commas: `file=PATH` or `data=POINTS` (required), `x=COL`, `y=COL`, `color`, `marker`, `marker-size`, `marker-color`, `line`, `line-color` and `line-thickness`. Keys override the options above for that series. Inline data keeps its commas, e.g. `-s "data=(1,2),(3,4),color=red"`.
 
 Data files may have a header row (detected automatically), `#` comments and blank lines. A single-column file is plotted against the row number. Rows with missing values (empty, `NA`, `null`, ...) and NaN/infinite values are skipped with a warning.
+
+### Shell completions
+
+Tab completion covers flags, marker and line styles, and file paths. Generate a script for your shell once (and again after upgrading):
+
+```bash
+# bash
+termplt --completions bash > ~/.local/share/bash-completion/completions/termplt
+
+# zsh: any directory in $fpath, e.g. ~/.zfunc with `fpath=(~/.zfunc $fpath)` before `compinit` in ~/.zshrc
+termplt --completions zsh > ~/.zfunc/_termplt
+
+# fish
+termplt --completions fish > ~/.config/fish/completions/termplt.fish
+```
+
+Start a new shell afterwards. Values that depend on your data, such as column names, are not completed.
 
 Flag spellings from earlier versions (`--data_file`, `--marker_style`, `--line_thickness`, ...) are still accepted.
 
