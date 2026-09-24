@@ -59,8 +59,9 @@ where
             Some(new_span_y / old_span_y)
         };
 
-        let new_mid_x = (new_limits.min().x + new_limits.max().x) / 2.0;
-        let new_mid_y = (new_limits.min().y + new_limits.max().y) / 2.0;
+        // relative to the origin of the new limits, matching the regular (scaled) branch
+        let new_mid_x = new_span_x / 2.0;
+        let new_mid_y = new_span_y / 2.0;
 
         match self.convert_to_f64() {
             GraphLimits::XOnly { min, max } => GraphLimits::XOnly {

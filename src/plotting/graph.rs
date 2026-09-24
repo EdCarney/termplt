@@ -141,14 +141,23 @@ impl<T: Graphable> Graph<T> {
         self.axes.clone()
     }
 
-    pub fn limits(&self) -> Option<Limits<T>> {
+    /// Returns the plotted range: the extent of all finite data points, overridden by any
+    /// explicit limits. Non-finite points (NaN, ±∞) are ignored.
+    ///
+    /// Errors if the graph has no finite data points or the explicit limits are invalid
+    /// (inverted or non-finite).
+    pub fn limits(&self) -> Result<Limits<T>> {
+        self.validate_graph_limits()?;
+
         let mut limits = self
             .data
             .iter()
-            .flat_map(|series| series.data().to_vec())
+            .flat_map(|series| series.data().iter().copied())
+            .filter(is_finite_point)
             .collect::<Vec<Point<_>>>()
             .as_slice()
-            .limits()?;
+            .limits()
+            .ok_or("Graph has no data points to plot (non-finite values are ignored)")?;
 
         // explicit limits override data limits
         if let Some(graph_limits) = &self.graph_limits {
@@ -175,36 +184,96 @@ impl<T: Graphable> Graph<T> {
             }
         }
 
-        Some(limits)
+        Ok(limits)
     }
 
-    pub fn scale(self, new_limits: Limits<f64>) -> Graph<f64> {
-        let mut scaled_graph = self.clone();
+    fn validate_graph_limits(&self) -> Result<()> {
+        let check = |axis: &str, min: T, max: T| -> Result<()> {
+            let (min, max): (f64, f64) = (min.into(), max.into());
+            if !min.is_finite() || !max.is_finite() {
+                return Err(format!("{axis} limits must be finite, got {min}..{max}").into());
+            }
+            if min > max {
+                return Err(format!(
+                    "{axis} limits are inverted: min ({min}) is greater than max ({max})"
+                )
+                .into());
+            }
+            Ok(())
+        };
 
-        let mut old_limits = self.limits().expect("Cannot scale an empty graph");
-        // if there are explicit limits set; remove any points that don't lie within those limits
-        if self.graph_limits.is_some() {
-            scaled_graph.data = scaled_graph
-                .data
-                .iter()
-                .map(|series| {
-                    let filtered_data: Vec<_> = series
-                        .data()
-                        .iter()
-                        .filter(|p| old_limits.contains(p))
-                        .copied()
-                        .collect();
-                    series.clone_with(&filtered_data)
-                })
-                .collect::<Vec<_>>();
-
-            // if any points were removed we need to update the limits, since the overall data set
-            // limits may have changed
-            old_limits = scaled_graph
-                .limits()
-                .expect("No valid points lie in specified graph limits");
+        match &self.graph_limits {
+            None => Ok(()),
+            Some(GraphLimits::XOnly { min, max }) => check("x", *min, *max),
+            Some(GraphLimits::YOnly { min, max }) => check("y", *min, *max),
+            Some(GraphLimits::XY { min, max }) => {
+                check("x", min.x, max.x)?;
+                check("y", min.y, max.y)
+            }
         }
-        scaled_graph.scale_to(&old_limits, &new_limits)
+    }
+
+    /// Returns a copy of the graph containing only the points that will be drawn: finite points
+    /// that lie within the explicit limits (if any). Series left empty are kept.
+    fn visible(&self) -> Result<Graph<T>> {
+        let limits = self.limits()?;
+        let clip = self.graph_limits.is_some();
+        let data = self
+            .data
+            .iter()
+            .map(|series| {
+                let points = series
+                    .data()
+                    .iter()
+                    .copied()
+                    .filter(|p| is_finite_point(p) && (!clip || limits.contains(p)))
+                    .collect::<Vec<_>>();
+                series.clone_with(&points)
+            })
+            .collect();
+
+        Ok(Graph {
+            data,
+            graph_limits: self.graph_limits.clone(),
+            axes: self.axes.clone(),
+            grid_lines: self.grid_lines.clone(),
+        })
+    }
+
+    /// Returns the data range that will be mapped onto the drawable area: [`Graph::limits`]
+    /// after clipping to explicit limits, with zero-width dimensions (e.g. a single point or a
+    /// constant series) expanded so the data is centered and the axes have nonzero length.
+    pub fn view_limits(&self) -> Result<Limits<f64>> {
+        let limits = self
+            .visible()?
+            .limits()
+            .map_err(|_| "No data points lie within the specified graph limits")?;
+        Ok(pad_degenerate(limits.convert_to_f64()))
+    }
+
+    /// Scales the visible data so that [`Graph::view_limits`] maps onto `new_limits`.
+    pub fn scale(self, new_limits: Limits<f64>) -> Result<Graph<f64>> {
+        let view_limits = self.view_limits()?;
+        self.scale_with_view(&view_limits, new_limits)
+    }
+
+    pub(crate) fn scale_with_view(
+        &self,
+        view_limits: &Limits<f64>,
+        new_limits: Limits<f64>,
+    ) -> Result<Graph<f64>> {
+        let mut scaled_graph = self
+            .visible()?
+            .convert_to_f64()
+            .scale_to(view_limits, &new_limits);
+
+        // the view maps exactly onto the new limits; record them explicitly so the axes and grid
+        // span the whole drawable area even where the data does not
+        scaled_graph.graph_limits = Some(GraphLimits::XY {
+            min: *new_limits.min(),
+            max: *new_limits.max(),
+        });
+        Ok(scaled_graph)
     }
 
     /// Generates labels for axes. Graph limits define the expected numerical values for the
@@ -212,9 +281,7 @@ impl<T: Graphable> Graph<T> {
     pub fn get_axes_labels(&self, graph_limits: &Limits<T>) -> Result<Vec<Label>> {
         match &self.axes {
             Some(axes) => {
-                let limits = self
-                    .limits()
-                    .ok_or("Graph has no data; cannot compute limits for axes labels")?;
+                let limits = self.limits()?;
                 axes.get_labels(&limits, graph_limits)
             }
             None => Ok(Vec::new()),
@@ -222,12 +289,34 @@ impl<T: Graphable> Graph<T> {
     }
 }
 
+fn is_finite_point<T: Graphable>(p: &Point<T>) -> bool {
+    let (x, y): (f64, f64) = (p.x.into(), p.y.into());
+    x.is_finite() && y.is_finite()
+}
+
+/// Expands zero-width dimensions by 5% of the value (or ±0.5 around zero) so the value is drawn
+/// at the center of the plot.
+fn pad_degenerate(limits: Limits<f64>) -> Limits<f64> {
+    let pad = |v: f64| if v == 0.0 { 0.5 } else { v.abs() * 0.05 };
+    let mut min = *limits.min();
+    let mut max = *limits.max();
+    if min.x == max.x {
+        let p = pad(min.x);
+        min.x -= p;
+        max.x += p;
+    }
+    if min.y == max.y {
+        let p = pad(min.y);
+        min.y -= p;
+        max.y += p;
+    }
+    Limits::new(min, max)
+}
+
 impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mut mask_points = Vec::new();
-        let limits = self
-            .limits()
-            .ok_or("Graph has no data; cannot compute limits for mask")?;
+        let limits = self.limits()?;
 
         // add axes if they are defined
         if let Some(axes) = &self.axes {
@@ -317,7 +406,7 @@ mod tests {
     #[test]
     fn empty_graph() {
         let g = Graph::<u32>::new();
-        assert!(g.limits().is_none());
+        assert!(g.limits().is_err());
     }
 
     #[test]
@@ -325,7 +414,7 @@ mod tests {
         let g = Graph::new().with_series(Series::new(&[Point::new(0, 0)]));
 
         let limits = g.limits();
-        assert!(limits.is_some());
+        assert!(limits.is_ok());
         assert_eq!(
             limits.unwrap(),
             Limits::new(Point::new(0, 0), Point::new(0, 0))
@@ -341,7 +430,7 @@ mod tests {
         ]));
 
         let limits = g.limits();
-        assert!(limits.is_some());
+        assert!(limits.is_ok());
         assert_eq!(
             limits.unwrap(),
             Limits::new(Point::new(-1, -5), Point::new(10, 15))
@@ -356,7 +445,7 @@ mod tests {
             .with_series(Series::new(&[Point::new(-1, 15)]));
 
         let limits = g.limits();
-        assert!(limits.is_some());
+        assert!(limits.is_ok());
         assert_eq!(
             limits.unwrap(),
             Limits::new(Point::new(-1, -5), Point::new(10, 15))
@@ -380,7 +469,7 @@ mod tests {
             ]));
 
         let limits = g.limits();
-        assert!(limits.is_some());
+        assert!(limits.is_ok());
         assert_eq!(
             limits.unwrap(),
             Limits::new(Point::new(-20, -50), Point::new(100, 50))
@@ -500,13 +589,13 @@ mod tests {
         assert_eq!(limits.max().y, 50);
     }
 
-    // --- limits() with no data returns None even with graph_limits ---
+    // --- limits() with no data is an error even with graph_limits ---
 
     #[test]
-    fn limits_with_no_data_returns_none() {
+    fn limits_with_no_data_returns_error() {
         let g = Graph::<i32>::new().with_x_limits(0, 10);
         assert!(
-            g.limits().is_none(),
+            g.limits().is_err(),
             "No data means no limits, even with explicit graph limits"
         );
     }
@@ -533,5 +622,115 @@ mod tests {
         let result = g.get_axes_labels(&dummy_limits);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("no data"));
+    }
+
+    // --- non-finite data and invalid explicit limits ---
+
+    #[test]
+    fn limits_ignore_non_finite_points() {
+        let g = Graph::new().with_series(Series::new(&[
+            Point::new(f64::NAN, 0.0),
+            Point::new(1.0, 1.0),
+            Point::new(2.0, f64::INFINITY),
+            Point::new(3.0, -2.0),
+        ]));
+        assert_eq!(
+            g.limits().unwrap(),
+            Limits::new(Point::new(1.0, -2.0), Point::new(3.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn limits_with_only_non_finite_points_returns_error() {
+        let g = Graph::new().with_series(Series::new(&[Point::new(f64::NAN, f64::NAN)]));
+        assert!(g.limits().is_err());
+    }
+
+    #[test]
+    fn inverted_explicit_limits_return_error() {
+        let err = graph_with_data()
+            .with_x_limits(15, -5)
+            .limits()
+            .unwrap_err();
+        assert!(err.to_string().contains("inverted"), "{err}");
+        let err = graph_with_data()
+            .with_y_limits(30, -10)
+            .limits()
+            .unwrap_err();
+        assert!(err.to_string().contains("inverted"), "{err}");
+    }
+
+    #[test]
+    fn non_finite_explicit_limits_return_error() {
+        let g = Graph::new()
+            .with_series(Series::new(&[Point::new(0.0, 0.0), Point::new(1.0, 1.0)]))
+            .with_x_limits(0.0, f64::NAN);
+        assert!(g.limits().is_err());
+    }
+
+    // --- view limits and scaling ---
+
+    #[test]
+    fn view_limits_pad_single_point() {
+        let g = Graph::new().with_series(Series::new(&[Point::new(10.0, 0.0)]));
+        let view = g.view_limits().unwrap();
+        assert_eq!(
+            view,
+            Limits::new(Point::new(9.5, -0.5), Point::new(10.5, 0.5))
+        );
+    }
+
+    #[test]
+    fn view_limits_leave_nonzero_spans_unchanged() {
+        let view = graph_with_data().view_limits().unwrap();
+        assert_eq!(
+            view,
+            Limits::new(Point::new(0.0, 0.0), Point::new(10.0, 20.0))
+        );
+    }
+
+    #[test]
+    fn scale_single_point_to_center_of_offset_limits() {
+        let g = Graph::new().with_series(Series::new(&[Point::new(5.0, 5.0)]));
+        let new_limits = Limits::new(Point::new(10.0, 20.0), Point::new(90.0, 60.0));
+        let scaled = g.scale(new_limits.clone()).unwrap();
+        assert_eq!(scaled.data()[0].data()[0], Point::new(50.0, 40.0));
+        assert_eq!(scaled.limits().unwrap(), new_limits);
+    }
+
+    #[test]
+    fn scale_maps_data_extremes_to_new_limits() {
+        let new_limits = Limits::new(Point::new(10.0, 10.0), Point::new(110.0, 210.0));
+        let scaled = graph_with_data().scale(new_limits).unwrap();
+        let points = scaled.data()[0].data();
+        assert_eq!(points[0], Point::new(10.0, 10.0));
+        assert_eq!(points[1], Point::new(110.0, 210.0));
+    }
+
+    #[test]
+    fn scale_with_limits_excluding_a_whole_series() {
+        let g = Graph::new()
+            .with_series(Series::new(&[Point::new(0.0, 0.0), Point::new(1.0, 1.0)]))
+            .with_series(
+                Series::new(&[Point::new(50.0, 50.0), Point::new(60.0, 60.0)])
+                    .with_line_style(crate::plotting::line::LineStyle::default()),
+            )
+            .with_x_limits(0.0, 2.0);
+        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
+        let scaled = g.scale(new_limits).unwrap();
+        assert_eq!(scaled.data()[0].data().len(), 2);
+        assert!(scaled.data()[1].data().is_empty());
+        assert!(scaled.get_mask().is_ok());
+    }
+
+    #[test]
+    fn scale_with_limits_excluding_all_points_returns_error() {
+        let g = graph_with_data().with_x_limits(100, 200);
+        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
+        let err = g.scale(new_limits).unwrap_err();
+        assert!(
+            err.to_string().contains("No data points lie within"),
+            "{err}"
+        );
     }
 }

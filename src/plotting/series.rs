@@ -32,11 +32,8 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Series<T> {
 }
 
 impl<T: Graphable> Series<T> {
+    /// Creates a series from the given points. An empty series is valid and draws nothing.
     pub fn new(data: &[Point<T>]) -> Series<T> {
-        if data.is_empty() {
-            panic!("Data series cannot be empty");
-        }
-
         Series {
             data: Vec::from(data),
             marker_style: MarkerStyle::default(),
@@ -79,21 +76,16 @@ impl<T: Graphable> Series<T> {
 
 impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
-        let mut mask_points = self
-            .data()
-            .iter()
-            .flat_map(|&p| {
-                Marker::new(p.convert_to_u32(), self.marker_style.clone())
-                    .get_mask()
-                    .unwrap()
-            })
-            .collect::<Vec<_>>();
+        let mut mask_points = Vec::new();
+        for &p in self.data() {
+            mask_points
+                .extend(Marker::new(p.convert_to_u32(), self.marker_style.clone()).get_mask()?);
+        }
 
         // add lines if line styling is present
         if let Some(line_style) = &self.line_style {
-            for i in 0..self.data.len() - 1 {
-                let start = self.data[i];
-                let end = self.data[i + 1];
+            for pair in self.data.windows(2) {
+                let (start, end) = (pair[0], pair[1]);
                 let pos = LinePositioning::BetweenPoints { start, end };
                 let line = Line::new(pos.convert_to_u32(), *line_style);
                 mask_points.extend(line.get_mask()?);
@@ -250,9 +242,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn create_empty_series() {
         let data: Vec<Point<f32>> = vec![];
-        Series::new(&data);
+        let series = Series::new(&data).with_line_style(LineStyle::default());
+        assert!(series.data().is_empty());
+        assert!(series.get_mask().unwrap().is_empty());
     }
 }

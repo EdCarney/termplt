@@ -112,16 +112,17 @@ where
         let x: f64 = self.x.into();
         let y: f64 = self.y.into();
 
-        // When old_span is 0 (all points identical in that dimension),
-        // map to the midpoint of the new range instead of dividing by zero.
+        // When old_span is 0 (all points identical in that dimension), map to the middle of the
+        // new span instead of dividing by zero. Like the regular branch, the result is relative
+        // to the origin of the new limits; callers shift by the new minimum afterwards.
         let new_x = if old_span_x == 0.0 {
-            (new_limits.min().x + new_limits.max().x) / 2.0
+            new_span_x / 2.0
         } else {
             x * (new_span_x / old_span_x)
         };
 
         let new_y = if old_span_y == 0.0 {
-            (new_limits.min().y + new_limits.max().y) / 2.0
+            new_span_y / 2.0
         } else {
             y * (new_span_y / old_span_y)
         };

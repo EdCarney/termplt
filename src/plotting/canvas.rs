@@ -69,7 +69,10 @@ impl Canvas {
             pixels: (0..height)
                 .map(|_| vec![background; width as usize])
                 .collect(),
-            limits: Limits::new(Point::new(0, 0), Point::new(width - 1, height - 1)),
+            limits: Limits::new(
+                Point::new(0, 0),
+                Point::new(width.saturating_sub(1), height.saturating_sub(1)),
+            ),
         }
     }
 
@@ -79,9 +82,12 @@ impl Canvas {
         if self.limits.contains(point) {
             // reverse y since higher values means closer to
             // the top of the canvas
-            let x = point.x;
-            let y = self.limits.max().y - point.y;
-            self.pixels[y as usize][x as usize] = *color;
+            let x = point.x as usize;
+            let y = (self.limits.max().y - point.y) as usize;
+            // bounds-checked since a zero-sized canvas still has 0..=0 limits
+            if let Some(pixel) = self.pixels.get_mut(y).and_then(|row| row.get_mut(x)) {
+                *pixel = *color;
+            }
         }
     }
 
@@ -124,7 +130,10 @@ where
             buffer: CanvasBuffer::new(BufferType::None),
             graph: None,
             labels: Vec::new(),
-            limits: Limits::new(Point::new(0, 0), Point::new(width - 1, height - 1)),
+            limits: Limits::new(
+                Point::new(0, 0),
+                Point::new(width.saturating_sub(1), height.saturating_sub(1)),
+            ),
         }
     }
 
@@ -134,9 +143,6 @@ where
     }
 
     pub fn with_graph(mut self, graph: Graph<T>) -> Self {
-        if graph.data().is_empty() {
-            panic!("Cannot add empty graph");
-        }
         self.graph = Some(graph);
         self
     }
@@ -152,17 +158,20 @@ where
 
     /// Consumes all drawable assets and draws them on the canvas.
     pub fn draw(mut self) -> Result<Self> {
+        if self.canvas.pixels.is_empty() || self.canvas.pixels[0].is_empty() {
+            return Err("Canvas width and height must be nonzero".into());
+        }
+
         let canvas_limits = self.get_drawable_limits()?.convert_to_f64();
 
         if let Some(graph) = self.graph.take() {
-            let unscaled_limits = graph
-                .limits()
-                .ok_or("Graph has no data; cannot compute limits")?
-                .convert_to_f64();
-            let scaled_graph = graph.scale(canvas_limits);
+            // the view limits are the data values at the edges of the drawable area, so they
+            // determine the numbers shown on the axes labels
+            let view_limits = graph.view_limits()?;
+            let scaled_graph = graph.scale_with_view(&view_limits, canvas_limits)?;
 
             scaled_graph
-                .get_axes_labels(&unscaled_limits)?
+                .get_axes_labels(&view_limits)?
                 .into_iter()
                 .for_each(|label| self.labels.push(label));
 
@@ -253,12 +262,22 @@ mod tests {
     use crate::plotting::{colors, series::Series};
 
     #[test]
-    #[should_panic]
-    fn empty_canvas() {
-        TerminalCanvas::new(100, 100, colors::BLACK)
+    fn empty_graph_returns_error() {
+        let result = TerminalCanvas::new(100, 100, colors::BLACK)
             .with_graph(Graph::<u32>::new())
-            .draw()
-            .unwrap();
+            .draw();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn zero_sized_canvas_returns_error() {
+        let points = [Point::new(0.0, 0.0), Point::new(1.0, 1.0)];
+        for (w, h) in [(0, 10), (10, 0), (0, 0)] {
+            let result = TerminalCanvas::new(w, h, colors::BLACK)
+                .with_graph(Graph::new().with_series(Series::new(&points)))
+                .draw();
+            assert!(result.is_err(), "{w}x{h} canvas should error");
+        }
     }
 
     #[test]
@@ -337,5 +356,89 @@ mod tests {
         assert_eq!(buf.right, 3);
         assert_eq!(buf.top, 0);
         assert_eq!(buf.bottom, 0);
+    }
+
+    fn red_pixels(bytes: &[u8], width: usize) -> Vec<(usize, usize)> {
+        bytes
+            .chunks(3)
+            .enumerate()
+            .filter(|(_, px)| *px == [255, 0, 0])
+            .map(|(i, _)| (i % width, i / width))
+            .collect()
+    }
+
+    fn red_marker() -> crate::plotting::marker::MarkerStyle {
+        crate::plotting::marker::MarkerStyle::FilledSquare {
+            size: 0,
+            color: colors::RED,
+        }
+    }
+
+    #[test]
+    fn single_point_is_drawn_at_center() {
+        let bytes =
+            TerminalCanvas::new(101, 101, colors::BLACK)
+                .with_buffer(BufferType::Uniform(10))
+                .with_graph(Graph::new().with_series(
+                    Series::new(&[Point::new(5.0, 5.0)]).with_marker_style(red_marker()),
+                ))
+                .draw()
+                .unwrap()
+                .get_bytes();
+        assert_eq!(red_pixels(&bytes, 101), vec![(50, 50)]);
+    }
+
+    #[test]
+    fn constant_series_is_drawn_at_vertical_center() {
+        let points = [Point::new(0.0, 5.0), Point::new(10.0, 5.0)];
+        let bytes = TerminalCanvas::new(101, 101, colors::BLACK)
+            .with_buffer(BufferType::Uniform(10))
+            .with_graph(
+                Graph::new().with_series(Series::new(&points).with_marker_style(red_marker())),
+            )
+            .draw()
+            .unwrap()
+            .get_bytes();
+        assert_eq!(red_pixels(&bytes, 101), vec![(10, 50), (90, 50)]);
+    }
+
+    #[test]
+    fn non_finite_points_with_axes_draw() {
+        use crate::plotting::{
+            axes::{Axes, AxesPositioning},
+            line::LineStyle,
+            text::TextStyle,
+        };
+        let points = [
+            Point::new(f64::NAN, 0.0),
+            Point::new(1.0, 1.0),
+            Point::new(f64::INFINITY, 2.0),
+            Point::new(2.0, 3.0),
+        ];
+        TerminalCanvas::new(200, 200, colors::BLACK)
+            .with_buffer(BufferType::Uniform(40))
+            .with_graph(
+                Graph::new()
+                    .with_series(Series::new(&points))
+                    .with_axes(Axes::new(
+                        AxesPositioning::XY(LineStyle::default()),
+                        TextStyle::default(),
+                    )),
+            )
+            .draw()
+            .unwrap();
+    }
+
+    #[test]
+    fn inverted_limits_return_error() {
+        let points = [Point::new(0.0, 0.0), Point::new(1.0, 1.0)];
+        let result = TerminalCanvas::new(200, 200, colors::BLACK)
+            .with_graph(
+                Graph::new()
+                    .with_series(Series::new(&points))
+                    .with_x_limits(2.0, 0.0),
+            )
+            .draw();
+        assert!(result.is_err());
     }
 }
