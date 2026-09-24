@@ -50,11 +50,7 @@ pub fn parse_inline(s: &str) -> Result<Vec<Point<f64>>> {
     let groups: Vec<&str> = if s.contains('(') {
         parenthesized_groups(s)?
     } else {
-        joined = s
-            .split(',')
-            .map(str::trim)
-            .collect::<Vec<_>>()
-            .join(",");
+        joined = s.split(',').map(str::trim).collect::<Vec<_>>().join(",");
         joined
             .split(|c: char| c.is_whitespace() || c == ';')
             .filter(|g| !g.is_empty())

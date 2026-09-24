@@ -14,9 +14,11 @@ cargo fmt --check                    # Formatting (enforced in CI)
 TERMPLT_UPDATE_SNAPSHOTS=1 cargo test --test golden  # Regenerate golden PNGs after an intentional rendering change (review them!)
 PROPTEST_CASES=20000 cargo test --test properties    # Longer property-test run
 cargo run -- --data "(1,1),(2,4)"    # Render a plot via the CLI (needs a Kitty-protocol terminal)
+cargo run -- data.csv -o plot.png    # Write a PNG instead (no terminal needed; handy for checking output)
+cargo test --no-default-features     # Library only, without the clap-based CLI
 ```
 
-CI (`.github/workflows/ci.yml`): build + test on Linux and Windows, clippy, rustfmt. No feature flags, no custom build scripts. Edition 2024 (let-chains are used, so Rust >= 1.88).
+CI (`.github/workflows/ci.yml`): build + test on Linux and Windows (also with `--no-default-features`), clippy, rustfmt. One feature, `cli` (default), gates the binary and its `clap` dependency. No custom build scripts. Edition 2024 (let-chains are used, so Rust >= 1.88).
 
 ## Architecture
 
@@ -75,6 +77,13 @@ After rendering, the canvas bytes are sent via Kitty APC sequences: `encoding.rs
 ### Text/Number Rendering (`text.rs`, `numbers.rs`)
 
 Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters render as a placeholder box. Supports scaling (pixel replication) and padding. `num_to_str` uses decimal when `0.1^sig_figs < |x| < 10^sig_figs`, otherwise scientific notation, with trailing zero stripping.
+
+### CLI (`src/bin/termplt/`)
+
+- `cli.rs`: clap derive definition. Style options (`--color`, `--marker`, `--line`, ...) are defaults for every series; old snake_case flags are hidden aliases.
+- `series.rs`: `--series` spec parsing (`key=value` pairs; a `,`/`;` only splits when followed by `key=`, so `data=(1,2),(3,4)` works), style resolution, palette, marker/line name parsing.
+- `data.rs`: inline point parsing and `Table` (CSV/TSV/whitespace, header detection, columns by name or 1-based index, `index` = row number, missing values skipped).
+- `main.rs`: collects series (FILE args × y columns, then `--data`, then `--series`; piped stdin when nothing else is given, read once and cached), sizes the canvas (fits the terminal, or 800x600 with `--output`), then displays via Kitty or writes an image.
 
 ## Testing
 
