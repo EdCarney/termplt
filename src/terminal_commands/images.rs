@@ -16,7 +16,18 @@ pub enum ImageError {
 
 impl fmt::Display for ImageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            ImageError::PositioningOutsideTerminalWindow => {
+                write!(f, "Image position lies outside the terminal window")
+            }
+            ImageError::DisplayRegionExceedsImageBounds => {
+                write!(f, "Display region exceeds the image bounds")
+            }
+            ImageError::KittyFormatUnsupported => write!(
+                f,
+                "Unsupported combination of pixel format and transmission medium"
+            ),
+        }
     }
 }
 
@@ -45,14 +56,17 @@ impl Image {
     pub fn new(format: PixelFormat, transmission: Transmission) -> Result<Image> {
         let (width_pix, height_pix) = match format {
             PixelFormat::Png => match transmission {
-                Transmission::File(ref file_path) => {
+                Transmission::File(ref file_path) | Transmission::TempFile(ref file_path) => {
                     image::image_dimensions(Path::new(&file_path))?
                 }
                 Transmission::Direct(ref bytes) => {
                     let cursor = Cursor::new(bytes);
                     ImageReader::with_format(cursor, ImageFormat::Png).into_dimensions()?
                 }
-                _ => panic!("Unsupported format"),
+                // the size of a PNG in shared memory cannot be read without mapping it
+                Transmission::SharedMemory(_) => {
+                    return Err(Box::new(ImageError::KittyFormatUnsupported));
+                }
             },
             PixelFormat::PngBounded { cols, rows } => {
                 let window_sz = window_ctrl::get_window_size()?;
@@ -105,20 +119,24 @@ impl Image {
                 csi_cmds::set_cursor_pos(cursor_pos.row, cursor_pos.col)
             }
             PositioningType::Centered => {
-                let x = (window_sz.x_pix / 2) - (self.width_pix / 2);
-                let y = (window_sz.y_pix / 2) - (self.height_pix / 2);
+                // images larger than the window are anchored at the top-left corner
+                let x = (window_sz.x_pix / 2).saturating_sub(self.width_pix / 2);
+                let y = (window_sz.y_pix / 2).saturating_sub(self.height_pix / 2);
                 self.display_at_position(PositioningType::ExactPixel { x, y })
             }
         }
     }
 
     fn display_with_attributes(&self, attributes: &[String]) -> Result<()> {
+        // for every medium other than direct transmission, the payload is the path or name of
+        // the object holding the image data
         let cmd = match self.transmission {
             Transmission::Direct(ref bytes) => KittyCommand::new(bytes, attributes),
-            Transmission::File(ref file_path) => {
-                KittyCommand::new(file_path.as_bytes(), attributes)
+            Transmission::File(ref name)
+            | Transmission::TempFile(ref name)
+            | Transmission::SharedMemory(ref name) => {
+                KittyCommand::new(name.as_bytes(), attributes)
             }
-            _ => panic!("Unsupported type!"),
         };
         cmd.execute()
     }

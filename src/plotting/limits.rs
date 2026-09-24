@@ -21,10 +21,25 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Limits<T> {
 
 impl<T: FloatConvertable + Graphable> Limits<T> {
     /// Creates a new instance with the specified min/max. Requires that the max point be greater
-    /// than the min point in both dimensions.
+    /// than or equal to the min point in both dimensions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min` exceeds `max` in either dimension; use [`Limits::try_new`] to validate
+    /// untrusted input.
     pub fn new(min: Point<T>, max: Point<T>) -> Limits<T> {
         Self::validate_limit(&min, &max);
         Limits { min, max }
+    }
+
+    /// Creates a new instance, returning an error if `min` exceeds `max` in either dimension or
+    /// if either point is not comparable (e.g. contains NaN).
+    pub fn try_new(min: Point<T>, max: Point<T>) -> crate::common::Result<Limits<T>> {
+        if min.x <= max.x && min.y <= max.y {
+            Ok(Limits { min, max })
+        } else {
+            Err(format!("Invalid limits: min {min:?} must not exceed max {max:?}").into())
+        }
     }
 
     pub fn update_min(&mut self, new_min: Point<T>) {
@@ -142,6 +157,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn try_new_validates_range() {
+        assert!(Limits::try_new(Point::new(0, 0), Point::new(1, 1)).is_ok());
+        assert!(Limits::try_new(Point::new(0, 0), Point::new(0, 0)).is_ok());
+        assert!(Limits::try_new(Point::new(2, 0), Point::new(1, 1)).is_err());
+        assert!(Limits::try_new(Point::new(0.0, f64::NAN), Point::new(1.0, 1.0)).is_err());
+    }
 
     #[test]
     #[should_panic]

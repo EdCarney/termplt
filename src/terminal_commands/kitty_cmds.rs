@@ -27,7 +27,8 @@ impl TermCommand for KittyCommand {
 
 impl KittyCommand {
     pub fn new(payload: &[u8], ctrl_data: &[String]) -> KittyCommand {
-        let payload = encoding::read_bytes_to_b64(payload).unwrap();
+        let payload = encoding::read_bytes_to_b64(payload)
+            .expect("base64 encoding of a byte slice cannot fail");
         let mut ctrl_data = Vec::from(ctrl_data);
 
         let chunks = payload.chunks(MAX_PAYLOAD_SIZE);

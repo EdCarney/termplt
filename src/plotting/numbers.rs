@@ -185,6 +185,22 @@ ee
   eeeeee
 ";
 
+/// Drawn for characters without a bitmap.
+const CHAR_UNKNOWN: &str = "
+##########
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##########
+";
+
+/// Returns the bitmap for `c`. Characters without a bitmap are drawn as a hollow box.
 pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
     let str_map = match c {
         '0' => NUM_ZERO,
@@ -201,7 +217,7 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
         '.' => CHAR_DECIMAL,
         '-' => CHAR_DASH,
         'e' => CHAR_E,
-        _ => panic!("Bitmap not defined for character: '{c}'"),
+        _ => CHAR_UNKNOWN,
     };
 
     // note that bitmaps are written to be human-readable; they need to be modified to be
@@ -270,4 +286,16 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
     bitmap.reverse();
 
     bitmap
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_character_uses_placeholder() {
+        let style = TextStyle::default();
+        assert_eq!(get_bitmap('N', &style), get_bitmap('?', &style));
+        assert_ne!(get_bitmap('N', &style), get_bitmap(' ', &style));
+    }
 }
