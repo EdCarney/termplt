@@ -1,0 +1,303 @@
+# termplt Improvement Plan
+
+Review of commit `74918e3` (v0.1.2). How the review was done:
+
+- Read every file under `src/`, plus the workflows, README and CLAUDE.md.
+- Ran `cargo test` (126 tests pass) and `cargo clippy --all-targets` (about 59 warnings).
+- Ran the CLI with stdin/stdout not attached to a terminal, and inside a pty whose terminal never answers queries.
+- Wrote throwaway library tests to probe edge cases.
+- Rendered plots to PNG and inspected them.
+
+Items marked **(reproduced)** were confirmed by running code. The rest come from reading the source.
+
+Priority: **P0** hang, crash or wrong output · **P1** big usability or quality gain · **P2** polish and maintainability.
+
+---
+
+## P0: hangs, crashes, wrong output
+
+### 1. The CLI hangs forever when the terminal doesn't answer a CSI query (reproduced)
+- `responses.rs:48-65`: `stdin.read_exact` blocks. The 1 s timeout is only checked *between* bytes, so a terminal that never replies blocks forever. Repro: `script -qc "termplt --data '(1,1),(2,2)'" /dev/null` never returns. This affects tmux without passthrough, screen, the VS Code terminal and any xterm that doesn't answer `CSI 14 t`.
+- The query is written *before* raw mode is enabled (`responses.rs:48-49`), so the reply can be echoed to the screen.
+- Nothing guarantees `disable_raw_mode`. A `?` early return or a panic (item 2) leaves the user's shell in raw mode.
+- **Fix:**
+  - Use an RAII guard that enables raw mode *before* writing and restores it in `Drop`.
+  - Use a real timeout: `poll(2)` on Unix, `WaitForSingleObject` on Windows, or a reader thread plus `recv_timeout`.
+  - Better still, add a sentinel. Append the DA1 query (`CSI c`) after every query. Every VT-compatible terminal answers DA1, so if the DA1 reply arrives first, the query is unsupported and no timeout is needed. The kitty docs recommend this pattern for graphics detection [1].
+  - Read replies from `/dev/tty` instead of stdin (on Windows, `CONIN$`). This also unblocks piping data into the CLI (item 16).
+- **Trade-off:** a reader thread is portable, but a blocking read can't be cancelled, so the thread leaks until a byte arrives. `poll` is clean but needs a `cfg` split per OS. The DA1 sentinel removes most of the dependence on timeouts.
+
+### 2. Panics on unexpected terminal replies
+`csi_cmds.rs:48-57, 80-87, 98-105` use `expect`/`assert_eq!` to parse replies. A malformed or interleaved reply (for example, the user presses a key during the query) panics while raw mode may still be on. Return `Err` instead.
+
+### 3. Non-TTY use gives a cryptic error and writes escape bytes into the pipe (reproduced)
+`termplt --data ... </dev/null` prints `\x1b[14t` to stdout, then `Error: No such device or address (os error 6)`. Check `std::io::IsTerminal` up front and print an actionable message, for example "stdout is not a terminal; use `--output plot.png`" (item 18).
+
+### 4. Degenerate data (one point, or a constant x or y) is drawn off-center, with no axes or grid (reproduced)
+- `Point::scale_to` (`point.rs:117`) returns the *absolute* midpoint of the new range. `Graph::scale_to` then shifts by the new minimum again (`graph.rs:260,270`), so the offset is applied twice. On a 101×101 canvas with buffer 10, a single point lands at pixel (60,40) instead of (50,50). A constant-y series is drawn at 40% height instead of 50%. `graph_limits.rs:62` has the same bug.
+- With zero span the axes and grid lines have zero length and don't render. All the tick labels stack on top of each other.
+- **Fix:** pad degenerate limits before scaling (for example ±0.5, or ±5% of |v|), which is what matplotlib does. The zero-span branch then becomes unreachable, but keep it and make it relative (`new_span / 2`).
+
+### 5. Explicit axis limits that exclude every point of a series panic (reproduced)
+- `Graph::scale` filters out points outside the limits (`graph.rs:183-192`). An emptied series then hits `0..self.data.len() - 1` in `series.rs:94`, which underflows: `attempt to subtract with overflow` in debug builds, and an out-of-bounds index in release builds.
+- If *all* points are excluded, `graph.rs:200` panics via `expect`.
+- **Fix:** iterate with `data.windows(2)`, skip empty series, and return `Err` when nothing is left to draw.
+- **Related:** dropping out-of-range *points* also removes line segments that cross the boundary, so lines stop short of the plot edge. Clip *segments* to the limit rectangle with Liang–Barsky [2] instead.
+
+### 6. NaN or ±∞ in the data crashes rendering (reproduced)
+- The CLI accepts `nan` and `inf`, because `f64::from_str` does.
+- A NaN as the first point poisons the limits: the fold in `point.rs:18-37` compares with `<`, which is always false against NaN.
+- An infinite or NaN value reaches tick labels as `"inf"`/`"NaN"`, and `numbers.rs:204` panics with "Bitmap not defined for character".
+- **Fix:** reject or filter non-finite values at the library boundary; the CLI should skip them and warn. `get_bitmap` should fall back to a placeholder glyph instead of panicking.
+
+### 7. `line_thickness` has no effect on series lines (reproduced)
+- Lines between points (`line.rs:207`) use Bresenham only. Thickness is applied only to horizontal and vertical lines (axes and grid). Measured: thickness 0 and thickness 3 both produce exactly 100 red pixels. The README advertises `--line_thickness` and uses it in an example.
+- **Fix, option A:** stamp a disc of radius *t* at each Bresenham pixel. It's simple and gives round joins, at O(n·t²).
+- **Fix, option B:** draw offset parallel lines or fill a polygon per segment. This is cheaper, but joins need extra work to avoid gaps.
+
+### 8. Other panics reachable through the public API
+Each of these crashes the program instead of returning an error:
+- `Limits::new` with inverted bounds (`limits.rs:42`), reachable with `graph.with_x_limits(2.0, 0.0)` (reproduced).
+- `TerminalCanvas::new(0, h)` underflows on `width - 1` (`canvas.rs:72`) (reproduced).
+- `with_graph` on an empty graph (`canvas.rs:138`).
+- `Series::new(&[])` (`series.rs:37`).
+- `LineStyle::Dashed` is a `todo!()` (`line.rs:220`) (reproduced).
+- `TextPositioning::LeftAligned` (`text.rs:278,285`).
+- `Image::new`/`display` with `TempFile`/`SharedMemory` (`images.rs:55,119`).
+- `PositioningType::Centered` underflows when the image is bigger than the window (`images.rs:106`).
+- `.unwrap()` inside `Result`-returning code: `series.rs:88`, `grid_lines.rs:31,38`, `text.rs:262,271-272`, `kitty_cmds.rs:30`.
+
+**Fix:** make constructors that validate input return `Result`, or make invalid states unrepresentable (`NonZeroU32` for canvas size). Implement `Dashed` by skipping pixels along the Bresenham path with an on/off pattern, or remove the variant until it's implemented.
+
+### 9. CSV error line numbers are off by one when a header is skipped (reproduced)
+`termplt.rs:352-356` consumes the header *before* `enumerate()`. The input `x,y\n1,2\nfoo,3` reports `bad.csv:2`, but `foo` is on line 3. Enumerate first, then skip.
+
+---
+
+## P1: plot quality (what the user sees)
+
+### 10. Tick labels are unreadable at the CLI's default size (reproduced by rendering)
+At the CLI's default geometry for a typical window (500 px canvas, 50 px buffer):
+- The x labels overlap into one unreadable string.
+- The y labels are clipped at the left edge, so `-0.99` renders as `0.99`.
+- Tick values are arbitrary (`0.733, 1.47, …`), and the zero line reads `3e-4`.
+
+**Causes:**
+- The raw data range is always split into exactly 10 divisions (`axes.rs:46`, `grid_lines.rs:25`).
+- Glyphs are a fixed 10 px wide.
+- The buffer is sized with no knowledge of label width.
+
+**Fixes:**
+- Pick "nice" tick steps from {1, 2, 5} × 10ᵏ (Heckbert [3]), with the same number of decimal places on every label of an axis.
+- Derive the tick count from the available pixels divided by the widest label.
+- Lay out margins automatically: compute the left and bottom margins from the actual label extents instead of a single uniform buffer.
+- Snap values within ε·span of 0 to exactly 0.
+- Optionally extend the axis limits out to the nearest tick ("loose" labeling [3]).
+
+### 11. Data touches the axes
+Markers at the minimum and maximum sit on the axis lines. Add default padding of about 5% of the span.
+
+### 12. Grid lines are drawn over the axes
+The mask order is axes, then grid, then series (`graph.rs` `get_mask`). Draw the grid first.
+
+### 13. No title, axis names or legend
+The bitmap font covers only `0-9 . - e` and space. Add a small ASCII bitmap font (for example a public-domain 6×8 font, scaled) so titles, axis names and a legend with per-series names become possible. In the CLI that could be `--label "sin(x)"` per series and `--title`.
+
+### 14. Default text color is black
+`TextStyle::default()` is black (`text.rs:96`), and the default canvas in the examples is also black, so labels are invisible. Pick a default that contrasts with the background.
+
+### 15. The CLI's `--marker_style None` is a hack
+`termplt.rs:495` draws a zero-size *black* square at every point. That leaves a visible dot on non-black backgrounds and overwrites the grid. Support "no marker" in the library with `Option<MarkerStyle>` or a `MarkerStyle::None` variant.
+
+---
+
+## P1: CLI usability
+
+### 16. Read data from stdin
+Piping (`some_cmd | termplt`) is the most common workflow in a terminal. Accept `-` or detect a non-TTY stdin. This requires terminal queries to go through `/dev/tty` rather than stdin (item 1).
+
+### 17. Column selection
+- Add `--x-col` and `--y-col`, by header name or index.
+- Allow several y columns, producing one series per column from a single file.
+- Plot single-column data as y against the row index.
+
+### 18. Output and layout flags
+- `--width` and `--height` (or `--rows` and `--cols` in cells).
+- `--output plot.png`: the `image` crate is already a dependency. This also covers non-kitty terminals, CI and reports.
+- `--xlim` and `--ylim` (the library supports limits, but the CLI doesn't expose them).
+- `--title`, `--bg`, `--no-grid`, `--log-x` and `--log-y`.
+
+### 19. The inline data parser is too strict (reproduced)
+`"(1,1), (2,2)"` fails because `termplt.rs:307` splits on the literal `"),("`. Tokenize on parentheses instead, and also accept the `1,1 2,2` form.
+
+### 20. Color names are too strict (reproduced)
+`DarkRed` fails and only `DARK_RED` works (`colors.rs:286`). Normalize names by removing `_`, `-` and spaces before comparing. Also accept `#RRGGBB`.
+
+### 21. Argument parser: missing `--version`, non-standard snake_case flags, no suggestions
+The parser is hand-rolled.
+
+| Option | Pros | Cons |
+|---|---|---|
+| `clap` (derive) [4] | Generated help, `--version`, shell completions, "did you mean" suggestions, kebab-case flags with snake_case kept as hidden aliases | More compile time and binary size. Tying style flags to the *preceding* `--data` needs `ArgMatches::indices_of`, which is awkward. |
+| `lexopt` [5] | Tiny, no dependencies, keeps the current ordered per-series semantics naturally | Help text, completions and suggestions stay manual |
+| Keep the current parser | No new dependency | About 130 lines of repetitive parsing code, and every new flag makes it longer |
+
+**Recommendation:** `clap`, if you're willing to replace the per-series flag order with explicit grouping (for example `--series "file=a.csv,color=red"`). Otherwise `lexopt`.
+
+### 22. Hard-coded canvas size
+`termplt.rs:583` always draws a square at half the smaller window dimension, which wastes most of the width in a wide terminal. Default to something like the full width × about 60% of the height, capped by the window, and let flags override it.
+
+### 23. `--verbose` duplicates the layout math
+`termplt.rs:593-617` re-implements `get_drawable_limits`, so the two can drift apart. Call `TerminalCanvas::get_drawable_limits()` instead.
+
+### 24. Missing values abort the whole file
+An empty field or `NA` stops parsing. Offer a skip-and-warn mode, or at least a flag for it, and report how many rows were skipped.
+
+---
+
+## P1: terminal and protocol robustness
+
+### 25. Detect graphics support before rendering
+Send an `a=q` query with an image id, followed by DA1 [1]. If the terminal doesn't support the protocol, show a clear error or fall back. Fallback options:
+- `--output png`.
+- A Unicode braille or half-block renderer. Resolution is lower, but it works everywhere, including in tmux and CI logs.
+
+### 26. Window-size lookup
+Commit `4926cc0` replaced the ioctl with CSI queries for Windows. On Unix, prefer `TIOCGWINSZ` (`crossterm::terminal::window_size()` returns pixel sizes). It needs no terminal round trip, so it can't hang. Fall back to `CSI 14t`/`18t`, then to a default size with a warning. Use `cfg` to keep both paths.
+
+### 27. Compress the image data sent to the terminal (measured)
+An 800×800 plot is 1.92 MB raw, or 2.56 MB after base64, sent on *every* render. The same 500 px plot saved as PNG is about 12.6 KB, versus 750 KB raw: roughly 60× smaller. Over SSH this is the difference between instant and multi-second.
+
+Two ways to fix it:
+- Send `f=100` (PNG), encoded with the existing `image` dependency.
+- Keep `f=24` and add `o=z` (zlib) [1].
+
+**Trade-off:** a few ms of CPU to encode, in exchange for 1–2 orders of magnitude less bandwidth. PNG is lossless.
+
+### 28. tmux and screen
+- When `$TMUX` is set, wrap the APC sequence in DCS passthrough (`\ePtmux;` plus doubled ESC, then `\e\\`). The user must also set `allow-passthrough on`.
+- Kitty's Unicode-placeholder mode (`U=1`) [1] keeps the image in place when tmux redraws. Document the setup either way.
+
+### 29. Suppress terminal replies
+Add `q=2` to transmit commands. Without an image id the terminal doesn't reply today, but this becomes necessary once ids are used, for example to replace a plot in place.
+
+### 30. File transmission
+`Transmission::File` sends the path unchanged, but kitty requires an absolute path. Canonicalize it first. Also document that file transmission doesn't work over SSH.
+
+### 31. Windows is untested
+Reading VT replies from a raw console stdin depends on VT input mode. CI only runs unit tests on Windows, so this path is unverified. Add a manual test checklist, or state in the README which Windows terminals are supported (for example WezTerm).
+
+---
+
+## P2: library API ergonomics
+
+### 32. Add a high-level entry point
+The README example needs about 50 lines, 10 imports and hand-wired `Image` + `PixelFormat` + `Transmission` code.
+- Add `termplt::prelude`.
+- Add a one-call API that sizes itself to the terminal like the CLI does, for example `Plot::new().line(&xs, &ys).scatter(&pts).title("…").show()?`, plus `.save_png(path)`.
+- Keep the current builders as the lower layer.
+
+### 33. Accept common input shapes
+`Series::from_xy(&xs, &ys)`, `impl FromIterator<(T, T)>`, and `From<Vec<(T, T)>>`.
+
+### 34. Reconsider the generic numeric design
+- `Graphable` requires `Into<f64>`, so **`i64`, `u64` and `usize` are excluded**. Those are the most common types for counts and indices.
+- The pipeline converts everything to `f64` before scaling anyway, so the `Convertable`/`Scalable`/`Shiftable` layers over `T` buy nothing at runtime.
+- **Option A:** keep generics and switch the bound to `num_traits::AsPrimitive<f64>`/`ToPrimitive`.
+- **Option B:** accept anything convertable at the API boundary and use `f64` internally. That removes a large share of the trait code in `common.rs` and the per-type impls.
+- **Trade-off:** option B is a breaking change, but it greatly simplifies maintenance. Option A is additive.
+
+### 35. Typed errors
+Replace `Box<dyn Error>` with `pub enum Error` (using `thiserror`), so callers can distinguish cases like `TerminalUnsupported`, `InvalidData` and `CanvasTooSmall`. Two current error types are unhelpful: `ImageError`'s `Display` just prints its `Debug` output, and `TerminalCommandError` carries no context.
+
+### 36. Implement the standard traits
+Follow C-COMMON-TRAITS [6]:
+- Implement `Default` instead of inherent `default()` functions (clippy `should_implement_trait`).
+- Derive `Copy` for `MarkerStyle`.
+- Derive `Debug` and `Clone` for `BufferType`, `PositioningType` and the `ctrl_seq` enums.
+
+### 37. Public surface is too wide
+`numbers`, `encoding`, `ctrl_seq`, `csi_cmds` and `kitty_cmds` are public, so any change to them is a semver break. Make them `pub(crate)` or `#[doc(hidden)]` before 1.0.
+
+### 38. Rustdoc
+Most public items have no docs.
+- Add crate-level docs.
+- Add `#![warn(missing_docs)]`.
+- Use `#![doc = include_str!("../README.md")]` so the README example is compiled as a doctest.
+
+### 39. `Limits::intersects` misses some overlaps
+`limits.rs:84` only checks whether a corner of one rectangle lies inside the other, so it misses cross-shaped overlaps. It's used for label collision. Use an interval-overlap test on each axis.
+
+### 40. Performance (measured)
+1M points on an 800×800 canvas take 1.37 s in a release build.
+- Each marker allocates a `Vec<Point<u32>>`.
+- The filled circle regenerates overlapping pixel ranges.
+- The canvas is a `Vec<Vec<RGB8>>` that `get_bytes` copies into another buffer.
+
+Improvements:
+- Write directly into one flat `Vec<u8>`.
+- Precompute a marker "stamp" once per style.
+- Decimate dense line series (min and max per pixel column).
+
+### 41. Trim dependencies
+`image` with default features pulls in many codecs. Use `default-features = false, features = ["png"]`.
+
+---
+
+## P2: testing, CI, release, docs
+
+### 42. CI gaps
+- No `cargo fmt --check`.
+- `cargo clippy` runs without `--all-targets -- -D warnings`. There are about 59 warnings today, most of them fixable with `cargo clippy --fix`.
+- macOS binaries are released but never tested.
+- No `cargo doc` step with `RUSTDOCFLAGS=-D warnings`.
+- No MSRV: set `rust-version = "1.85"` in `Cargo.toml` (edition 2024 needs at least 1.85) and add a CI job for it.
+
+### 43. Golden-image and property tests
+- Render to PNG and compare against checked-in snapshots. That would have caught items 4, 7 and 10.
+- Add `proptest` tests for scaling and limits, with the invariant "every scaled point lies inside the drawable limits", using arbitrary finite and non-finite input.
+
+### 44. Make terminal I/O testable
+`TermCommand` hard-codes stdout and stdin. Inject `Read + Write` so reply parsing, timeouts and chunking can be unit-tested against a fake terminal.
+
+### 45. Test temp files can collide
+The CLI tests write fixed file names into the shared temp directory, so concurrent runs can collide. Use `tempfile`.
+
+### 46. Release workflow gaps
+- No tests before building.
+- No check that the tag matches the `Cargo.toml` version.
+- No `cargo publish`.
+- No checksums (`SHA256SUMS`).
+
+Consider `cargo-dist` or `cargo-release`.
+
+### 47. Docs are out of date
+- The README's install snippet says `termplt = "0.1.0"`, but the crate is at 0.1.2.
+- README examples use files in `test_data/`, which isn't committed (it's generated by a Python script). Commit a few small samples, or make the examples self-contained.
+- CLAUDE.md is out of date:
+  - It says there's no CI.
+  - It lists as open several issues that are already fixed: missing base64 padding (fixed in `4502419`), `println!` and `unwrap()` in the library, and the `BufferType` panics (fixed in #23–#25).
+  - It gives the test count as 83; there are now 126.
+- `.claude/agent-memory/*` contain absolute macOS paths and outdated bug lists.
+- Add a `CHANGELOG.md`.
+
+---
+
+## Suggested order
+
+| Phase | Items | Goal |
+|---|---|---|
+| 1 | 1, 2, 3, 4, 5, 6, 8, 9, plus fmt/clippy from 42 | No hangs, no panics, correct placement |
+| 2 | 7, 10, 11, 12, 14, 15, plus golden tests (43) | Readable, correct-looking plots |
+| 3 | 16–24 | CLI is pleasant for everyday use |
+| 4 | 25–31 | Works over SSH and tmux, fails gracefully elsewhere |
+| 5 | 32–41 | Library API that's small and hard to misuse |
+| 6 | 42–47 | Keep it that way |
+
+## References
+1. Kitty graphics protocol: querying support (`a=q` + DA1), compression (`o=z`), PNG format (`f=100`), `q` flag, Unicode placeholders. https://sw.kovidgoyal.net/kitty/graphics-protocol/
+2. Liang, Y.-D., Barsky, B. A. "A New Concept and Method for Line Clipping." *ACM Transactions on Graphics* 3(1), 1984.
+3. Heckbert, P. "Nice Numbers for Graph Labels." *Graphics Gems*, Academic Press, 1990.
+4. clap: https://docs.rs/clap
+5. lexopt: https://docs.rs/lexopt
+6. Rust API Guidelines, C-COMMON-TRAITS: https://rust-lang.github.io/api-guidelines/interoperability.html
