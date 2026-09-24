@@ -282,13 +282,45 @@ const COLOR_TABLE: &[(&str, RGB8)] = &[
     ("WHITE", WHITE),
 ];
 
-/// Case-insensitive color name lookup. Accepts names like "Blue", "DARK_RED", "lime", etc.
+/// Looks up a named color, ignoring case, underscores, hyphens and spaces, so "DarkRed",
+/// "dark-red", "dark red" and "DARK_RED" all match.
 pub fn from_name(name: &str) -> Option<RGB8> {
-    let upper = name.to_ascii_uppercase();
+    let wanted = normalize(name);
     COLOR_TABLE
         .iter()
-        .find(|(n, _)| *n == upper)
+        .find(|(n, _)| normalize(n) == wanted)
         .map(|(_, c)| *c)
+}
+
+/// Parses a color name (see [`from_name`]) or a hex color: `#RRGGBB` or `#RGB` (the `#` is
+/// optional).
+pub fn parse(value: &str) -> Option<RGB8> {
+    from_name(value).or_else(|| parse_hex(value.trim()))
+}
+
+fn parse_hex(value: &str) -> Option<RGB8> {
+    let hex = value.strip_prefix('#').unwrap_or(value);
+    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let channel = |i: usize, len: usize| u8::from_str_radix(&hex[i..i + len], 16).ok();
+    match hex.len() {
+        6 => Some(RGB8::new(channel(0, 2)?, channel(2, 2)?, channel(4, 2)?)),
+        // #RGB expands each digit, e.g. #f80 -> #ff8800
+        3 => Some(RGB8::new(
+            channel(0, 1)? * 17,
+            channel(1, 1)? * 17,
+            channel(2, 1)? * 17,
+        )),
+        _ => None,
+    }
+}
+
+fn normalize(name: &str) -> String {
+    name.chars()
+        .filter(|c| !matches!(c, '_' | '-' | ' '))
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
 }
 
 /// Returns all available color names (uppercase with underscores).
@@ -299,6 +331,33 @@ pub fn all_names() -> &'static [(&'static str, RGB8)] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn from_name_ignores_separators() {
+        for name in ["DarkRed", "dark-red", "dark red", "DARK_RED", "darkred"] {
+            assert_eq!(from_name(name), Some(DARK_RED), "{name}");
+        }
+    }
+
+    #[test]
+    fn normalized_names_are_unique() {
+        let mut names: Vec<String> = COLOR_TABLE.iter().map(|(n, _)| normalize(n)).collect();
+        let total = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), total);
+    }
+
+    #[test]
+    fn parse_accepts_names_and_hex() {
+        assert_eq!(parse("lime"), Some(LIME));
+        assert_eq!(parse("#ff8800"), Some(RGB8::new(255, 136, 0)));
+        assert_eq!(parse("FF8800"), Some(RGB8::new(255, 136, 0)));
+        assert_eq!(parse("#f80"), Some(RGB8::new(255, 136, 0)));
+        assert_eq!(parse("#ff88"), None);
+        assert_eq!(parse("#gg0000"), None);
+        assert_eq!(parse("nope"), None);
+    }
 
     #[test]
     fn from_name_exact_match() {
