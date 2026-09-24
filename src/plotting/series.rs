@@ -46,7 +46,7 @@ impl<T: Graphable> Series<T> {
 
     pub fn clone_with<U: Graphable>(&self, data: &[Point<U>]) -> Series<U> {
         let marker_style = self.marker_style.clone();
-        let line_style = self.line_style.clone();
+        let line_style = self.line_style;
         Series {
             data: Vec::from(data),
             marker_style,
@@ -95,7 +95,7 @@ impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
                 let start = self.data[i];
                 let end = self.data[i + 1];
                 let pos = LinePositioning::BetweenPoints { start, end };
-                let line = Line::new(pos.convert_to_u32(), line_style.clone());
+                let line = Line::new(pos.convert_to_u32(), *line_style);
                 mask_points.extend(line.get_mask()?);
             }
         };

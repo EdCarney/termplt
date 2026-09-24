@@ -77,7 +77,10 @@ pub fn get_text_area_size_pixels() -> Result<(u32, u32)> {
     let resp: Vec<u32> = CsiCommand::new("14t", "t")
         .execute_with_response()?
         .split(';')
-        .map(|c| c.parse::<u32>().expect("Failure parsing pixel size response"))
+        .map(|c| {
+            c.parse::<u32>()
+                .expect("Failure parsing pixel size response")
+        })
         .collect();
 
     assert_eq!(
@@ -95,7 +98,10 @@ pub fn get_text_area_size_cells() -> Result<(u32, u32)> {
     let resp: Vec<u32> = CsiCommand::new("18t", "t")
         .execute_with_response()?
         .split(';')
-        .map(|c| c.parse::<u32>().expect("Failure parsing cell size response"))
+        .map(|c| {
+            c.parse::<u32>()
+                .expect("Failure parsing cell size response")
+        })
         .collect();
 
     assert_eq!(

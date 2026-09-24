@@ -31,11 +31,10 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Graph<T> {
             .map(|series| series.convert_to(convert_fn))
             .collect::<Vec<_>>();
 
-        let graph_limits = if let Some(value) = &self.graph_limits {
-            Some(value.convert_to(convert_fn))
-        } else {
-            None
-        };
+        let graph_limits = self
+            .graph_limits
+            .as_ref()
+            .map(|value| value.convert_to(convert_fn));
 
         let axes = self.axes.clone();
         let grid_lines = self.grid_lines.clone();
@@ -46,6 +45,12 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Graph<T> {
             axes,
             grid_lines,
         }
+    }
+}
+
+impl<T: Graphable> Default for Graph<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -178,7 +183,7 @@ impl<T: Graphable> Graph<T> {
 
         let mut old_limits = self.limits().expect("Cannot scale an empty graph");
         // if there are explicit limits set; remove any points that don't lie within those limits
-        if let Some(_) = self.graph_limits {
+        if self.graph_limits.is_some() {
             scaled_graph.data = scaled_graph
                 .data
                 .iter()
@@ -297,10 +302,9 @@ where
             .map(|series| series.shift_by(amount))
             .collect::<Vec<_>>();
 
-        self.graph_limits = match self.graph_limits {
-            Some(graph_limits) => Some(graph_limits.shift_by(amount)),
-            None => None,
-        };
+        self.graph_limits = self
+            .graph_limits
+            .map(|graph_limits| graph_limits.shift_by(amount));
 
         self
     }
@@ -318,7 +322,7 @@ mod tests {
 
     #[test]
     fn add_single_series_with_single_point() {
-        let g = Graph::new().with_series(Series::new(&vec![Point::new(0, 0)]));
+        let g = Graph::new().with_series(Series::new(&[Point::new(0, 0)]));
 
         let limits = g.limits();
         assert!(limits.is_some());
@@ -330,7 +334,7 @@ mod tests {
 
     #[test]
     fn add_single_series_with_multiple_points() {
-        let g = Graph::new().with_series(Series::new(&vec![
+        let g = Graph::new().with_series(Series::new(&[
             Point::new(0, -5),
             Point::new(10, 0),
             Point::new(-1, 15),
@@ -347,9 +351,9 @@ mod tests {
     #[test]
     fn add_multiple_series_with_single_points() {
         let g = Graph::new()
-            .with_series(Series::new(&vec![Point::new(0, -5)]))
-            .with_series(Series::new(&vec![Point::new(10, 0)]))
-            .with_series(Series::new(&vec![Point::new(-1, 15)]));
+            .with_series(Series::new(&[Point::new(0, -5)]))
+            .with_series(Series::new(&[Point::new(10, 0)]))
+            .with_series(Series::new(&[Point::new(-1, 15)]));
 
         let limits = g.limits();
         assert!(limits.is_some());
@@ -362,13 +366,13 @@ mod tests {
     #[test]
     fn add_multiple_series_with_multiple_points() {
         let g = Graph::new()
-            .with_series(Series::new(&vec![
+            .with_series(Series::new(&[
                 Point::new(10, -5),
                 Point::new(0, -50),
                 Point::new(-1, -1),
             ]))
-            .with_series(Series::new(&vec![Point::new(-20, 0), Point::new(0, -5)]))
-            .with_series(Series::new(&vec![
+            .with_series(Series::new(&[Point::new(-20, 0), Point::new(0, -5)]))
+            .with_series(Series::new(&[
                 Point::new(-1, 50),
                 Point::new(2, -5),
                 Point::new(3, -5),
@@ -386,10 +390,7 @@ mod tests {
     // --- with_x_limits state machine ---
 
     fn graph_with_data() -> Graph<i32> {
-        Graph::new().with_series(Series::new(&vec![
-            Point::new(0, 0),
-            Point::new(10, 20),
-        ]))
+        Graph::new().with_series(Series::new(&[Point::new(0, 0), Point::new(10, 20)]))
     }
 
     #[test]
@@ -407,7 +408,9 @@ mod tests {
     #[test]
     fn with_x_limits_from_x_only_replaces_x() {
         // XOnly → XOnly: new x limits replace old x limits
-        let g = graph_with_data().with_x_limits(-5, 15).with_x_limits(-100, 100);
+        let g = graph_with_data()
+            .with_x_limits(-5, 15)
+            .with_x_limits(-100, 100);
         let limits = g.limits().unwrap();
         assert_eq!(limits.min().x, -100);
         assert_eq!(limits.max().x, 100);
@@ -418,7 +421,9 @@ mod tests {
     #[test]
     fn with_x_limits_from_y_only_produces_xy() {
         // YOnly → XY: combining x and y limits
-        let g = graph_with_data().with_y_limits(-10, 30).with_x_limits(-5, 15);
+        let g = graph_with_data()
+            .with_y_limits(-10, 30)
+            .with_x_limits(-5, 15);
         let limits = g.limits().unwrap();
         assert_eq!(limits.min().x, -5);
         assert_eq!(limits.max().x, 15);
@@ -457,7 +462,9 @@ mod tests {
     #[test]
     fn with_y_limits_from_y_only_replaces_y() {
         // YOnly → YOnly: new y limits replace old y limits
-        let g = graph_with_data().with_y_limits(-10, 30).with_y_limits(-100, 100);
+        let g = graph_with_data()
+            .with_y_limits(-10, 30)
+            .with_y_limits(-100, 100);
         let limits = g.limits().unwrap();
         assert_eq!(limits.min().x, 0);
         assert_eq!(limits.max().x, 10);
@@ -468,7 +475,9 @@ mod tests {
     #[test]
     fn with_y_limits_from_x_only_produces_xy() {
         // XOnly → XY: combining x and y limits
-        let g = graph_with_data().with_x_limits(-5, 15).with_y_limits(-10, 30);
+        let g = graph_with_data()
+            .with_x_limits(-5, 15)
+            .with_y_limits(-10, 30);
         let limits = g.limits().unwrap();
         assert_eq!(limits.min().x, -5);
         assert_eq!(limits.max().x, 15);
@@ -496,7 +505,10 @@ mod tests {
     #[test]
     fn limits_with_no_data_returns_none() {
         let g = Graph::<i32>::new().with_x_limits(0, 10);
-        assert!(g.limits().is_none(), "No data means no limits, even with explicit graph limits");
+        assert!(
+            g.limits().is_none(),
+            "No data means no limits, even with explicit graph limits"
+        );
     }
 
     #[test]
@@ -504,10 +516,7 @@ mod tests {
         let g = Graph::<i32>::new();
         let result = g.get_mask();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("no data"));
+        assert!(result.unwrap_err().to_string().contains("no data"));
     }
 
     #[test]
@@ -523,9 +532,6 @@ mod tests {
         let dummy_limits = Limits::new(Point::new(0, 0), Point::new(10, 10));
         let result = g.get_axes_labels(&dummy_limits);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("no data"));
+        assert!(result.unwrap_err().to_string().contains("no data"));
     }
 }

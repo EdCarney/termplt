@@ -40,10 +40,10 @@ pub fn read_bytes_to_b64(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
 /// Converts a 'full set' (3 bytes) to four 6-bit base64 encoded values. Populates these values
 /// in the buffer.
 fn convert_full_bytes_to_b64(bytes: &[u8], buf: &mut [u8]) {
-    buf[0] = B64_CHARS[usize::try_from(bytes[0] >> 2).unwrap()];
-    buf[1] = B64_CHARS[usize::try_from(bytes[0] << 6 >> 2 | bytes[1] >> 4).unwrap()];
-    buf[2] = B64_CHARS[usize::try_from(bytes[1] << 4 >> 2 | bytes[2] >> 6).unwrap()];
-    buf[3] = B64_CHARS[usize::try_from(bytes[2] << 2 >> 2).unwrap()];
+    buf[0] = B64_CHARS[usize::from(bytes[0] >> 2)];
+    buf[1] = B64_CHARS[usize::from(bytes[0] << 6 >> 2 | bytes[1] >> 4)];
+    buf[2] = B64_CHARS[usize::from(bytes[1] << 4 >> 2 | bytes[2] >> 6)];
+    buf[3] = B64_CHARS[usize::from(bytes[2] << 2 >> 2)];
 }
 
 /// Converts a potentially 'partial set' (less than 3 bytes) into the appropriate number of 6-bit
@@ -52,15 +52,15 @@ fn convert_partial_bytes_to_b64(bytes: &[u8], buf: &mut [u8]) {
     match bytes.len() {
         0 => ( /* no-op */ ),
         1 => {
-            buf[0] = B64_CHARS[usize::try_from(bytes[0] >> 2).unwrap()];
-            buf[1] = B64_CHARS[usize::try_from(bytes[0] << 6 >> 2).unwrap()];
+            buf[0] = B64_CHARS[usize::from(bytes[0] >> 2)];
+            buf[1] = B64_CHARS[usize::from(bytes[0] << 6 >> 2)];
             buf[2] = b'=';
             buf[3] = b'=';
         }
         2 => {
-            buf[0] = B64_CHARS[usize::try_from(bytes[0] >> 2).unwrap()];
-            buf[1] = B64_CHARS[usize::try_from(bytes[0] << 6 >> 2 | bytes[1] >> 4).unwrap()];
-            buf[2] = B64_CHARS[usize::try_from(bytes[1] << 4 >> 2).unwrap()];
+            buf[0] = B64_CHARS[usize::from(bytes[0] >> 2)];
+            buf[1] = B64_CHARS[usize::from(bytes[0] << 6 >> 2 | bytes[1] >> 4)];
+            buf[2] = B64_CHARS[usize::from(bytes[1] << 4 >> 2)];
             buf[3] = b'=';
         }
         3 => convert_full_bytes_to_b64(bytes, buf),
@@ -77,7 +77,11 @@ mod tests {
         let text = b"M";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
-        assert_eq!(enc_text.len(), 4, "1 byte should be 4 base64 chars (2 data + 2 padding)");
+        assert_eq!(
+            enc_text.len(),
+            4,
+            "1 byte should be 4 base64 chars (2 data + 2 padding)"
+        );
         assert_eq!(enc_text, "TQ==");
     }
 
@@ -86,7 +90,11 @@ mod tests {
         let text = b"Ma";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
-        assert_eq!(enc_text.len(), 4, "2 bytes should be 4 base64 chars (3 data + 1 padding)");
+        assert_eq!(
+            enc_text.len(),
+            4,
+            "2 bytes should be 4 base64 chars (3 data + 1 padding)"
+        );
         assert_eq!(enc_text, "TWE=");
     }
 
@@ -95,7 +103,11 @@ mod tests {
         let text = b"Man";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
-        assert_eq!(enc_text.len(), 4, "3 bytes should be 4 base64 chars (no padding)");
+        assert_eq!(
+            enc_text.len(),
+            4,
+            "3 bytes should be 4 base64 chars (no padding)"
+        );
         assert_eq!(enc_text, "TWFu");
     }
 
@@ -103,7 +115,11 @@ mod tests {
     fn encode_empty_input() {
         let text = b"";
         let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
-        assert_eq!(enc_bytes.len(), 0, "empty input should produce empty output");
+        assert_eq!(
+            enc_bytes.len(),
+            0,
+            "empty input should produce empty output"
+        );
     }
 
     #[test]

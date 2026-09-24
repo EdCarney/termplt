@@ -90,26 +90,25 @@ impl Axes {
                 let y_lab = y_labels(line_style);
 
                 // shift x labels down if necessary to avoid intersection
-                if let Some(x_label) = x_lab.first() {
-                    if let Some(y_label) = y_lab.first() {
-                        if x_label.limits().intersects(y_label.limits()) {
-                            let x_lab_max_y = x_label.limits().max().y;
-                            let y_lab_min_y = y_label.limits().min().y;
-                            let x_lab_y_shift = x_lab_max_y.saturating_sub(y_lab_min_y);
-                            x_lab = x_lab
-                                .iter()
-                                .map(|lab| {
-                                    let current_point = *lab.pos().point();
-                                    let shifted_point = Point::new(
-                                        current_point.x,
-                                        current_point.y.saturating_sub(x_lab_y_shift),
-                                    );
-                                    let shifted_pos = lab.pos().clone_with(shifted_point);
-                                    Label::new(lab.txt().clone(), shifted_pos)
-                                })
-                                .collect::<Vec<_>>();
-                        }
-                    }
+                if let Some(x_label) = x_lab.first()
+                    && let Some(y_label) = y_lab.first()
+                    && x_label.limits().intersects(y_label.limits())
+                {
+                    let x_lab_max_y = x_label.limits().max().y;
+                    let y_lab_min_y = y_label.limits().min().y;
+                    let x_lab_y_shift = x_lab_max_y.saturating_sub(y_lab_min_y);
+                    x_lab = x_lab
+                        .iter()
+                        .map(|lab| {
+                            let current_point = *lab.pos().point();
+                            let shifted_point = Point::new(
+                                current_point.x,
+                                current_point.y.saturating_sub(x_lab_y_shift),
+                            );
+                            let shifted_pos = lab.pos().clone_with(shifted_point);
+                            Label::new(lab.txt().clone(), shifted_pos)
+                        })
+                        .collect::<Vec<_>>();
                 }
 
                 x_lab.into_iter().chain(y_lab).collect::<Vec<_>>()

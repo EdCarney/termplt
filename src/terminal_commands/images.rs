@@ -2,7 +2,7 @@ use crate::{
     common::Result,
     kitty_graphics::ctrl_seq::*,
     terminal_commands::{csi_cmds, kitty_cmds::KittyCommand, responses::TermCommand},
-    window_ctrl,
+    window_ctrl::{self, WindowSize},
 };
 use image::{self, ImageFormat, ImageReader};
 use std::{error::Error, fmt, io::Cursor, path::Path};
@@ -84,10 +84,12 @@ impl Image {
         let window_sz = window_ctrl::get_window_size()?;
         match positioning {
             PositioningType::ExactPixel { x, y } => {
-                let row = (y / window_sz.pix_per_row) + 1;
-                let col = (x / window_sz.pix_per_col) + 1;
-                let offset_x = x % window_sz.pix_per_col;
-                let offset_y = y % window_sz.pix_per_row;
+                let PositionDetails {
+                    row,
+                    col,
+                    offset_x,
+                    offset_y,
+                } = Self::get_positioning_details(&window_sz, x, y)?;
 
                 let attributes = vec![
                     self.format.get_ctrl_seq(),
@@ -112,18 +114,20 @@ impl Image {
 
     fn display_with_attributes(&self, attributes: &[String]) -> Result<()> {
         let cmd = match self.transmission {
-            Transmission::Direct(ref bytes) => KittyCommand::new(bytes, &attributes),
+            Transmission::Direct(ref bytes) => KittyCommand::new(bytes, attributes),
             Transmission::File(ref file_path) => {
-                KittyCommand::new(file_path.as_bytes(), &attributes)
+                KittyCommand::new(file_path.as_bytes(), attributes)
             }
             _ => panic!("Unsupported type!"),
         };
         cmd.execute()
     }
 
-    fn get_positioning_details(&self, x_pix: u32, y_pix: u32) -> Result<PositionDetails> {
-        let window_sz = window_ctrl::get_window_size()?;
-
+    fn get_positioning_details(
+        window_sz: &WindowSize,
+        x_pix: u32,
+        y_pix: u32,
+    ) -> Result<PositionDetails> {
         // check positioning specification is valid
         if x_pix > window_sz.x_pix || y_pix > window_sz.y_pix {
             Err(Box::new(ImageError::PositioningOutsideTerminalWindow))

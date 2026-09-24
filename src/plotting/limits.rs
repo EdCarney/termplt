@@ -64,7 +64,7 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
     }
 
     pub fn upper_right(&self) -> Point<T> {
-        self.max().clone()
+        *self.max()
     }
 
     pub fn lower_right(&self) -> Point<T> {
@@ -72,7 +72,7 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
     }
 
     pub fn lower_left(&self) -> Point<T> {
-        self.min().clone()
+        *self.min()
     }
 
     /// Validates whether the provided point exists within the limit.

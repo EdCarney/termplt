@@ -217,7 +217,7 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
             let mut chars = row
                 .to_string()
                 .chars()
-                .map(|x| if x == ' ' { false } else { true })
+                .map(|x| x != ' ')
                 //.step_by(2)
                 .collect::<Vec<_>>();
 
@@ -237,11 +237,11 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
 
     // scale the char
     let mut scaled_bitmap = Vec::new();
-    for i in 0..CHAR_HEIGHT {
+    for row in bitmap.iter().take(CHAR_HEIGHT) {
         let mut scaled_row = Vec::new();
-        for j in 0..CHAR_WIDTH {
+        for &px in row.iter().take(CHAR_WIDTH) {
             for _ in 0..style.scale() {
-                scaled_row.push(bitmap[i][j]);
+                scaled_row.push(px);
             }
         }
         for _ in 0..style.scale() {

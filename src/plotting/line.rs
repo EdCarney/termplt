@@ -68,7 +68,7 @@ pub struct Line<T: Graphable> {
 impl<T: Graphable, U: Graphable> Convertable<U> for Line<T> {
     type ConvertTo = Line<U>;
     fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
-        let style = self.style().clone();
+        let style = *self.style();
         let positioning = self.positioning.convert_to(convert_fn);
         Line { style, positioning }
     }
@@ -181,7 +181,7 @@ impl<T: IntConvertable + Graphable> Drawable for Line<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let flat_line_fn = |thickness: u32, pos: &LinePositioning<T>| -> Vec<Point<u32>> {
             let mut points = Vec::new();
-            let shift_start = -1 * thickness as i32;
+            let shift_start = -(thickness as i32);
             let shift_end = thickness as i32;
             for shift in shift_start..=shift_end {
                 let shift_point = match pos {
@@ -209,10 +209,7 @@ impl<T: IntConvertable + Graphable> Drawable for Line<T> {
                     }
                 };
 
-                vec![MaskPoints {
-                    points,
-                    color: color.clone(),
-                }]
+                vec![MaskPoints { points, color }]
             }
             LineStyle::Dashed {
                 color: _,
@@ -313,7 +310,10 @@ mod tests {
         };
         let line = Line::new(pos, LineStyle::default());
         let points = line.full_drawable_points();
-        assert!(!points.is_empty(), "Right-to-left line should produce points");
+        assert!(
+            !points.is_empty(),
+            "Right-to-left line should produce points"
+        );
         // First point should be near start (10, 0), last near end (0, 10)
         let first = points.first().unwrap();
         let last = points.last().unwrap();
@@ -335,7 +335,10 @@ mod tests {
         let line = Line::new(pos, LineStyle::default());
         let points = line.full_drawable_points();
         // A zero-length line should produce at most 1 point (or 0 is acceptable)
-        assert!(points.len() <= 1, "Single-point line should produce 0 or 1 points");
+        assert!(
+            points.len() <= 1,
+            "Single-point line should produce 0 or 1 points"
+        );
     }
 
     #[test]

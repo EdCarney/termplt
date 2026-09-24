@@ -81,7 +81,7 @@ impl Canvas {
             // the top of the canvas
             let x = point.x;
             let y = self.limits.max().y - point.y;
-            self.pixels[y as usize][x as usize] = color.clone();
+            self.pixels[y as usize][x as usize] = *color;
         }
     }
 
@@ -279,10 +279,7 @@ mod tests {
             .with_graph(Graph::new().with_series(Series::new(&points)))
             .draw();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Canvas too small"));
+        assert!(result.unwrap_err().to_string().contains("Canvas too small"));
     }
 
     #[test]

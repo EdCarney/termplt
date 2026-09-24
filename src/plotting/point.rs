@@ -359,7 +359,10 @@ mod tests {
         let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
 
         let scaled = p.scale_to(&old_limits, &new_limits);
-        assert_eq!(scaled.x, 50.0, "Zero x-span should map to midpoint of new x range");
+        assert_eq!(
+            scaled.x, 50.0,
+            "Zero x-span should map to midpoint of new x range"
+        );
         assert_eq!(scaled.y, 50.0);
     }
 
@@ -372,7 +375,10 @@ mod tests {
 
         let scaled = p.scale_to(&old_limits, &new_limits);
         assert_eq!(scaled.x, 50.0);
-        assert_eq!(scaled.y, 50.0, "Zero y-span should map to midpoint of new y range");
+        assert_eq!(
+            scaled.y, 50.0,
+            "Zero y-span should map to midpoint of new y range"
+        );
     }
 
     #[test]

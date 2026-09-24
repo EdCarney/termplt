@@ -31,7 +31,7 @@ pub trait TermCommand {
 
     fn execute(&self) -> Result<()> {
         let mut stdout = io::stdout().lock();
-        stdout.write_all(&self.get_request())?;
+        stdout.write_all(self.get_request())?;
         stdout.flush()?;
         Ok(())
     }
@@ -50,21 +50,18 @@ pub trait TermCommand {
 
         let watch = Instant::now();
         while watch.elapsed().as_millis() < 1000 {
-            match stdin.read_exact(&mut byte_buf) {
-                Ok(_) => {
-                    buf.push(byte_buf[0]);
-                    if buf.len() > resp_start.len() && buf.ends_with(resp_end) {
-                        if buf.starts_with(resp_start) {
-                            resp_recvd = true;
-                            break;
-                        }
-
-                        // if buffer ends with the correct bytes but does not start with the correct
-                        // bytes, then it is not what we are looking for; clear and start again
-                        buf.clear();
+            if stdin.read_exact(&mut byte_buf).is_ok() {
+                buf.push(byte_buf[0]);
+                if buf.len() > resp_start.len() && buf.ends_with(resp_end) {
+                    if buf.starts_with(resp_start) {
+                        resp_recvd = true;
+                        break;
                     }
+
+                    // if buffer ends with the correct bytes but does not start with the correct
+                    // bytes, then it is not what we are looking for; clear and start again
+                    buf.clear();
                 }
-                _ => (),
             }
         }
 

@@ -78,6 +78,16 @@ pub struct TextStyle {
     padding: usize,
 }
 
+impl Default for TextStyle {
+    fn default() -> TextStyle {
+        TextStyle {
+            color: colors::BLACK,
+            scale: 1,
+            padding: 1,
+        }
+    }
+}
+
 impl TextStyle {
     pub fn new(color: RGB8, scale: usize, padding: usize) -> TextStyle {
         if scale < 1 {
@@ -88,14 +98,6 @@ impl TextStyle {
             color,
             scale,
             padding,
-        }
-    }
-
-    pub fn default() -> TextStyle {
-        TextStyle {
-            color: colors::BLACK,
-            scale: 1,
-            padding: 1,
         }
     }
 
@@ -211,7 +213,7 @@ fn num_to_str(number: f64, sig_figs: usize) -> String {
         let mut end_str = Vec::new();
         let mut chars = num_str.chars();
         while let Some(c) = chars.next_back() {
-            end_str.insert(0, c.clone());
+            end_str.insert(0, c);
             if c == 'e' {
                 break;
             }
@@ -337,7 +339,10 @@ mod test {
 
         let mask = label.get_mask().unwrap();
         assert!(!mask.is_empty());
-        assert!(!mask[0].points.is_empty(), "Label mask should contain drawn points");
+        assert!(
+            !mask[0].points.is_empty(),
+            "Label mask should contain drawn points"
+        );
     }
 
     #[test]
