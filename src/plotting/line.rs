@@ -177,6 +177,15 @@ impl Line<i32> {
     }
 }
 
+/// Offsets of all pixels within `radius` of the origin.
+fn disc_offsets(radius: u32) -> Vec<Point<i32>> {
+    let r = radius as i32;
+    (-r..=r)
+        .flat_map(|dx| (-r..=r).map(move |dy| Point::new(dx, dy)))
+        .filter(|p| p.x * p.x + p.y * p.y <= r * r)
+        .collect()
+}
+
 /// Number of pixels drawn, then skipped, along a dashed line.
 const DASH_ON: usize = 6;
 const DASH_OFF: usize = 4;
@@ -215,7 +224,17 @@ impl<T: IntConvertable + Graphable> Drawable for Line<T> {
                 }
                 points
             }
-            // thickness is not yet applied to lines between arbitrary points
+            // thickness is applied by stamping a disc of radius `thickness` at every pixel, which
+            // also gives round joins where consecutive segments meet
+            LinePositioning::BetweenPoints { .. } if thickness > 0 => {
+                let stamp = disc_offsets(thickness);
+                let mut points = Vec::with_capacity(path.len() * stamp.len());
+                for p in &path {
+                    let p = p.convert_to_i32();
+                    points.extend(stamp.iter().map(|&offset| (p + offset).convert_to_u32()));
+                }
+                points
+            }
             LinePositioning::BetweenPoints { .. } => path,
         };
 
@@ -431,5 +450,46 @@ mod tests {
             thick_count > thin_count,
             "Thick line ({thick_count} points) should have more points than thin ({thin_count})"
         );
+    }
+
+    #[test]
+    fn diagonal_line_thickness_widens_line() {
+        let mask_for = |thickness| {
+            let pos = LinePositioning::BetweenPoints {
+                start: Point::new(10, 10),
+                end: Point::new(30, 20),
+            };
+            let style = LineStyle::Solid {
+                color: colors::WHITE,
+                thickness,
+            };
+            let mut points = Line::<i32>::new(pos, style).get_mask().unwrap()[0]
+                .points
+                .clone();
+            points.sort_by_key(|p| (p.x, p.y));
+            points.dedup();
+            points
+        };
+        let thin = mask_for(0);
+        let thick = mask_for(2);
+        assert!(
+            thick.len() > 3 * thin.len(),
+            "{} vs {}",
+            thick.len(),
+            thin.len()
+        );
+        // every pixel of the thin line is covered by the thick one
+        assert!(thin.iter().all(|p| thick.contains(p)));
+        // and the thick line stays within `thickness` of the thin line
+        assert!(thick.iter().all(|p| thin.iter().any(|q| {
+            let (dx, dy) = (p.x as i64 - q.x as i64, p.y as i64 - q.y as i64);
+            dx * dx + dy * dy <= 4
+        })));
+    }
+
+    #[test]
+    fn disc_offsets_radius_one_is_a_plus_shape() {
+        assert_eq!(disc_offsets(1).len(), 5);
+        assert_eq!(disc_offsets(0), vec![Point::new(0, 0)]);
     }
 }

@@ -78,8 +78,7 @@ impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mut mask_points = Vec::new();
         for &p in self.data() {
-            mask_points
-                .extend(Marker::new(p.convert_to_u32(), self.marker_style).get_mask()?);
+            mask_points.extend(Marker::new(p.convert_to_u32(), self.marker_style).get_mask()?);
         }
 
         // add lines if line styling is present

@@ -208,7 +208,11 @@ where
             let largest_marker_sz = graph
                 .data()
                 .iter()
-                .map(|s| s.marker_style().size())
+                // thick lines extend past the data points just like markers do
+                .map(|s| {
+                    let line_thickness = s.line_style().map_or(0, |l| l.thickness());
+                    s.marker_style().size().max(line_thickness)
+                })
                 .max()
                 .ok_or("Graph has no series data; cannot compute drawable limits")?;
 
