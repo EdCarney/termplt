@@ -26,14 +26,16 @@ pub struct Marker {
     center: Point<u32>,
 }
 
-impl MarkerStyle {
-    pub fn default() -> MarkerStyle {
+impl Default for MarkerStyle {
+    fn default() -> MarkerStyle {
         MarkerStyle::FilledSquare {
             size: 0,
             color: colors::WHITE,
         }
     }
+}
 
+impl MarkerStyle {
     pub fn size(&self) -> u32 {
         match self {
             MarkerStyle::FilledSquare { size, .. }
@@ -74,48 +76,30 @@ impl Drawable for Marker {
             MarkerStyle::FilledSquare { color, size: _ } => {
                 let limits = self.limits();
                 let points = Point::<u32>::limit_range(limits);
-                vec![MaskPoints {
-                    points,
-                    color: color.clone(),
-                }]
+                vec![MaskPoints { points, color }]
             }
             MarkerStyle::HollowSquare { color, size } => {
                 let x_lo = self.center.x.saturating_sub(size);
                 let y_lo = self.center.y.saturating_sub(size);
                 let x_hi = self.center.x + size;
                 let y_hi = self.center.y + size;
-                let top = Point::<u32>::range(
-                    &Point::new(x_lo, y_hi),
-                    &Point::new(x_hi, y_hi),
-                );
-                let bottom = Point::<u32>::range(
-                    &Point::new(x_lo, y_lo),
-                    &Point::new(x_hi, y_lo),
-                );
-                let right = Point::<u32>::range(
-                    &Point::new(x_hi, y_lo),
-                    &Point::new(x_hi, y_hi),
-                );
-                let left = Point::<u32>::range(
-                    &Point::new(x_lo, y_lo),
-                    &Point::new(x_lo, y_hi),
-                );
+                let top = Point::<u32>::range(&Point::new(x_lo, y_hi), &Point::new(x_hi, y_hi));
+                let bottom = Point::<u32>::range(&Point::new(x_lo, y_lo), &Point::new(x_hi, y_lo));
+                let right = Point::<u32>::range(&Point::new(x_hi, y_lo), &Point::new(x_hi, y_hi));
+                let left = Point::<u32>::range(&Point::new(x_lo, y_lo), &Point::new(x_lo, y_hi));
                 vec![
-                    MaskPoints {
-                        points: top,
-                        color: color.clone(),
-                    },
+                    MaskPoints { points: top, color },
                     MaskPoints {
                         points: bottom,
-                        color: color.clone(),
+                        color,
                     },
                     MaskPoints {
                         points: right,
-                        color: color.clone(),
+                        color,
                     },
                     MaskPoints {
                         points: left,
-                        color: color.clone(),
+                        color,
                     },
                 ]
             }

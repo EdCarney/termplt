@@ -6,14 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 cargo build                          # Build
-cargo test                           # Run all tests (83 unit tests, co-located in modules)
+cargo test                           # Run all tests (unit tests, co-located in modules)
 cargo test plotting::graph_limits    # Run tests for a specific module
 cargo test scale_to_with_zero_x_span # Run a single test by name
-cargo clippy                         # Lint (warnings present but non-blocking)
-cargo run                            # Render sample graphs to terminal via Kitty protocol
+cargo clippy --all-targets -- -D warnings  # Lint (CI fails on any warning)
+cargo fmt --check                    # Formatting (enforced in CI)
+cargo run -- --data "(1,1),(2,4)"    # Render a plot via the CLI (needs a Kitty-protocol terminal)
 ```
 
-No CI, no feature flags, no custom build scripts. Edition 2024.
+CI (`.github/workflows/ci.yml`): build + test on Linux and Windows, clippy, rustfmt. No feature flags, no custom build scripts. Edition 2024 (let-chains are used, so Rust >= 1.88).
 
 ## Architecture
 
@@ -34,15 +35,15 @@ Coordinate transforms use two traits:
 
 Both are implemented recursively on composite types (Graph shifts all its Series, each Series shifts all its Points).
 
-**Zero-span safety:** When `old_span == 0.0` in any dimension, `Point::scale_to` and `GraphLimits::scale_to` map to the midpoint of the new range instead of dividing by zero.
+**Zero-span safety:** `Graph::view_limits()` pads zero-width dimensions (5% of the value, or ±0.5 around zero) before scaling, so single points and constant series are centered. As a fallback, `Point::scale_to` and `GraphLimits::scale_to` map a zero old span to `new_span / 2` (relative to the new origin, like the regular branch; callers shift afterwards).
 
 ### Rendering Pipeline (`canvas.rs` → `graph.rs`)
 
 ```
 TerminalCanvas::draw()
   ├── get_drawable_limits()          # canvas area minus buffers/marker/axes thickness
-  ├── graph.limits()                 # data-derived limits + GraphLimits overrides
-  ├── graph.scale(canvas_limits)     # shift-to-origin → proportional scale → shift-to-canvas
+  ├── graph.view_limits()            # finite data limits + GraphLimits overrides, clipped, padded
+  ├── graph.scale_with_view(..)      # clip → shift-to-origin → proportional scale → shift-to-canvas
   ├── scaled_graph.get_mask()        # Drawable trait: returns Vec<MaskPoints> (colored pixel sets)
   │     ├── axes.get_mask()          # axis lines
   │     ├── grid_lines.get_mask()    # grid lines
@@ -59,23 +60,23 @@ The `Drawable` trait (`fn get_mask(&self) -> Result<Vec<MaskPoints>>`) is implem
 
 ### Kitty Protocol (`kitty_graphics/`)
 
-After rendering, the canvas bytes are sent via Kitty APC sequences: `encoding.rs` does custom base64 (no padding — known bug), `kitty_cmds.rs` chunks to 4096-byte payloads, `ctrl_seq.rs` provides protocol key=value formatting. `TermCommand` trait handles stdout writing and optional raw-mode response reading.
+After rendering, the canvas bytes are sent via Kitty APC sequences: `encoding.rs` does custom RFC 4648 base64 (with padding), `kitty_cmds.rs` chunks to 4096-byte payloads, `ctrl_seq.rs` provides protocol key=value formatting. `TermCommand` writes commands to stdout; `execute_with_response` writes queries to `/dev/tty` (stdin/stdout on Windows) followed by a DA1 sentinel, reads the reply with a timeout under an RAII raw-mode guard, and fails fast with `TerminalCommandError::Unsupported` when the DA1 reply arrives first.
 
 ### Line Drawing (`line.rs`)
 
-`BetweenPoints` lines use Bresenham's algorithm. `Horizontal`/`Vertical` lines use range iteration. Thickness is applied by shifting parallel copies (flat lines only). `LineStyle::Dashed` is `todo!()`.
+`BetweenPoints` lines use Bresenham's algorithm. `Horizontal`/`Vertical` lines use range iteration. Thickness is applied by shifting parallel copies (flat lines only). `LineStyle::Dashed` filters the ordered path with a 6-on/4-off pattern. Thickness is not yet applied to `BetweenPoints` lines (so series line thickness has no effect).
 
 ### Text/Number Rendering (`text.rs`, `numbers.rs`)
 
-Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `. Supports scaling (pixel replication) and padding. `num_to_str` uses decimal when `0.1^sig_figs < |x| < 10^sig_figs`, otherwise scientific notation, with trailing zero stripping.
+Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters render as a placeholder box. Supports scaling (pixel replication) and padding. `num_to_str` uses decimal when `0.1^sig_figs < |x| < 10^sig_figs`, otherwise scientific notation, with trailing zero stripping.
 
 ## Known Issues
 
-See `IMPROVEMENTS.md` for the full prioritized list. Key items:
-- Public API panics instead of returning `Result` in many places (`Series::new(&[])`, `Limits::new` with inverted bounds, `TextStyle::new(scale < 1)`)
-- `.unwrap()` inside `Result`-returning functions in `canvas.rs` and `graph.rs` defeats error propagation
-- `TextPositioning::LeftAligned`, `BufferType::TopBottom/LeftRight/TopBottomLeftRight` panic with "Not implemented"
-- `println!` in `canvas.rs` and `graph.rs` corrupts Kitty escape sequence output
+See `IMPROVEMENTS.md` for the full prioritized list and status. Key open items:
+- Tick labels are evenly spaced raw values (not "nice" numbers) and overlap or clip at small sizes
+- Series line thickness is ignored for `BetweenPoints` lines
+- Clipping to explicit limits drops points rather than clipping line segments
+- `Limits::new` panics on inverted bounds (internal invariant); use `Limits::try_new` for untrusted input
 - `Graph::shift_by` doesn't shift `grid_lines`
 - No crate-level error type (uses `Box<dyn Error>` everywhere)
 - No integration tests; all tests are unit tests co-located in source files

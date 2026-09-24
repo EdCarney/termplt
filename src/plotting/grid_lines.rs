@@ -28,24 +28,27 @@ impl GridLines {
             y_starts
                 .into_iter()
                 .map(|start| LinePositioning::Horizontal { start, length })
-                .flat_map(|pos| Line::new(pos, *line_style).get_mask().unwrap())
-                .collect::<Vec<_>>()
+                .map(|pos| Line::new(pos, *line_style).get_mask())
+                .collect::<Result<Vec<_>>>()
+                .map(|masks| masks.into_iter().flatten().collect::<Vec<_>>())
         };
         let vert_lines = |length: f64, line_style: &LineStyle| {
             x_starts
                 .into_iter()
                 .map(|start| LinePositioning::Vertical { start, length })
-                .flat_map(|pos| Line::new(pos, *line_style).get_mask().unwrap())
-                .collect::<Vec<_>>()
+                .map(|pos| Line::new(pos, *line_style).get_mask())
+                .collect::<Result<Vec<_>>>()
+                .map(|masks| masks.into_iter().flatten().collect::<Vec<_>>())
         };
 
         let mask_points = match self {
-            GridLines::XOnly(line_style) => horz_lines(limit_span_x, line_style),
-            GridLines::YOnly(line_style) => vert_lines(limit_span_y, line_style),
-            GridLines::XY(line_style) => horz_lines(limit_span_x, line_style)
-                .into_iter()
-                .chain(vert_lines(limit_span_y, line_style))
-                .collect::<Vec<_>>(),
+            GridLines::XOnly(line_style) => horz_lines(limit_span_x, line_style)?,
+            GridLines::YOnly(line_style) => vert_lines(limit_span_y, line_style)?,
+            GridLines::XY(line_style) => {
+                let mut mask = horz_lines(limit_span_x, line_style)?;
+                mask.extend(vert_lines(limit_span_y, line_style)?);
+                mask
+            }
         };
         Ok(mask_points)
     }

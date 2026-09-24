@@ -44,7 +44,7 @@ impl TextChar {
     }
 
     pub fn width(&self) -> usize {
-        self.bitmap.iter().map(|row| row.len()).max().unwrap()
+        self.bitmap.iter().map(|row| row.len()).max().unwrap_or(0)
     }
 
     pub fn height(&self) -> usize {
@@ -78,24 +78,24 @@ pub struct TextStyle {
     padding: usize,
 }
 
-impl TextStyle {
-    pub fn new(color: RGB8, scale: usize, padding: usize) -> TextStyle {
-        if scale < 1 {
-            panic!("Text scaling cannot be less than 1")
-        }
-
-        TextStyle {
-            color,
-            scale,
-            padding,
-        }
-    }
-
-    pub fn default() -> TextStyle {
+impl Default for TextStyle {
+    fn default() -> TextStyle {
         TextStyle {
             color: colors::BLACK,
             scale: 1,
             padding: 1,
+        }
+    }
+}
+
+impl TextStyle {
+    /// Creates a text style. `scale` is the pixel multiplier for each glyph and is clamped to at
+    /// least 1.
+    pub fn new(color: RGB8, scale: usize, padding: usize) -> TextStyle {
+        TextStyle {
+            color,
+            scale: scale.max(1),
+            padding,
         }
     }
 
@@ -135,7 +135,7 @@ impl Text {
             .map(|c| TextChar::new(c, &style))
             .collect::<Vec<_>>();
         let width = chars.iter().fold(0usize, |acc, val| acc + val.width());
-        let height = chars.iter().map(|c| c.height()).max().unwrap();
+        let height = chars.iter().map(|c| c.height()).max().unwrap_or(0);
 
         Text {
             style,
@@ -157,18 +157,14 @@ impl Text {
         &self.chars
     }
 
+    /// Renders a number with `sig_figs` significant figures (at least 1).
     pub fn from_number(number: f64, sig_figs: usize, style: TextStyle) -> Text {
-        if style.scale < 1 {
-            panic!("Text scaling cannot be less than 1")
-        }
         Text::new(&num_to_str(number, sig_figs), style)
     }
 }
 
 fn num_to_str(number: f64, sig_figs: usize) -> String {
-    if sig_figs < 1 {
-        panic!("Number of significant figures must be nonzero")
-    }
+    let sig_figs = sig_figs.max(1);
 
     let min = 0.1_f64.powi(sig_figs as i32);
     let max = 10_f64.powi(sig_figs as i32);
@@ -211,7 +207,7 @@ fn num_to_str(number: f64, sig_figs: usize) -> String {
         let mut end_str = Vec::new();
         let mut chars = num_str.chars();
         while let Some(c) = chars.next_back() {
-            end_str.insert(0, c.clone());
+            end_str.insert(0, c);
             if c == 'e' {
                 break;
             }
@@ -259,32 +255,33 @@ impl Label {
                 let max = *center + shift_ceil;
                 Limits::new(min, max)
             }
-            _ => panic!("Not implemented"),
+            TextPositioning::LeftAligned(left) => {
+                let shift_floor = (self.txt.height as f64 / 2.).floor() as u32;
+                let shift_ceil = (self.txt.height as f64 / 2.).ceil() as u32;
+                let min = Point::new(left.x, left.y.saturating_sub(shift_floor));
+                let max = Point::new(left.x + self.txt.width as u32, left.y + shift_ceil);
+                Limits::new(min, max)
+            }
         }
     }
 }
 
 impl Drawable for Label {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
-        let mask_points = match &self.pos {
-            TextPositioning::Centered(center) => {
-                let height_shift: i32 = (self.txt.height / 2).try_into().unwrap();
-                let width_shift: i32 = (self.txt.width / 2).try_into().unwrap();
-                let mut masks = Vec::new();
-                self.txt.chars.iter().fold(-width_shift, |acc, c| {
-                    let char_lower_left = center.convert_to_i32() + Point::new(acc, -height_shift);
-                    masks.extend(
-                        c.get_mask(char_lower_left.convert_to_u32(), self.txt.style.clone())
-                            .unwrap(),
-                    );
-                    let char_width: i32 = c.width().try_into().unwrap();
-                    acc + char_width
-                });
-                masks
-            }
-            _ => panic!("Not implemented"),
+        let height_shift = i32::try_from(self.txt.height / 2)?;
+        // horizontal offset of the text's left edge from the anchor point
+        let (anchor, mut x_offset) = match &self.pos {
+            TextPositioning::Centered(center) => (center, -i32::try_from(self.txt.width / 2)?),
+            TextPositioning::LeftAligned(left) => (left, 0),
         };
-        Ok(mask_points)
+
+        let mut masks = Vec::new();
+        for c in &self.txt.chars {
+            let char_lower_left = anchor.convert_to_i32() + Point::new(x_offset, -height_shift);
+            masks.extend(c.get_mask(char_lower_left.convert_to_u32(), self.txt.style.clone())?);
+            x_offset += i32::try_from(c.width())?;
+        }
+        Ok(masks)
     }
 }
 
@@ -293,23 +290,41 @@ mod test {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "Not implemented")]
-    fn label_limits_left_aligned_panics() {
-        let style = TextStyle::default();
-        let txt = Text::new("0", style);
-        let pos = TextPositioning::LeftAligned(Point::new(50, 50));
-        let label = Label::new(txt, pos);
-        let _ = label.limits();
+    fn label_limits_left_aligned_starts_at_anchor() {
+        let txt = Text::new("0", TextStyle::default());
+        let (width, height) = (txt.width() as u32, txt.height() as u32);
+        let label = Label::new(txt, TextPositioning::LeftAligned(Point::new(50, 50)));
+        let limits = label.limits();
+        assert_eq!(limits.min().x, 50);
+        assert_eq!(limits.max().x, 50 + width);
+        assert_eq!(limits.min().y, 50 - height / 2);
     }
 
     #[test]
-    #[should_panic(expected = "Not implemented")]
-    fn label_get_mask_left_aligned_panics() {
-        let style = TextStyle::default();
-        let txt = Text::new("0", style);
-        let pos = TextPositioning::LeftAligned(Point::new(50, 50));
-        let label = Label::new(txt, pos);
-        let _ = label.get_mask();
+    fn label_get_mask_left_aligned_lies_right_of_anchor() {
+        let txt = Text::new("10", TextStyle::default());
+        let width = txt.width() as u32;
+        let label = Label::new(txt, TextPositioning::LeftAligned(Point::new(50, 50)));
+        let mask = label.get_mask().unwrap();
+        let points: Vec<_> = mask.iter().flat_map(|m| m.points.iter()).collect();
+        assert!(!points.is_empty());
+        assert!(points.iter().all(|p| p.x >= 50 && p.x < 50 + width));
+    }
+
+    #[test]
+    fn empty_text_has_zero_size() {
+        let txt = Text::new("", TextStyle::default());
+        assert_eq!((txt.width(), txt.height()), (0, 0));
+    }
+
+    #[test]
+    fn text_style_scale_is_clamped_to_one() {
+        assert_eq!(TextStyle::new(colors::WHITE, 0, 0).scale(), 1);
+    }
+
+    #[test]
+    fn num_to_str_zero_sig_figs_uses_one() {
+        assert_eq!(num_to_str(123.0, 0), num_to_str(123.0, 1));
     }
 
     #[test]
@@ -337,7 +352,10 @@ mod test {
 
         let mask = label.get_mask().unwrap();
         assert!(!mask.is_empty());
-        assert!(!mask[0].points.is_empty(), "Label mask should contain drawn points");
+        assert!(
+            !mask[0].points.is_empty(),
+            "Label mask should contain drawn points"
+        );
     }
 
     #[test]

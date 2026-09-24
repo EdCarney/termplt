@@ -185,6 +185,22 @@ ee
   eeeeee
 ";
 
+/// Drawn for characters without a bitmap.
+const CHAR_UNKNOWN: &str = "
+##########
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##      ##
+##########
+";
+
+/// Returns the bitmap for `c`. Characters without a bitmap are drawn as a hollow box.
 pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
     let str_map = match c {
         '0' => NUM_ZERO,
@@ -201,7 +217,7 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
         '.' => CHAR_DECIMAL,
         '-' => CHAR_DASH,
         'e' => CHAR_E,
-        _ => panic!("Bitmap not defined for character: '{c}'"),
+        _ => CHAR_UNKNOWN,
     };
 
     // note that bitmaps are written to be human-readable; they need to be modified to be
@@ -217,7 +233,7 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
             let mut chars = row
                 .to_string()
                 .chars()
-                .map(|x| if x == ' ' { false } else { true })
+                .map(|x| x != ' ')
                 //.step_by(2)
                 .collect::<Vec<_>>();
 
@@ -237,11 +253,11 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
 
     // scale the char
     let mut scaled_bitmap = Vec::new();
-    for i in 0..CHAR_HEIGHT {
+    for row in bitmap.iter().take(CHAR_HEIGHT) {
         let mut scaled_row = Vec::new();
-        for j in 0..CHAR_WIDTH {
+        for &px in row.iter().take(CHAR_WIDTH) {
             for _ in 0..style.scale() {
-                scaled_row.push(bitmap[i][j]);
+                scaled_row.push(px);
             }
         }
         for _ in 0..style.scale() {
@@ -270,4 +286,16 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
     bitmap.reverse();
 
     bitmap
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_character_uses_placeholder() {
+        let style = TextStyle::default();
+        assert_eq!(get_bitmap('N', &style), get_bitmap('?', &style));
+        assert_ne!(get_bitmap('N', &style), get_bitmap(' ', &style));
+    }
 }

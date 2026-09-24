@@ -68,7 +68,7 @@ pub struct Line<T: Graphable> {
 impl<T: Graphable, U: Graphable> Convertable<U> for Line<T> {
     type ConvertTo = Line<U>;
     fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
-        let style = self.style().clone();
+        let style = *self.style();
         let positioning = self.positioning.convert_to(convert_fn);
         Line { style, positioning }
     }
@@ -177,49 +177,49 @@ impl Line<i32> {
     }
 }
 
+/// Number of pixels drawn, then skipped, along a dashed line.
+const DASH_ON: usize = 6;
+const DASH_OFF: usize = 4;
+
 impl<T: IntConvertable + Graphable> Drawable for Line<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
-        let flat_line_fn = |thickness: u32, pos: &LinePositioning<T>| -> Vec<Point<u32>> {
-            let mut points = Vec::new();
-            let shift_start = -1 * thickness as i32;
-            let shift_end = thickness as i32;
-            for shift in shift_start..=shift_end {
-                let shift_point = match pos {
-                    LinePositioning::Vertical { .. } => Point::new(shift, 0),
-                    LinePositioning::Horizontal { .. } => Point::new(0, shift),
-                    _ => panic!("Invalid line positioning type for flat line fn: {pos:?}"),
-                };
-                points.extend(
-                    self.convert_to_i32()
-                        .full_drawable_points()
-                        .iter()
-                        .map(|&p| (p.convert_to_i32() + shift_point).convert_to_u32()),
-                );
-            }
-            points
+        let (color, thickness, dashed) = match self.style {
+            LineStyle::Solid { color, thickness } => (color, thickness, false),
+            LineStyle::Dashed { color, thickness } => (color, thickness, true),
         };
-        let mask_points = match self.style {
-            LineStyle::Solid { color, thickness } => {
-                let points = match self.positioning {
-                    LinePositioning::Vertical { .. } | LinePositioning::Horizontal { .. } => {
-                        flat_line_fn(thickness, &self.positioning)
-                    }
-                    LinePositioning::BetweenPoints { .. } => {
-                        self.convert_to_i32().full_drawable_points()
-                    }
-                };
 
-                vec![MaskPoints {
-                    points,
-                    color: color.clone(),
-                }]
+        // pixels along the line, ordered from start to end
+        let mut path = self.convert_to_i32().full_drawable_points();
+        if dashed {
+            path = path
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| i % (DASH_ON + DASH_OFF) < DASH_ON)
+                .map(|(_, p)| p)
+                .collect();
+        }
+
+        let points = match self.positioning {
+            LinePositioning::Vertical { .. } | LinePositioning::Horizontal { .. } => {
+                // thickness is applied by drawing shifted copies on both sides of the line
+                let mut points = Vec::with_capacity(path.len() * (2 * thickness as usize + 1));
+                for shift in -(thickness as i32)..=thickness as i32 {
+                    let shift_point = match self.positioning {
+                        LinePositioning::Vertical { .. } => Point::new(shift, 0),
+                        _ => Point::new(0, shift),
+                    };
+                    points.extend(
+                        path.iter()
+                            .map(|&p| (p.convert_to_i32() + shift_point).convert_to_u32()),
+                    );
+                }
+                points
             }
-            LineStyle::Dashed {
-                color: _,
-                thickness: _,
-            } => todo!(),
+            // thickness is not yet applied to lines between arbitrary points
+            LinePositioning::BetweenPoints { .. } => path,
         };
-        Ok(mask_points)
+
+        Ok(vec![MaskPoints { points, color }])
     }
 }
 
@@ -228,18 +228,51 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "not yet implemented")]
-    fn dashed_line_get_mask_panics_with_todo() {
+    fn dashed_horizontal_line_skips_gaps() {
         let style = LineStyle::Dashed {
             color: colors::WHITE,
             thickness: 0,
         };
         let pos = LinePositioning::Horizontal {
             start: Point::new(0, 0),
-            length: 10,
+            length: 19,
         };
         let line: Line<i32> = Line::new(pos, style);
-        let _ = line.get_mask();
+        let mask = line.get_mask().unwrap();
+        let xs: Vec<u32> = mask[0].points.iter().map(|p| p.x).collect();
+        assert_eq!(xs, vec![0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15]);
+    }
+
+    #[test]
+    fn dashed_diagonal_line_skips_gaps() {
+        let style = LineStyle::Dashed {
+            color: colors::WHITE,
+            thickness: 0,
+        };
+        let pos = LinePositioning::BetweenPoints {
+            start: Point::new(0, 0),
+            end: Point::new(9, 9),
+        };
+        let line: Line<i32> = Line::new(pos, style);
+        let mask = line.get_mask().unwrap();
+        assert_eq!(mask[0].points.len(), 6);
+        assert_eq!(mask[0].points[5], Point::new(5, 5));
+    }
+
+    #[test]
+    fn dashed_thick_line_applies_thickness() {
+        let style = LineStyle::Dashed {
+            color: colors::WHITE,
+            thickness: 1,
+        };
+        let pos = LinePositioning::Vertical {
+            start: Point::new(5, 0),
+            length: 9,
+        };
+        let line: Line<i32> = Line::new(pos, style);
+        let mask = line.get_mask().unwrap();
+        // 6 dashed pixels, drawn 3 pixels wide
+        assert_eq!(mask[0].points.len(), 18);
     }
 
     #[test]
@@ -313,7 +346,10 @@ mod tests {
         };
         let line = Line::new(pos, LineStyle::default());
         let points = line.full_drawable_points();
-        assert!(!points.is_empty(), "Right-to-left line should produce points");
+        assert!(
+            !points.is_empty(),
+            "Right-to-left line should produce points"
+        );
         // First point should be near start (10, 0), last near end (0, 10)
         let first = points.first().unwrap();
         let last = points.last().unwrap();
@@ -335,7 +371,10 @@ mod tests {
         let line = Line::new(pos, LineStyle::default());
         let points = line.full_drawable_points();
         // A zero-length line should produce at most 1 point (or 0 is acceptable)
-        assert!(points.len() <= 1, "Single-point line should produce 0 or 1 points");
+        assert!(
+            points.len() <= 1,
+            "Single-point line should produce 0 or 1 points"
+        );
     }
 
     #[test]

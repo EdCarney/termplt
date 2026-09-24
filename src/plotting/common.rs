@@ -54,7 +54,7 @@ pub trait Convertable<U> {
 impl<T: Graphable, U: Graphable> Convertable<U> for T {
     type ConvertTo = U;
     fn convert_to(&self, convert_fn: fn(f64) -> U) -> Self::ConvertTo {
-        let value: f64 = self.clone().into();
+        let value: f64 = (*self).into();
         convert_fn(value)
     }
 }

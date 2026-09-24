@@ -27,7 +27,8 @@ impl TermCommand for KittyCommand {
 
 impl KittyCommand {
     pub fn new(payload: &[u8], ctrl_data: &[String]) -> KittyCommand {
-        let payload = encoding::read_bytes_to_b64(&payload).unwrap();
+        let payload = encoding::read_bytes_to_b64(payload)
+            .expect("base64 encoding of a byte slice cannot fail");
         let mut ctrl_data = Vec::from(ctrl_data);
 
         let chunks = payload.chunks(MAX_PAYLOAD_SIZE);
@@ -38,12 +39,12 @@ impl KittyCommand {
             let is_last = ind == num_chunks - 1;
 
             ctrl_data.push(Metadata::MoreData(!is_last).get_ctrl_seq());
-            let ctrl_bytes = ctrl_data.drain(..).collect::<Vec<_>>().join(",");
+            let ctrl_bytes = std::mem::take(&mut ctrl_data).join(",");
 
             cmd.extend_from_slice(CMD_START);
-            cmd.extend_from_slice(&ctrl_bytes.as_bytes());
+            cmd.extend_from_slice(ctrl_bytes.as_bytes());
             cmd.extend_from_slice(CMD_SEP);
-            cmd.extend_from_slice(&chunk);
+            cmd.extend_from_slice(chunk);
             cmd.extend_from_slice(CMD_END);
         }
 

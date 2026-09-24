@@ -33,8 +33,9 @@ pub struct WindowSize {
 }
 
 pub fn get_window_size() -> Result<WindowSize, Box<dyn Error>> {
-    let (x_pix, y_pix) = csi_cmds::get_text_area_size_pixels()?;
-    let (rows, cols) = csi_cmds::get_text_area_size_cells()?;
+    let context = |e: Box<dyn Error>| format!("Could not determine terminal window size: {e}");
+    let (x_pix, y_pix) = csi_cmds::get_text_area_size_pixels().map_err(context)?;
+    let (rows, cols) = csi_cmds::get_text_area_size_cells().map_err(context)?;
 
     if rows == 0 || cols == 0 || x_pix == 0 || y_pix == 0 {
         return Err(Box::new(WindowCtrlError::InvalidDimensions { rows, cols }));

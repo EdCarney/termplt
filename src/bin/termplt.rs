@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::Path;
 
 use rgb::RGB8;
@@ -193,16 +194,12 @@ fn parse_args(args: Vec<String>) -> Result<CliArgs> {
                     specs.push(spec);
                 }
                 i += 1;
-                let val = args
-                    .get(i)
-                    .ok_or("--data_file requires a file path")?;
+                let val = args.get(i).ok_or("--data_file requires a file path")?;
                 current = Some(SeriesSpec::new(DataSource::File(val.clone())));
             }
             "--marker_style" => {
                 i += 1;
-                let val = args
-                    .get(i)
-                    .ok_or("--marker_style requires a value")?;
+                let val = args.get(i).ok_or("--marker_style requires a value")?;
                 let spec = current
                     .as_mut()
                     .ok_or("--marker_style must appear after --data or --data_file")?;
@@ -210,9 +207,7 @@ fn parse_args(args: Vec<String>) -> Result<CliArgs> {
             }
             "--marker_color" => {
                 i += 1;
-                let val = args
-                    .get(i)
-                    .ok_or("--marker_color requires a value")?;
+                let val = args.get(i).ok_or("--marker_color requires a value")?;
                 let spec = current
                     .as_mut()
                     .ok_or("--marker_color must appear after --data or --data_file")?;
@@ -220,21 +215,20 @@ fn parse_args(args: Vec<String>) -> Result<CliArgs> {
             }
             "--marker_size" => {
                 i += 1;
-                let val = args
-                    .get(i)
-                    .ok_or("--marker_size requires a value")?;
+                let val = args.get(i).ok_or("--marker_size requires a value")?;
                 let spec = current
                     .as_mut()
                     .ok_or("--marker_size must appear after --data or --data_file")?;
                 spec.marker_size = Some(val.parse::<u32>().map_err(|_| {
-                    format!("--marker_size value '{}' is not a valid positive integer", val)
+                    format!(
+                        "--marker_size value '{}' is not a valid positive integer",
+                        val
+                    )
                 })?);
             }
             "--line_style" => {
                 i += 1;
-                let val = args
-                    .get(i)
-                    .ok_or("--line_style requires a value")?;
+                let val = args.get(i).ok_or("--line_style requires a value")?;
                 let spec = current
                     .as_mut()
                     .ok_or("--line_style must appear after --data or --data_file")?;
@@ -242,9 +236,7 @@ fn parse_args(args: Vec<String>) -> Result<CliArgs> {
             }
             "--line_color" => {
                 i += 1;
-                let val = args
-                    .get(i)
-                    .ok_or("--line_color requires a value")?;
+                let val = args.get(i).ok_or("--line_color requires a value")?;
                 let spec = current
                     .as_mut()
                     .ok_or("--line_color must appear after --data or --data_file")?;
@@ -252,9 +244,7 @@ fn parse_args(args: Vec<String>) -> Result<CliArgs> {
             }
             "--line_thickness" => {
                 i += 1;
-                let val = args
-                    .get(i)
-                    .ok_or("--line_thickness requires a value")?;
+                let val = args.get(i).ok_or("--line_thickness requires a value")?;
                 let spec = current
                     .as_mut()
                     .ok_or("--line_thickness must appear after --data or --data_file")?;
@@ -281,9 +271,11 @@ fn parse_args(args: Vec<String>) -> Result<CliArgs> {
     }
 
     if specs.is_empty() {
-        return Err("No data provided. Use --data or --data_file to supply data points.\n\
+        return Err(
+            "No data provided. Use --data or --data_file to supply data points.\n\
                      Run 'termplt --help' for usage."
-            .into());
+                .into(),
+        );
     }
 
     Ok(CliArgs { specs, verbose })
@@ -308,18 +300,16 @@ fn parse_inline_data(s: &str) -> Result<Vec<Point<f64>>> {
         let pair = pair.trim();
         let parts: Vec<&str> = pair.split(',').collect();
         if parts.len() != 2 {
-            return Err(format!(
-                "Invalid point '({})'. Expected format: (x,y)",
-                pair
-            )
-            .into());
+            return Err(format!("Invalid point '({})'. Expected format: (x,y)", pair).into());
         }
-        let x: f64 = parts[0].trim().parse().map_err(|_| {
-            format!("Cannot parse x value '{}' as a number", parts[0].trim())
-        })?;
-        let y: f64 = parts[1].trim().parse().map_err(|_| {
-            format!("Cannot parse y value '{}' as a number", parts[1].trim())
-        })?;
+        let x: f64 = parts[0]
+            .trim()
+            .parse()
+            .map_err(|_| format!("Cannot parse x value '{}' as a number", parts[0].trim()))?;
+        let y: f64 = parts[1]
+            .trim()
+            .parse()
+            .map_err(|_| format!("Cannot parse y value '{}' as a number", parts[1].trim()))?;
         points.push(Point::new(x, y));
     }
 
@@ -349,14 +339,16 @@ fn parse_data_file(path: &Path) -> Result<Vec<Point<f64>>> {
         .map_err(|e| format!("Cannot read file '{}': {}", path.display(), e))?;
 
     let mut points = Vec::new();
-    let mut lines = content.lines().peekable();
+    // number lines before skipping the header so errors report the line in the file
+    let mut lines = content.lines().enumerate().peekable();
 
     // Auto-detect and skip header
-    if lines.peek().is_some_and(|line| is_header_line(line)) {
+    if lines.peek().is_some_and(|(_, line)| is_header_line(line)) {
         lines.next();
     }
 
-    for (line_num, line) in lines.enumerate() {
+    for (line_idx, line) in lines {
+        let line_num = line_idx + 1;
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
@@ -380,7 +372,7 @@ fn parse_data_file(path: &Path) -> Result<Vec<Point<f64>>> {
             return Err(format!(
                 "{}:{}: expected at least 2 values (x, y), got {}",
                 path.display(),
-                line_num + 1,
+                line_num,
                 tokens.len()
             )
             .into());
@@ -390,7 +382,7 @@ fn parse_data_file(path: &Path) -> Result<Vec<Point<f64>>> {
             format!(
                 "{}:{}: cannot parse x value '{}' as a number",
                 path.display(),
-                line_num + 1,
+                line_num,
                 tokens[0]
             )
         })?;
@@ -398,7 +390,7 @@ fn parse_data_file(path: &Path) -> Result<Vec<Point<f64>>> {
             format!(
                 "{}:{}: cannot parse y value '{}' as a number",
                 path.display(),
-                line_num + 1,
+                line_num,
                 tokens[1]
             )
         })?;
@@ -454,10 +446,26 @@ fn resolve_marker_style(name: &str, size: u32, color: RGB8) -> Result<Option<Mar
 // ---------------------------------------------------------------------------
 
 fn build_series(spec: SeriesSpec, index: usize) -> Result<Series<f64>> {
-    let points = match &spec.data_source {
-        DataSource::Inline(s) => parse_inline_data(s)?,
-        DataSource::File(p) => parse_data_file(Path::new(p))?,
+    let (points, source) = match &spec.data_source {
+        DataSource::Inline(s) => (parse_inline_data(s)?, "inline data".to_string()),
+        DataSource::File(p) => (parse_data_file(Path::new(p))?, format!("'{p}'")),
     };
+
+    // NaN and infinite values cannot be plotted; skip them rather than failing the whole plot
+    let total = points.len();
+    let points: Vec<Point<f64>> = points
+        .into_iter()
+        .filter(|p| p.x.is_finite() && p.y.is_finite())
+        .collect();
+    if points.is_empty() {
+        return Err(format!("No finite data points found in {source}").into());
+    }
+    if points.len() < total {
+        eprintln!(
+            "warning: skipped {} point(s) with NaN or infinite values in {source}",
+            total - points.len()
+        );
+    }
 
     let palette = &DEFAULT_PALETTE[index % DEFAULT_PALETTE.len()];
     let marker_size = spec.marker_size.unwrap_or(DEFAULT_MARKER_SIZE);
@@ -470,11 +478,7 @@ fn build_series(spec: SeriesSpec, index: usize) -> Result<Series<f64>> {
         .as_deref()
         .map(resolve_color)
         .transpose()?;
-    let line_color = spec
-        .line_color
-        .as_deref()
-        .map(resolve_color)
-        .transpose()?;
+    let line_color = spec.line_color.as_deref().map(resolve_color).transpose()?;
 
     let effective_marker_color = marker_color.or(line_color).unwrap_or(default_color);
     let effective_line_color = line_color.or(marker_color).unwrap_or(default_color);
@@ -503,11 +507,7 @@ fn build_series(spec: SeriesSpec, index: usize) -> Result<Series<f64>> {
         Some(s) if s.eq_ignore_ascii_case("none") => false,
         Some(s) if s.eq_ignore_ascii_case("solid") => true,
         Some(s) => {
-            return Err(format!(
-                "Unknown line style '{}'. Valid styles: Solid, None",
-                s
-            )
-            .into())
+            return Err(format!("Unknown line style '{}'. Valid styles: Solid, None", s).into());
         }
         None => true, // default: draw lines
     };
@@ -570,6 +570,15 @@ fn run() -> Result<()> {
             color: colors::GRAY,
             thickness: 0,
         }));
+
+    if !std::io::stdout().is_terminal() {
+        return Err(
+            "stdout is not a terminal. termplt draws plots using the Kitty graphics \
+                    protocol and must write to a terminal that supports it (e.g. Kitty, WezTerm, \
+                    Ghostty)."
+                .into(),
+        );
+    }
 
     // Determine canvas size from terminal window
     let win = get_window_size()?;
@@ -712,10 +721,12 @@ mod tests {
         let args = vec!["--marker_color".into(), "Red".into()];
         let result = parse_args(args);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("must appear after"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("must appear after")
+        );
     }
 
     #[test]
@@ -859,18 +870,22 @@ mod tests {
     #[test]
     fn resolve_marker_style_valid() {
         let color = colors::RED;
-        assert!(resolve_marker_style("FilledCircle", 2, color)
-            .unwrap()
-            .is_some());
-        assert!(resolve_marker_style("hollowcircle", 2, color)
-            .unwrap()
-            .is_some());
-        assert!(resolve_marker_style("FILLEDSQUARE", 2, color)
-            .unwrap()
-            .is_some());
-        assert!(resolve_marker_style("None", 2, color)
-            .unwrap()
-            .is_none());
+        assert!(
+            resolve_marker_style("FilledCircle", 2, color)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            resolve_marker_style("hollowcircle", 2, color)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            resolve_marker_style("FILLEDSQUARE", 2, color)
+                .unwrap()
+                .is_some()
+        );
+        assert!(resolve_marker_style("None", 2, color).unwrap().is_none());
     }
 
     #[test]
@@ -972,5 +987,36 @@ mod tests {
         let series = build_series(spec, 0).unwrap();
         // Should have zero-size marker
         assert_eq!(series.marker_style().size(), 0);
+    }
+
+    #[test]
+    fn parse_data_file_error_reports_file_line_after_header() {
+        let path = std::env::temp_dir().join("termplt_test_error_line.csv");
+        fs::write(&path, "x,y\n1,2\nfoo,3\n").unwrap();
+        let err = parse_data_file(&path).unwrap_err().to_string();
+        fs::remove_file(&path).ok();
+        assert!(err.contains(":3:"), "expected line 3 in error, got: {err}");
+    }
+
+    #[test]
+    fn parse_data_file_error_reports_file_line_without_header() {
+        let path = std::env::temp_dir().join("termplt_test_error_line_no_header.csv");
+        fs::write(&path, "1,2\n\n3,oops\n").unwrap();
+        let err = parse_data_file(&path).unwrap_err().to_string();
+        fs::remove_file(&path).ok();
+        assert!(err.contains(":3:"), "expected line 3 in error, got: {err}");
+    }
+
+    #[test]
+    fn build_series_skips_non_finite_points() {
+        let spec = SeriesSpec::new(DataSource::Inline("(1,nan),(2,2),(inf,3),(4,4)".into()));
+        let series = build_series(spec, 0).unwrap();
+        assert_eq!(series.data(), &[Point::new(2.0, 2.0), Point::new(4.0, 4.0)]);
+    }
+
+    #[test]
+    fn build_series_all_non_finite_errors() {
+        let spec = SeriesSpec::new(DataSource::Inline("(nan,1),(2,-inf)".into()));
+        assert!(build_series(spec, 0).is_err());
     }
 }

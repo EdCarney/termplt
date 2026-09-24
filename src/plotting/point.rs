@@ -112,16 +112,17 @@ where
         let x: f64 = self.x.into();
         let y: f64 = self.y.into();
 
-        // When old_span is 0 (all points identical in that dimension),
-        // map to the midpoint of the new range instead of dividing by zero.
+        // When old_span is 0 (all points identical in that dimension), map to the middle of the
+        // new span instead of dividing by zero. Like the regular branch, the result is relative
+        // to the origin of the new limits; callers shift by the new minimum afterwards.
         let new_x = if old_span_x == 0.0 {
-            (new_limits.min().x + new_limits.max().x) / 2.0
+            new_span_x / 2.0
         } else {
             x * (new_span_x / old_span_x)
         };
 
         let new_y = if old_span_y == 0.0 {
-            (new_limits.min().y + new_limits.max().y) / 2.0
+            new_span_y / 2.0
         } else {
             y * (new_span_y / old_span_y)
         };
@@ -359,7 +360,10 @@ mod tests {
         let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
 
         let scaled = p.scale_to(&old_limits, &new_limits);
-        assert_eq!(scaled.x, 50.0, "Zero x-span should map to midpoint of new x range");
+        assert_eq!(
+            scaled.x, 50.0,
+            "Zero x-span should map to midpoint of new x range"
+        );
         assert_eq!(scaled.y, 50.0);
     }
 
@@ -372,7 +376,10 @@ mod tests {
 
         let scaled = p.scale_to(&old_limits, &new_limits);
         assert_eq!(scaled.x, 50.0);
-        assert_eq!(scaled.y, 50.0, "Zero y-span should map to midpoint of new y range");
+        assert_eq!(
+            scaled.y, 50.0,
+            "Zero y-span should map to midpoint of new y range"
+        );
     }
 
     #[test]

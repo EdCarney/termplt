@@ -15,19 +15,19 @@ impl<T: Graphable> LinePositioning<T> {
     pub fn limits(&self) -> Limits<T> {
         let (min, max) = match self {
             LinePositioning::Horizontal { start, length } => {
-                let start = start.clone();
+                let start = *start;
                 let end = Point::new(start.x + *length, start.y);
                 (start, end)
             }
             LinePositioning::Vertical { start, length } => {
-                let start = start.clone();
+                let start = *start;
                 let end = Point::new(start.x, start.y + *length);
                 (start, end)
             }
             LinePositioning::BetweenPoints { start, end } => {
                 // for thickness b/w points, assume that the thickness will not go outside the
                 // limits defined by the two points
-                (start.clone(), end.clone())
+                (*start, *end)
             }
         };
         Limits::new(min, max)
@@ -68,12 +68,12 @@ where
         let start = *limits.min();
         let end = *limits.max();
         let length = end.dist(&start);
-        let scaled_pos = match self {
+
+        match self {
             LinePositioning::Vertical { .. } => LinePositioning::Vertical { start, length },
             LinePositioning::Horizontal { .. } => LinePositioning::Horizontal { start, length },
             LinePositioning::BetweenPoints { .. } => LinePositioning::BetweenPoints { start, end },
-        };
-        scaled_pos
+        }
     }
 }
 

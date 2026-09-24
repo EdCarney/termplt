@@ -5,4 +5,4 @@ pub mod terminal_commands;
 mod window_ctrl;
 
 // re-export here to hide implicitly public unsafe functions
-pub use window_ctrl::get_window_size;
+pub use window_ctrl::{WindowSize, get_window_size};
