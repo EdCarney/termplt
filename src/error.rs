@@ -33,12 +33,16 @@ pub enum Error {
         /// Height left for the plot area, in pixels.
         plot_height: u32,
     },
+    /// Stdout is not a terminal (e.g. it is redirected to a file or pipe).
+    NotATerminal,
     /// The terminal does not implement the Kitty graphics protocol.
     GraphicsUnsupported,
     /// The terminal implements the graphics protocol but rejected a test image.
     GraphicsRejected(String),
     /// Talking to the terminal failed (no terminal, no reply, or an unexpected reply).
     Terminal(TerminalCommandError),
+    /// Running inside tmux with `allow-passthrough` off, so tmux would drop the image.
+    TmuxPassthroughDisabled,
     /// The terminal size could not be determined.
     WindowSize(Box<Error>),
     /// The terminal reported a size of zero.
@@ -92,6 +96,17 @@ impl fmt::Display for Error {
                 "the canvas is too small: the plot area would be {plot_width}x{plot_height} \
                  pixels after the buffer, labels and markers; use a larger canvas (or terminal \
                  window) or a smaller buffer or markers"
+            ),
+            Error::NotATerminal => write!(
+                f,
+                "stdout is not a terminal; plots are drawn with the Kitty graphics protocol and \
+                 must be written to a terminal that supports it (e.g. Kitty, WezTerm, Ghostty)"
+            ),
+            Error::TmuxPassthroughDisabled => write!(
+                f,
+                "tmux is blocking the image: enable passthrough with `tmux set -g \
+                 allow-passthrough on` (add `set -g allow-passthrough on` to ~/.tmux.conf to keep \
+                 it)"
             ),
             Error::GraphicsUnsupported => write!(
                 f,

@@ -323,6 +323,15 @@ fn normalize(name: &str) -> String {
         .collect()
 }
 
+/// Distinct colors that read well on dark and light backgrounds, used in order for successive
+/// series.
+pub const PALETTE: [RGB8; 6] = [DODGER_BLUE, RED, LIME, ORANGE, CYAN, MAGENTA];
+
+/// Perceived brightness (Rec. 709 luma) from 0 (black) to 255 (white).
+pub fn luminance(color: RGB8) -> f64 {
+    0.2126 * color.r as f64 + 0.7152 * color.g as f64 + 0.0722 * color.b as f64
+}
+
 /// Returns all available color names (uppercase with underscores).
 pub fn all_names() -> &'static [(&'static str, RGB8)] {
     COLOR_TABLE

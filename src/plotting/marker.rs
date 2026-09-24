@@ -50,6 +50,17 @@ impl Default for MarkerStyle {
 }
 
 impl MarkerStyle {
+    /// The marker color; `None` for [`MarkerStyle::None`].
+    pub fn color(&self) -> Option<RGB8> {
+        match self {
+            MarkerStyle::None => None,
+            MarkerStyle::FilledSquare { color, .. }
+            | MarkerStyle::HollowSquare { color, .. }
+            | MarkerStyle::FilledCircle { color, .. }
+            | MarkerStyle::HollowCircle { color, .. } => Some(*color),
+        }
+    }
+
     /// Marker radius in pixels; zero for [`MarkerStyle::None`].
     pub fn size(&self) -> u32 {
         match self {

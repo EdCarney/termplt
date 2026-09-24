@@ -1,14 +1,25 @@
-//! Checks that the plot can be shown in the terminal and finds its size.
+//! Showing images in the terminal: checking that it can, finding its size, and placing images.
 //!
-//! The decisions live in [`prepare`], which reaches the terminal and OS only through the
-//! [`Terminal`] trait so each branch can be tested without a real terminal.
+//! [`Terminal::connect`] runs the checks once; the returned [`Terminal`] then displays images.
+//!
+//! ```no_run
+//! use termplt::terminal::Terminal;
+//!
+//! let terminal = Terminal::connect()?;
+//! let (width, height) = terminal.default_plot_size();
+//! # let rgb = vec![0u8; (width * height * 3) as usize];
+//! terminal.show_rgb(&rgb, width, height)?;
+//! # Ok::<(), termplt::Error>(())
+//! ```
 
-use crate::Result;
+use crate::{Error, Result, WindowSize};
 use std::io::{self, IsTerminal, Write};
-use termplt::{
-    Error, WindowSize,
+
+pub use crate::{
+    kitty_graphics::ctrl_seq::{PixelFormat, Transmission},
     terminal_commands::{
-        kitty_cmds::{self, Passthrough},
+        images::{Image, PositioningType},
+        kitty_cmds::{Passthrough, query_support},
         responses::TerminalCommandError,
     },
 };
@@ -17,24 +28,178 @@ use termplt::{
 /// fonts).
 pub const ASSUMED_CELL_SIZE: (u32, u32) = (9, 18);
 
-/// What [`prepare`] needs from the terminal and the OS.
-pub trait Terminal {
+/// Smallest size [`Terminal::default_plot_size`] returns.
+pub const MIN_PLOT_SIZE: (u32, u32) = (200, 150);
+
+/// A terminal that has been checked for graphics support, with its size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Terminal {
+    window: WindowSize,
+    passthrough: Passthrough,
+}
+
+impl Terminal {
+    /// Checks that stdout is a terminal that can show images and finds its size.
+    ///
+    /// Fails with [`Error::NotATerminal`], [`Error::GraphicsUnsupported`],
+    /// [`Error::GraphicsRejected`] or [`Error::TmuxPassthroughDisabled`] when images cannot be
+    /// shown. A terminal that answers no queries at all is assumed to work, and a terminal that
+    /// doesn't report its size in pixels gets an estimate based on [`ASSUMED_CELL_SIZE`]; use
+    /// [`Terminal::connect_with_log`] to see those warnings.
+    pub fn connect() -> Result<Terminal> {
+        Terminal::connect_with_log(false, &mut io::sink())
+    }
+
+    /// Like [`Terminal::connect`], writing warnings (and details when `verbose`) to `log`.
+    pub fn connect_with_log(verbose: bool, log: &mut impl Write) -> Result<Terminal> {
+        Terminal::connect_to(&Tty, verbose, log)
+    }
+
+    fn connect_to(term: &impl Backend, verbose: bool, log: &mut impl Write) -> Result<Terminal> {
+        if !term.stdout_is_terminal() {
+            return Err(Error::NotATerminal);
+        }
+
+        // inside tmux the outer terminal's reply never reaches us, so there is nothing to query
+        let passthrough = term.passthrough();
+        match passthrough {
+            Passthrough::None => match term.query_support() {
+                Ok(()) => {
+                    if verbose {
+                        writeln!(
+                            log,
+                            "[verbose] terminal supports the Kitty graphics protocol"
+                        )?;
+                    }
+                }
+                Err(e @ (Error::GraphicsUnsupported | Error::GraphicsRejected(_))) => {
+                    return Err(e);
+                }
+                // a terminal that answers nothing at all may still draw images; try anyway
+                Err(Error::Terminal(TerminalCommandError::Timeout(_))) => writeln!(
+                    log,
+                    "warning: the terminal did not answer a graphics support query; drawing \
+                     anyway"
+                )?,
+                Err(e) => writeln!(log, "warning: could not check for graphics support: {e}")?,
+            },
+            Passthrough::Tmux => {
+                if term.tmux_passthrough_disabled() {
+                    return Err(Error::TmuxPassthroughDisabled);
+                }
+                if verbose {
+                    writeln!(
+                        log,
+                        "[verbose] inside tmux: sending images through tmux passthrough"
+                    )?;
+                }
+            }
+        }
+
+        let window = match term.window_size() {
+            Ok(window) => window,
+            Err(e) => {
+                let window = term
+                    .cell_count()
+                    .and_then(|(cols, rows)| estimate_window_size(cols, rows))
+                    .ok_or(e)?;
+                writeln!(
+                    log,
+                    "warning: the terminal did not report its size in pixels; assuming {}x{} \
+                     pixel cells",
+                    window.pix_per_col, window.pix_per_row
+                )?;
+                window
+            }
+        };
+        if verbose {
+            writeln!(
+                log,
+                "[verbose] terminal: {}x{} cells, {}x{} pixels ({} px/col, {} px/row)",
+                window.cols,
+                window.rows,
+                window.x_pix,
+                window.y_pix,
+                window.pix_per_col,
+                window.pix_per_row
+            )?;
+        }
+        Ok(Terminal {
+            window,
+            passthrough,
+        })
+    }
+
+    /// The terminal's size.
+    pub fn window(&self) -> &WindowSize {
+        &self.window
+    }
+
+    /// How images reach the terminal.
+    pub fn passthrough(&self) -> Passthrough {
+        self.passthrough
+    }
+
+    /// A plot size that fits the window: the full width (less one column, so the image does not
+    /// wrap) and 60% of the height, at most twice as wide as high and at least
+    /// [`MIN_PLOT_SIZE`].
+    pub fn default_plot_size(&self) -> (u32, u32) {
+        default_plot_size(&self.window)
+    }
+
+    /// Displays an image at the cursor and moves the cursor below it.
+    pub fn show(&self, image: &Image) -> Result<()> {
+        let mut stdout = io::stdout();
+        match self.passthrough {
+            Passthrough::Tmux => {
+                // tmux doesn't know the image is there, so it wouldn't account for the terminal
+                // moving the cursor below it; move the cursor ourselves instead
+                image.display_without_moving_cursor()?;
+                let rows = rows_covered(image.height(), &self.window);
+                write!(stdout, "{}", "\n".repeat(rows as usize))?;
+            }
+            Passthrough::None => {
+                image.display()?;
+                // the terminal leaves the cursor on the image's last row
+                writeln!(stdout)?;
+            }
+        }
+        stdout.flush()?;
+        Ok(())
+    }
+
+    /// PNG-encodes RGB8 pixels (`width * height * 3` bytes) and displays them like
+    /// [`Terminal::show`].
+    pub fn show_rgb(&self, rgb: &[u8], width: u32, height: u32) -> Result<()> {
+        self.show(&Image::png_from_rgb(rgb, width, height)?)
+    }
+}
+
+fn default_plot_size(window: &WindowSize) -> (u32, u32) {
+    // leave one column free so the image does not wrap
+    let available_w = window.x_pix.saturating_sub(window.pix_per_col);
+    let h = (window.y_pix * 3 / 5).max(MIN_PLOT_SIZE.1);
+    let w = available_w.min(2 * h).max(MIN_PLOT_SIZE.0);
+    (w, h)
+}
+
+/// What [`Terminal::connect_to`] needs from the terminal and the OS, so every branch can be
+/// tested without a real terminal.
+trait Backend {
     fn stdout_is_terminal(&self) -> bool;
     fn passthrough(&self) -> Passthrough;
-    /// See [`kitty_cmds::query_support`].
-    fn query_support(&self) -> termplt::Result<()>;
+    fn query_support(&self) -> Result<()>;
     /// Whether tmux would drop the image because `allow-passthrough` is off.
     fn tmux_passthrough_disabled(&self) -> bool;
-    /// See [`termplt::get_window_size`].
-    fn window_size(&self) -> termplt::Result<WindowSize>;
+    fn window_size(&self) -> Result<WindowSize>;
     /// The size in cells, as (cols, rows).
     fn cell_count(&self) -> Option<(u16, u16)>;
 }
 
 /// The real terminal attached to this process.
-pub struct Tty;
+struct Tty;
 
-impl Terminal for Tty {
+impl Backend for Tty {
     fn stdout_is_terminal(&self) -> bool {
         io::stdout().is_terminal()
     }
@@ -43,8 +208,8 @@ impl Terminal for Tty {
         Passthrough::detect()
     }
 
-    fn query_support(&self) -> termplt::Result<()> {
-        kitty_cmds::query_support()
+    fn query_support(&self) -> Result<()> {
+        query_support()
     }
 
     fn tmux_passthrough_disabled(&self) -> bool {
@@ -57,8 +222,8 @@ impl Terminal for Tty {
             })
     }
 
-    fn window_size(&self) -> termplt::Result<WindowSize> {
-        termplt::get_window_size()
+    fn window_size(&self) -> Result<WindowSize> {
+        crate::get_window_size()
     }
 
     fn cell_count(&self) -> Option<(u16, u16)> {
@@ -71,89 +236,6 @@ impl Terminal for Tty {
 /// command fails) and always pass sequences on.
 fn passthrough_off(option_value: &str) -> bool {
     option_value.trim() == "off"
-}
-
-/// Checks that stdout is a terminal that can show images and returns its size. Warnings and
-/// verbose details are written to `log`.
-pub fn prepare(term: &impl Terminal, verbose: bool, log: &mut impl Write) -> Result<WindowSize> {
-    if !term.stdout_is_terminal() {
-        return Err(
-            "stdout is not a terminal. termplt draws plots using the Kitty graphics \
-                    protocol and must write to a terminal that supports it (e.g. Kitty, \
-                    WezTerm, Ghostty); use --output plot.png to write an image file instead."
-                .into(),
-        );
-    }
-
-    // inside tmux the outer terminal's reply never reaches us, so there is nothing to query
-    match term.passthrough() {
-        Passthrough::None => match term.query_support() {
-            Ok(()) => {
-                if verbose {
-                    writeln!(
-                        log,
-                        "[verbose] terminal supports the Kitty graphics protocol"
-                    )?;
-                }
-            }
-            Err(e @ (Error::GraphicsUnsupported | Error::GraphicsRejected(_))) => {
-                return Err(
-                    format!("{e}. Use --output plot.png to write an image file instead.").into(),
-                );
-            }
-            // a terminal that answers nothing at all may still draw images; try anyway
-            Err(Error::Terminal(TerminalCommandError::Timeout(_))) => writeln!(
-                log,
-                "warning: the terminal did not answer a graphics support query; drawing anyway"
-            )?,
-            Err(e) => writeln!(log, "warning: could not check for graphics support: {e}")?,
-        },
-        Passthrough::Tmux => {
-            if term.tmux_passthrough_disabled() {
-                return Err("tmux is blocking the image: enable passthrough with \
-                            `tmux set -g allow-passthrough on` (add `set -g allow-passthrough \
-                            on` to ~/.tmux.conf to keep it), or use --output plot.png to write \
-                            an image file instead."
-                    .into());
-            }
-            if verbose {
-                writeln!(
-                    log,
-                    "[verbose] inside tmux: sending images through tmux passthrough"
-                )?;
-            }
-        }
-    }
-
-    let window = match term.window_size() {
-        Ok(window) => window,
-        Err(e) => {
-            let window = term
-                .cell_count()
-                .and_then(|(cols, rows)| estimate_window_size(cols, rows))
-                .ok_or(e)?;
-            writeln!(
-                log,
-                "warning: the terminal did not report its size in pixels; assuming {}x{} pixel \
-                 cells. Use --width/--height to set the plot size.",
-                window.pix_per_col, window.pix_per_row
-            )?;
-            window
-        }
-    };
-    if verbose {
-        writeln!(
-            log,
-            "[verbose] terminal: {}x{} cells, {}x{} pixels ({} px/col, {} px/row)",
-            window.cols,
-            window.rows,
-            window.x_pix,
-            window.y_pix,
-            window.pix_per_col,
-            window.pix_per_row
-        )?;
-    }
-    Ok(window)
 }
 
 /// A window size from the cell count alone, for terminals that don't report pixel sizes.
@@ -174,7 +256,7 @@ fn estimate_window_size(cols: u16, rows: u16) -> Option<WindowSize> {
 }
 
 /// Rows an image of `height` pixels covers, i.e. how far to move the cursor to get below it.
-pub fn rows_covered(height: u32, window: &WindowSize) -> u32 {
+fn rows_covered(height: u32, window: &WindowSize) -> u32 {
     height.div_ceil(window.pix_per_row.max(1))
 }
 
@@ -187,9 +269,9 @@ mod tests {
     struct FakeTerminal {
         stdout_is_terminal: bool,
         passthrough: Passthrough,
-        support: fn() -> termplt::Result<()>,
+        support: fn() -> crate::Result<()>,
         passthrough_disabled: bool,
-        window_size: fn() -> termplt::Result<WindowSize>,
+        window_size: fn() -> crate::Result<WindowSize>,
         cell_count: Option<(u16, u16)>,
         queries: Cell<u32>,
         tmux_checks: Cell<u32>,
@@ -210,7 +292,7 @@ mod tests {
         }
     }
 
-    impl Terminal for FakeTerminal {
+    impl Backend for FakeTerminal {
         fn stdout_is_terminal(&self) -> bool {
             self.stdout_is_terminal
         }
@@ -219,7 +301,7 @@ mod tests {
             self.passthrough
         }
 
-        fn query_support(&self) -> termplt::Result<()> {
+        fn query_support(&self) -> crate::Result<()> {
             self.queries.set(self.queries.get() + 1);
             (self.support)()
         }
@@ -229,7 +311,7 @@ mod tests {
             self.passthrough_disabled
         }
 
-        fn window_size(&self) -> termplt::Result<WindowSize> {
+        fn window_size(&self) -> crate::Result<WindowSize> {
             (self.window_size)()
         }
 
@@ -249,16 +331,16 @@ mod tests {
         }
     }
 
-    fn no_window_size() -> termplt::Result<WindowSize> {
+    fn no_window_size() -> crate::Result<WindowSize> {
         Err(Error::Terminal(TerminalCommandError::InvalidResponse(
             "no reply to CSI 14t".into(),
         )))
     }
 
-    /// Runs `prepare`, returning its result and everything it logged.
+    /// Runs `connect_to`, returning the window size and everything it logged.
     fn run(term: &FakeTerminal, verbose: bool) -> (Result<WindowSize>, String) {
         let mut log = Vec::new();
-        let result = prepare(term, verbose, &mut log);
+        let result = Terminal::connect_to(term, verbose, &mut log).map(|t| t.window);
         (result, String::from_utf8(log).unwrap())
     }
 
@@ -286,21 +368,19 @@ mod tests {
             stdout_is_terminal: false,
             ..Default::default()
         };
-        let err = run(&term, false).0.unwrap_err().to_string();
-        assert!(err.contains("stdout is not a terminal"));
-        assert!(err.contains("--output"));
+        let err = run(&term, false).0.unwrap_err();
+        assert!(matches!(err, Error::NotATerminal));
         assert_eq!(term.queries.get(), 0);
     }
 
     #[test]
-    fn unsupported_terminal_is_an_error_with_output_hint() {
+    fn unsupported_terminal_is_an_error() {
         let term = FakeTerminal {
             support: || Err(Error::GraphicsUnsupported),
             ..Default::default()
         };
-        let err = run(&term, false).0.unwrap_err().to_string();
-        assert!(err.contains("does not support the Kitty graphics protocol"));
-        assert!(err.contains("--output plot.png"));
+        let err = run(&term, false).0.unwrap_err();
+        assert!(matches!(err, Error::GraphicsUnsupported));
     }
 
     #[test]
@@ -359,8 +439,9 @@ mod tests {
             passthrough_disabled: true,
             ..Default::default()
         };
-        let err = run(&term, false).0.unwrap_err().to_string();
-        assert!(err.contains("tmux set -g allow-passthrough on"));
+        let err = run(&term, false).0.unwrap_err();
+        assert!(matches!(err, Error::TmuxPassthroughDisabled));
+        assert!(err.to_string().contains("tmux set -g allow-passthrough on"));
     }
 
     #[test]
@@ -402,6 +483,26 @@ mod tests {
         assert!(!passthrough_off("on\n"));
         assert!(!passthrough_off("all\n"));
         assert!(!passthrough_off(""));
+    }
+
+    #[test]
+    fn plot_size_fits_the_window() {
+        let size = |x_pix, y_pix| {
+            default_plot_size(&WindowSize {
+                rows: y_pix / 20,
+                cols: x_pix / 10,
+                x_pix,
+                y_pix,
+                pix_per_col: 10,
+                pix_per_row: 20,
+            })
+        };
+        // wide terminal: 60% of the height, width capped at twice the height
+        assert_eq!(size(1600, 1000), (1200, 600));
+        // narrow terminal: full width minus one column
+        assert_eq!(size(500, 1000), (490, 600));
+        // tiny terminal: minimum size
+        assert_eq!(size(100, 100), MIN_PLOT_SIZE);
     }
 
     #[test]

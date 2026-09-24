@@ -76,6 +76,16 @@ impl Image {
         Image::new(PixelFormat::Png, Transmission::Direct(png))
     }
 
+    /// Width in pixels.
+    pub fn width(&self) -> u32 {
+        self.width_pix
+    }
+
+    /// Height in pixels.
+    pub fn height(&self) -> u32 {
+        self.height_pix
+    }
+
     /// The number of bytes of image data sent to the terminal (before base64 encoding), or the
     /// length of the path/name for other transmission media.
     pub fn payload_len(&self) -> usize {

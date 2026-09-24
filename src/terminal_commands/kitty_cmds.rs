@@ -1,5 +1,5 @@
 use super::responses::{TermCommand, TerminalCommandError};
-use crate::kitty_graphics::ctrl_seq::{CtrlSeq, Metadata};
+use crate::kitty_graphics::ctrl_seq::{Action, CtrlSeq, Metadata};
 use crate::kitty_graphics::encoding;
 use crate::{Error, common::Result};
 
@@ -119,8 +119,8 @@ impl KittyCommand {
 /// does not reach the program, so callers should skip the query there.
 pub fn query_support() -> Result<()> {
     let ctrl = [
-        format!("i={QUERY_ID}"),
-        String::from("a=q"),
+        Metadata::Id(QUERY_ID).get_ctrl_seq(),
+        Action::Query.get_ctrl_seq(),
         String::from("s=1"),
         String::from("v=1"),
         String::from("f=24"),

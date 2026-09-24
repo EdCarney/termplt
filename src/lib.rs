@@ -1,10 +1,13 @@
 mod common;
 mod error;
-pub mod kitty_graphics;
+mod kitty_graphics;
+mod plot;
 pub mod plotting;
-pub mod terminal_commands;
+pub mod prelude;
+pub mod terminal;
+mod terminal_commands;
 mod window_ctrl;
 
-// re-export here to hide implicitly public unsafe functions
 pub use error::{Error, Result};
+pub use plot::{DEFAULT_PNG_SIZE, Plot};
 pub use window_ctrl::{WindowSize, get_window_size};

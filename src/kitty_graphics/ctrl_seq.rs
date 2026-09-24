@@ -74,7 +74,6 @@ impl CtrlSeq for Action {
 pub enum Metadata {
     Id(u32),
     MoreData(bool),
-    StackingOrder(u16),
     /// Suppresses the terminal's replies: `Quiet(1)` suppresses `OK` replies, `Quiet(2)` also
     /// suppresses errors. Replies nobody reads would otherwise show up as typed input.
     Quiet(u8),
@@ -87,7 +86,6 @@ impl CtrlSeq for Metadata {
         match self {
             Metadata::Id(id) => format!("i={id}"),
             Metadata::MoreData(more) => format!("m={}", if *more { 1 } else { 0 }),
-            Metadata::StackingOrder(z) => format!("z={z}"),
             Metadata::Quiet(level) => format!("q={level}"),
             Metadata::NoCursorMovement => String::from("C=1"),
         }
@@ -96,49 +94,15 @@ impl CtrlSeq for Metadata {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Positioning {
-    Current,
     WithCellOffset { offset_x: u32, offset_y: u32 },
 }
 
 impl CtrlSeq for Positioning {
     fn get_ctrl_seq(&self) -> String {
         match self {
-            Positioning::Current => String::from(""),
             Positioning::WithCellOffset { offset_x, offset_y } => {
                 format!("X={offset_x},Y={offset_y}")
             }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DisplayRegion {
-    Rectangle {
-        x: u16,
-        y: u16,
-        width: u16,
-        height: u16,
-    },
-    Rows(u16),
-    Cols(u16),
-    RowsCols {
-        rows: u16,
-        cols: u16,
-    },
-}
-
-impl CtrlSeq for DisplayRegion {
-    fn get_ctrl_seq(&self) -> String {
-        match self {
-            DisplayRegion::Rectangle {
-                x,
-                y,
-                width,
-                height,
-            } => format!("x={x},y={y},w={width},h={height}"),
-            DisplayRegion::Rows(rows) => format!("r={rows}"),
-            DisplayRegion::Cols(cols) => format!("c={cols}"),
-            DisplayRegion::RowsCols { rows, cols } => format!("r={rows},c={cols}"),
         }
     }
 }

@@ -106,6 +106,27 @@ impl<X: Graphable, Y: Graphable> From<&[(X, Y)]> for Series {
     }
 }
 
+impl<X: Graphable, Y: Graphable> From<(&[X], &[Y])> for Series {
+    /// Pairs up x and y values like [`Series::from_xy`].
+    fn from((xs, ys): (&[X], &[Y])) -> Series {
+        Series::from_xy(xs, ys)
+    }
+}
+
+impl<X: Graphable, Y: Graphable> From<(&Vec<X>, &Vec<Y>)> for Series {
+    /// Pairs up x and y values like [`Series::from_xy`].
+    fn from((xs, ys): (&Vec<X>, &Vec<Y>)) -> Series {
+        Series::from_xy(xs, ys)
+    }
+}
+
+impl<X: Graphable, Y: Graphable> From<(Vec<X>, Vec<Y>)> for Series {
+    /// Pairs up x and y values like [`Series::from_xy`].
+    fn from((xs, ys): (Vec<X>, Vec<Y>)) -> Series {
+        Series::from_xy(&xs, &ys)
+    }
+}
+
 impl<T: Graphable> From<Vec<Point<T>>> for Series {
     fn from(data: Vec<Point<T>>) -> Series {
         Series::new(&data)

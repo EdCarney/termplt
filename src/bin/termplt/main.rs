@@ -1,12 +1,10 @@
 mod cli;
 mod data;
 mod series;
-mod terminal;
 
 use clap::{CommandFactory, Parser};
 use cli::Cli;
 use data::{Column, Table};
-use rgb::RGB8;
 use series::{SeriesSpec, Source, Style};
 use std::{
     error::Error,
@@ -15,25 +13,13 @@ use std::{
     path::Path,
 };
 use termplt::{
-    WindowSize,
-    plotting::{
-        axes::{Axes, AxesPositioning},
-        canvas::{BufferType, TerminalCanvas},
-        colors,
-        graph::Graph,
-        grid_lines::GridLines,
-        line::LineStyle,
-        text::TextStyle,
-    },
-    terminal_commands::{images::Image, kitty_cmds::Passthrough},
+    DEFAULT_PNG_SIZE, Plot,
+    plotting::colors,
+    terminal::{Image, Terminal},
 };
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// Image size used with --output when no size is given.
-const DEFAULT_OUTPUT_SIZE: (u32, u32) = (800, 600);
-/// Smallest size used when fitting the image to the terminal.
-const MIN_SIZE: (u32, u32) = (200, 150);
 fn main() {
     let cli = Cli::parse();
     if let Err(e) = run(cli) {
@@ -85,7 +71,9 @@ fn run(cli: Cli) -> Result<()> {
     };
 
     let mut stdin_cache = None;
-    let mut graph = Graph::new();
+    let mut plot = Plot::new()
+        .background(series::parse_color(&cli.bg)?)
+        .grid(!cli.no_grid);
     for (index, spec) in specs.iter().enumerate() {
         let points = load_points(spec, &mut stdin_cache)?;
         let series = series::build_series(&points, &spec.style.or(&defaults), index)?;
@@ -98,113 +86,84 @@ fn run(cli: Cli) -> Result<()> {
                 series.line_style()
             );
         }
-        graph = graph.with_series(series);
+        plot = plot.series(series);
     }
     if let Some((min, max)) = cli.xlim {
-        graph = graph.with_x_limits(min, max);
+        plot = plot.x_limits(min, max);
     }
     if let Some((min, max)) = cli.ylim {
-        graph = graph.with_y_limits(min, max);
-    }
-
-    let background = series::parse_color(&cli.bg)?;
-    let (foreground, grid_color) = if luminance(background) > 127.5 {
-        (colors::BLACK, colors::LIGHT_GRAY)
-    } else {
-        (colors::WHITE, colors::GRAY)
-    };
-    graph = graph.with_axes(Axes::new(
-        AxesPositioning::XY(LineStyle::Solid {
-            color: foreground,
-            thickness: 1,
-        }),
-        TextStyle::with_color(foreground),
-    ));
-    if !cli.no_grid {
-        graph = graph.with_grid_lines(GridLines::XY(LineStyle::Solid {
-            color: grid_color,
-            thickness: 0,
-        }));
+        plot = plot.y_limits(min, max);
     }
 
     // an image file needs no terminal; displaying one needs a terminal to size it and draw on
-    let passthrough = Passthrough::detect();
-    let window = match &cli.output {
+    let terminal = match &cli.output {
         Some(_) => None,
-        None => Some(terminal::prepare(
-            &terminal::Tty,
-            cli.verbose,
-            &mut io::stderr(),
-        )?),
+        None => {
+            Some(Terminal::connect_with_log(cli.verbose, &mut io::stderr()).map_err(with_hint)?)
+        }
     };
 
-    let (width, height) = canvas_size(cli.width, cli.height, window.as_ref());
-    // tick labels are laid out inside the canvas automatically; the buffer is just breathing
-    // room around the edges
-    let buffer = (width.min(height) / 40).max(8);
-    let canvas = TerminalCanvas::new(width, height, background)
-        .with_buffer(BufferType::Uniform(buffer))
-        .with_graph(graph);
+    let default_size = terminal
+        .as_ref()
+        .map_or(DEFAULT_PNG_SIZE, Terminal::default_plot_size);
+    let (width, height) = (
+        cli.width.unwrap_or(default_size.0),
+        cli.height.unwrap_or(default_size.1),
+    );
+    let plot = plot.size(width, height);
 
     if cli.verbose {
-        eprintln!("[verbose] canvas: {width}x{height} pixels, buffer: {buffer} pixels");
-        match canvas.get_drawable_limits() {
-            Ok(plot) => {
-                let (w, h) = plot.span();
+        eprintln!("[verbose] canvas: {width}x{height} pixels");
+        match plot.canvas(width, height).get_drawable_limits() {
+            Ok(area) => {
+                let (w, h) = area.span();
                 eprintln!(
                     "[verbose] plot area: {w}x{h} pixels at ({}, {})",
-                    plot.min().x,
-                    plot.min().y
+                    area.min().x,
+                    area.min().y
                 );
             }
             Err(e) => eprintln!("[verbose] plot area unavailable: {e}"),
         }
     }
 
-    let bytes = canvas.draw()?.get_bytes();
-
-    match &cli.output {
-        Some(path) => {
-            image::save_buffer_with_format(
-                path,
-                &bytes,
-                width,
-                height,
-                image::ColorType::Rgb8,
-                image::ImageFormat::Png,
-            )
-            .map_err(|e| format!("cannot write '{}': {e}", path.display()))?;
+    match (&cli.output, terminal) {
+        (Some(path), _) => {
+            plot.save_png(path)
+                .map_err(|e| format!("cannot write '{}': {e}", path.display()))?;
             if cli.verbose {
                 eprintln!("[verbose] wrote {}", path.display());
             }
         }
-        None => {
-            let image = Image::png_from_rgb(&bytes, width, height)?;
+        (None, Some(terminal)) => {
+            let rgb = plot.render(width, height)?;
+            let image = Image::png_from_rgb(&rgb, width, height)?;
             if cli.verbose {
                 eprintln!(
                     "[verbose] sending {} bytes of PNG data ({} bytes uncompressed)",
                     image.payload_len(),
-                    bytes.len()
+                    rgb.len()
                 );
             }
-            match (passthrough, &window) {
-                (Passthrough::Tmux, Some(window)) => {
-                    // tmux doesn't know the image is there, so it wouldn't account for the
-                    // terminal moving the cursor below it; move the cursor ourselves instead
-                    image.display_without_moving_cursor()?;
-                    let rows = terminal::rows_covered(height, window);
-                    print!("{}", "\n".repeat(rows as usize));
-                }
-                _ => {
-                    image.display()?;
-                    // Print a newline so the shell prompt appears below the image
-                    println!();
-                }
-            }
+            terminal.show(&image)?;
         }
+        (None, None) => unreachable!("a terminal is connected whenever there is no --output"),
     }
 
     Ok(())
+}
+
+/// Adds the --output alternative to errors that mean the terminal can't show images.
+fn with_hint(e: termplt::Error) -> Box<dyn Error> {
+    match e {
+        termplt::Error::NotATerminal
+        | termplt::Error::GraphicsUnsupported
+        | termplt::Error::GraphicsRejected(_)
+        | termplt::Error::TmuxPassthroughDisabled => {
+            format!("{e}. Use --output plot.png to write an image file instead.").into()
+        }
+        e => e.into(),
+    }
 }
 
 /// Only PNG output is supported; catch other extensions before doing any work.
@@ -320,43 +279,12 @@ fn load_points(
     Ok(points)
 }
 
-/// Chooses the image size: explicit sizes win; otherwise fit the terminal (full width, 60% of
-/// the height, at most twice as wide as tall), or use a fixed size when writing a file.
-fn canvas_size(width: Option<u32>, height: Option<u32>, window: Option<&WindowSize>) -> (u32, u32) {
-    let (default_w, default_h) = match window {
-        None => DEFAULT_OUTPUT_SIZE,
-        Some(window) => {
-            // leave one column free so the image does not wrap
-            let available_w = window.x_pix.saturating_sub(window.pix_per_col);
-            let h = (window.y_pix * 3 / 5).max(MIN_SIZE.1);
-            let w = available_w.min(2 * h).max(MIN_SIZE.0);
-            (w, h)
-        }
-    };
-    (width.unwrap_or(default_w), height.unwrap_or(default_h))
-}
-
-fn luminance(color: RGB8) -> f64 {
-    0.2126 * color.r as f64 + 0.7152 * color.g as f64 + 0.0722 * color.b as f64
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn cli(args: &[&str]) -> Cli {
         Cli::try_parse_from(std::iter::once("termplt").chain(args.iter().copied())).unwrap()
-    }
-
-    fn window(x_pix: u32, y_pix: u32) -> WindowSize {
-        WindowSize {
-            rows: y_pix / 20,
-            cols: x_pix / 10,
-            x_pix,
-            y_pix,
-            pix_per_row: 20,
-            pix_per_col: 10,
-        }
     }
 
     #[test]
@@ -419,28 +347,6 @@ mod tests {
         let err = check_output_path(Path::new("plot.jpg")).unwrap_err();
         assert!(err.to_string().contains("only PNG output is supported"));
         assert!(check_output_path(Path::new("plot")).is_err());
-    }
-
-    #[test]
-    fn canvas_size_defaults() {
-        assert_eq!(canvas_size(None, None, None), DEFAULT_OUTPUT_SIZE);
-        assert_eq!(canvas_size(Some(300), None, None), (300, 600));
-        // wide terminal: 60% of the height, width capped at twice the height
-        assert_eq!(
-            canvas_size(None, None, Some(&window(1600, 1000))),
-            (1200, 600)
-        );
-        // narrow terminal: full width minus one column
-        assert_eq!(
-            canvas_size(None, None, Some(&window(500, 1000))),
-            (490, 600)
-        );
-        // tiny terminal: minimum size
-        assert_eq!(canvas_size(None, None, Some(&window(100, 100))), MIN_SIZE);
-        assert_eq!(
-            canvas_size(Some(640), Some(480), Some(&window(1600, 1000))),
-            (640, 480)
-        );
     }
 
     #[test]
