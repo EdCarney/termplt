@@ -8,7 +8,7 @@ Review of commit `74918e3` (v0.1.2). How the review was done:
 - Wrote throwaway library tests to probe edge cases.
 - Rendered plots to PNG and inspected them.
 
-Phase 1 status (2026-09-24): items 1–6, 8 and 9 are done, and 42 is partly done (see the notes under each item).
+Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42) and Phase 2 (items 7, 10–12, 14, 15, 23 and 43) are done. See the note under each item.
 
 Items marked **(reproduced)** were confirmed by running code. The rest come from reading the source.
 
@@ -65,6 +65,8 @@ Priority: **P0** hang, crash or wrong output · **P1** big usability or quality 
 - **Fix:** reject or filter non-finite values at the library boundary; the CLI should skip them and warn. `get_bitmap` should fall back to a placeholder glyph instead of panicking.
 
 ### 7. `line_thickness` has no effect on series lines (reproduced)
+✅ **Done (Phase 2).** A disc is stamped at each pixel (option A).
+
 - Lines between points (`line.rs:207`) use Bresenham only. Thickness is applied only to horizontal and vertical lines (axes and grid). Measured: thickness 0 and thickness 3 both produce exactly 100 red pixels. The README advertises `--line_thickness` and uses it in an example.
 - **Fix, option A:** stamp a disc of radius *t* at each Bresenham pixel. It's simple and gives round joins, at O(n·t²).
 - **Fix, option B:** draw offset parallel lines or fill a polygon per segment. This is cheaper, but joins need extra work to avoid gaps.
@@ -95,6 +97,8 @@ Each of these crashes the program instead of returning an error:
 ## P1: plot quality (what the user sees)
 
 ### 10. Tick labels are unreadable at the CLI's default size (reproduced by rendering)
+✅ **Done (Phase 2):** nice ticks (`plotting::ticks`), a tick count fitted to the pixel size, automatic label margins, an exact zero, and shared decimal places. Instead of loose labeling I used a 5% data margin with tight ticks, as matplotlib does by default.
+
 At the CLI's default geometry for a typical window (500 px canvas, 50 px buffer):
 - The x labels overlap into one unreadable string.
 - The y labels are clipped at the left edge, so `-0.99` renders as `0.99`.
@@ -113,18 +117,26 @@ At the CLI's default geometry for a typical window (500 px canvas, 50 px buffer)
 - Optionally extend the axis limits out to the nearest tick ("loose" labeling [3]).
 
 ### 11. Data touches the axes
+✅ **Done (Phase 2).** `Graph::view_limits` adds a 5% margin on axes without explicit limits.
+
 Markers at the minimum and maximum sit on the axis lines. Add default padding of about 5% of the span.
 
 ### 12. Grid lines are drawn over the axes
+✅ **Done (Phase 2).**
+
 The mask order is axes, then grid, then series (`graph.rs` `get_mask`). Draw the grid first.
 
 ### 13. No title, axis names or legend
 The bitmap font covers only `0-9 . - e` and space. Add a small ASCII bitmap font (for example a public-domain 6×8 font, scaled) so titles, axis names and a legend with per-series names become possible. In the CLI that could be `--label "sin(x)"` per series and `--title`.
 
 ### 14. Default text color is black
+✅ **Done (Phase 2).** A tick-label color that equals the background is swapped for black or white.
+
 `TextStyle::default()` is black (`text.rs:96`), and the default canvas in the examples is also black, so labels are invisible. Pick a default that contrasts with the background.
 
 ### 15. The CLI's `--marker_style None` is a hack
+✅ **Done (Phase 2).** Added `MarkerStyle::None`.
+
 `termplt.rs:495` draws a zero-size *black* square at every point. That leaves a visible dot on non-black backgrounds and overwrites the grid. Support "no marker" in the library with `Option<MarkerStyle>` or a `MarkerStyle::None` variant.
 
 ---
@@ -166,6 +178,8 @@ The parser is hand-rolled.
 `termplt.rs:583` always draws a square at half the smaller window dimension, which wastes most of the width in a wide terminal. Default to something like the full width × about 60% of the height, capped by the window, and let flags override it.
 
 ### 23. `--verbose` duplicates the layout math
+✅ **Done (Phase 2).** `--verbose` now reports `get_drawable_limits()`.
+
 `termplt.rs:593-617` re-implements `get_drawable_limits`, so the two can drift apart. Call `TerminalCanvas::get_drawable_limits()` instead.
 
 ### 24. Missing values abort the whole file
@@ -274,6 +288,8 @@ Improvements:
 - No MSRV: set `rust-version = "1.85"` in `Cargo.toml` (edition 2024 needs at least 1.85) and add a CI job for it.
 
 ### 43. Golden-image and property tests
+✅ **Done (Phase 2):** `tests/golden.rs` (6 snapshot scenes) and `tests/properties.rs` (proptest). The property tests found and fixed an overflow when scaling tiny spans.
+
 - Render to PNG and compare against checked-in snapshots. That would have caught items 4, 7 and 10.
 - Add `proptest` tests for scaling and limits, with the invariant "every scaled point lies inside the drawable limits", using arbitrary finite and non-finite input.
 

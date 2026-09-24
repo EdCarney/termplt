@@ -425,13 +425,13 @@ fn resolve_color(name: &str) -> Result<RGB8> {
     })
 }
 
-fn resolve_marker_style(name: &str, size: u32, color: RGB8) -> Result<Option<MarkerStyle>> {
+fn resolve_marker_style(name: &str, size: u32, color: RGB8) -> Result<MarkerStyle> {
     match name.to_ascii_lowercase().as_str() {
-        "filledcircle" => Ok(Some(MarkerStyle::FilledCircle { size, color })),
-        "hollowcircle" => Ok(Some(MarkerStyle::HollowCircle { size, color })),
-        "filledsquare" => Ok(Some(MarkerStyle::FilledSquare { size, color })),
-        "hollowsquare" => Ok(Some(MarkerStyle::HollowSquare { size, color })),
-        "none" => Ok(None),
+        "filledcircle" => Ok(MarkerStyle::FilledCircle { size, color }),
+        "hollowcircle" => Ok(MarkerStyle::HollowCircle { size, color }),
+        "filledsquare" => Ok(MarkerStyle::FilledSquare { size, color }),
+        "hollowsquare" => Ok(MarkerStyle::HollowSquare { size, color }),
+        "none" => Ok(MarkerStyle::None),
         _ => Err(format!(
             "Unknown marker style '{}'. Valid styles: FilledCircle, HollowCircle, \
              FilledSquare, HollowSquare, None",
@@ -487,20 +487,10 @@ fn build_series(spec: SeriesSpec, index: usize) -> Result<Series<f64>> {
     let marker_style = if let Some(style_name) = &spec.marker_style {
         resolve_marker_style(style_name, marker_size, effective_marker_color)?
     } else {
-        Some((palette.marker_fn)(marker_size, effective_marker_color))
+        (palette.marker_fn)(marker_size, effective_marker_color)
     };
 
-    let mut series = Series::new(&points);
-
-    if let Some(ms) = marker_style {
-        series = series.with_marker_style(ms);
-    } else {
-        // "None" marker — use zero-size invisible marker
-        series = series.with_marker_style(MarkerStyle::FilledSquare {
-            size: 0,
-            color: RGB8::new(0, 0, 0),
-        });
-    }
+    let mut series = Series::new(&points).with_marker_style(marker_style);
 
     // Resolve line style — "None" means no connecting lines (scatter plot)
     let wants_line = match spec.line_style.as_deref() {
@@ -593,44 +583,33 @@ fn run() -> Result<()> {
     let size = std::cmp::max(size, 200); // minimum 200px
     let width = size;
     let height = size;
-    let buffer = std::cmp::max(size / 10, 20);
+    // tick labels are laid out inside the canvas automatically; the buffer is just breathing
+    // room around the edges
+    let buffer = std::cmp::max(size / 40, 8);
+
+    let canvas = TerminalCanvas::new(width, height, colors::BLACK)
+        .with_buffer(BufferType::Uniform(buffer))
+        .with_graph(graph);
 
     if verbose {
         eprintln!("[verbose] canvas: {}x{} pixels", width, height);
         eprintln!("[verbose] buffer: {} pixels (uniform)", buffer);
-
-        let largest_marker = graph
-            .data()
-            .iter()
-            .map(|s| s.marker_style().size())
-            .max()
-            .unwrap_or(0);
-        let axes_bound = 2 * axes_thickness;
-        let inset = u32::max(largest_marker, axes_bound);
-        let drawable_w = (width - 1).saturating_sub(2 * (buffer + inset));
-        let drawable_h = (height - 1).saturating_sub(2 * (buffer + inset));
-        eprintln!(
-            "[verbose] largest marker: {}, axes bound: {}, effective inset: {}",
-            largest_marker, axes_bound, inset
-        );
-        eprintln!(
-            "[verbose] estimated drawable area: ~{}x{} pixels",
-            drawable_w, drawable_h
-        );
-        if drawable_w == 0 || drawable_h == 0 {
-            eprintln!(
-                "[verbose] WARNING: drawable area is zero! Canvas {}x{} is too small \
-                 for buffer ({}) + inset ({}). Consider a larger terminal window.",
-                width, height, buffer, inset
-            );
+        match canvas.get_drawable_limits() {
+            Ok(plot) => {
+                let (w, h) = plot.span();
+                eprintln!(
+                    "[verbose] plot area: {}x{} pixels at ({}, {})",
+                    w,
+                    h,
+                    plot.min().x,
+                    plot.min().y
+                );
+            }
+            Err(e) => eprintln!("[verbose] plot area unavailable: {e}"),
         }
     }
 
-    let bytes = TerminalCanvas::new(width, height, colors::BLACK)
-        .with_buffer(BufferType::Uniform(buffer))
-        .with_graph(graph)
-        .draw()?
-        .get_bytes();
+    let bytes = canvas.draw()?.get_bytes();
 
     Image::new(
         PixelFormat::Rgb { width, height },
@@ -870,22 +849,13 @@ mod tests {
     #[test]
     fn resolve_marker_style_valid() {
         let color = colors::RED;
-        assert!(
-            resolve_marker_style("FilledCircle", 2, color)
-                .unwrap()
-                .is_some()
+        assert!(resolve_marker_style("FilledCircle", 2, color).unwrap() != MarkerStyle::None);
+        assert!(resolve_marker_style("hollowcircle", 2, color).unwrap() != MarkerStyle::None);
+        assert!(resolve_marker_style("FILLEDSQUARE", 2, color).unwrap() != MarkerStyle::None);
+        assert_eq!(
+            resolve_marker_style("None", 2, color).unwrap(),
+            MarkerStyle::None
         );
-        assert!(
-            resolve_marker_style("hollowcircle", 2, color)
-                .unwrap()
-                .is_some()
-        );
-        assert!(
-            resolve_marker_style("FILLEDSQUARE", 2, color)
-                .unwrap()
-                .is_some()
-        );
-        assert!(resolve_marker_style("None", 2, color).unwrap().is_none());
     }
 
     #[test]
@@ -985,8 +955,7 @@ mod tests {
         let mut spec = SeriesSpec::new(DataSource::Inline("(1,2),(3,4)".into()));
         spec.marker_style = Some("None".into());
         let series = build_series(spec, 0).unwrap();
-        // Should have zero-size marker
-        assert_eq!(series.marker_style().size(), 0);
+        assert_eq!(*series.marker_style(), MarkerStyle::None);
     }
 
     #[test]

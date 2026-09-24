@@ -1,11 +1,10 @@
 use super::{
     common::{Drawable, FloatConvertable, Graphable, MaskPoints},
-    grid_lines::NUM_GRID_SECTIONS,
     limits::Limits,
     line::{Line, LineStyle},
     line_positioning::LinePositioning,
     point::Point,
-    text::{Label, Text, TextPositioning, TextStyle},
+    text::TextStyle,
 };
 use crate::common::Result;
 
@@ -33,88 +32,6 @@ impl Axes {
 
     pub fn style(&self) -> &TextStyle {
         &self.style
-    }
-
-    pub fn get_labels<T: FloatConvertable + Graphable>(
-        &self,
-        canvas_limits: &Limits<T>,
-        graph_limits: &Limits<T>,
-    ) -> Result<Vec<Label>> {
-        let canvas_limits = canvas_limits.convert_to_f64();
-        let graph_limits = graph_limits.convert_to_f64();
-
-        let (x_starts_graph, y_starts_graph) = graph_limits.chunk(NUM_GRID_SECTIONS);
-        let (x_starts_canvas, y_starts_canvas) = canvas_limits.chunk(NUM_GRID_SECTIONS);
-
-        let x_starts = x_starts_graph.iter().zip(x_starts_canvas);
-        let y_starts = y_starts_graph.iter().zip(y_starts_canvas);
-
-        let x_labels = |line_style: &LineStyle| {
-            x_starts
-                .map(|(graph_start, canvas_start)| {
-                    let txt = Text::from_number(graph_start.x, 3, self.style.clone());
-                    let mut x = canvas_start.x;
-                    let y = canvas_start.y
-                        - line_style.thickness().convert_to_f64() * 2.
-                        - (txt.height() as f64 / 2.);
-
-                    // shift positioning if number is negative
-                    if graph_start.x < 0. {
-                        x -= Text::new("-", TextStyle::default()).width() as f64 / 2.;
-                    }
-
-                    Label::new(txt, TextPositioning::Centered(Point::new(x, y).floor()))
-                })
-                .collect::<Vec<_>>()
-        };
-        let y_labels = |line_style: &LineStyle| {
-            y_starts
-                .map(|(graph_start, canvas_start)| {
-                    let txt = Text::from_number(graph_start.y, 3, self.style.clone());
-                    let x = canvas_start.x
-                        - line_style.thickness().convert_to_f64() * 2.
-                        - (txt.width() as f64 / 2.);
-                    let y = canvas_start.y;
-                    Label::new(txt, TextPositioning::Centered(Point::new(x, y).floor()))
-                })
-                .collect::<Vec<_>>()
-        };
-
-        // canvas limits define where the points will be drawn; the graph limits are only used to
-        // know the values of the labels
-        let labels = match &self.positioning {
-            AxesPositioning::XOnly(line_style) => x_labels(line_style),
-            AxesPositioning::YOnly(line_style) => y_labels(line_style),
-            AxesPositioning::XY(line_style) => {
-                let mut x_lab = x_labels(line_style);
-                let y_lab = y_labels(line_style);
-
-                // shift x labels down if necessary to avoid intersection
-                if let Some(x_label) = x_lab.first()
-                    && let Some(y_label) = y_lab.first()
-                    && x_label.limits().intersects(y_label.limits())
-                {
-                    let x_lab_max_y = x_label.limits().max().y;
-                    let y_lab_min_y = y_label.limits().min().y;
-                    let x_lab_y_shift = x_lab_max_y.saturating_sub(y_lab_min_y);
-                    x_lab = x_lab
-                        .iter()
-                        .map(|lab| {
-                            let current_point = *lab.pos().point();
-                            let shifted_point = Point::new(
-                                current_point.x,
-                                current_point.y.saturating_sub(x_lab_y_shift),
-                            );
-                            let shifted_pos = lab.pos().clone_with(shifted_point);
-                            Label::new(lab.txt().clone(), shifted_pos)
-                        })
-                        .collect::<Vec<_>>();
-                }
-
-                x_lab.into_iter().chain(y_lab).collect::<Vec<_>>()
-            }
-        };
-        Ok(labels)
     }
 
     pub fn get_mask<T: FloatConvertable + Graphable>(

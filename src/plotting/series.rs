@@ -42,7 +42,7 @@ impl<T: Graphable> Series<T> {
     }
 
     pub fn clone_with<U: Graphable>(&self, data: &[Point<U>]) -> Series<U> {
-        let marker_style = self.marker_style.clone();
+        let marker_style = self.marker_style;
         let line_style = self.line_style;
         Series {
             data: Vec::from(data),
@@ -78,8 +78,7 @@ impl<T: UIntConvertable + Graphable> Drawable for Series<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mut mask_points = Vec::new();
         for &p in self.data() {
-            mask_points
-                .extend(Marker::new(p.convert_to_u32(), self.marker_style.clone()).get_mask()?);
+            mask_points.extend(Marker::new(p.convert_to_u32(), self.marker_style).get_mask()?);
         }
 
         // add lines if line styling is present

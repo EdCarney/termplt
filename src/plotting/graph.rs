@@ -9,7 +9,6 @@ use super::{
     limits::Limits,
     point::{Point, PointCollection},
     series::Series,
-    text::Label,
 };
 use crate::common::Result;
 
@@ -141,6 +140,10 @@ impl<T: Graphable> Graph<T> {
         self.axes.clone()
     }
 
+    pub fn grid_lines(&self) -> Option<&GridLines> {
+        self.grid_lines.as_ref()
+    }
+
     /// Returns the plotted range: the extent of all finite data points, overridden by any
     /// explicit limits. Non-finite points (NaN, ±∞) are ignored.
     ///
@@ -241,14 +244,42 @@ impl<T: Graphable> Graph<T> {
     }
 
     /// Returns the data range that will be mapped onto the drawable area: [`Graph::limits`]
-    /// after clipping to explicit limits, with zero-width dimensions (e.g. a single point or a
-    /// constant series) expanded so the data is centered and the axes have nonzero length.
+    /// after clipping to explicit limits, with a margin of [`DATA_MARGIN`] of the span added on
+    /// axes without explicit limits (so data does not touch the axes), and zero-width
+    /// dimensions (e.g. a single point or a constant series) expanded so the data is centered.
     pub fn view_limits(&self) -> Result<Limits<f64>> {
         let limits = self
             .visible()?
             .limits()
-            .map_err(|_| "No data points lie within the specified graph limits")?;
-        Ok(pad_degenerate(limits.convert_to_f64()))
+            .map_err(|_| "No data points lie within the specified graph limits")?
+            .convert_to_f64();
+
+        let (explicit_x, explicit_y) = match &self.graph_limits {
+            None => (false, false),
+            Some(GraphLimits::XOnly { .. }) => (true, false),
+            Some(GraphLimits::YOnly { .. }) => (false, true),
+            Some(GraphLimits::XY { .. }) => (true, true),
+        };
+        let (span_x, span_y) = limits.span();
+        let margin = Point::new(
+            if explicit_x {
+                0.0
+            } else {
+                span_x * DATA_MARGIN
+            },
+            if explicit_y {
+                0.0
+            } else {
+                span_y * DATA_MARGIN
+            },
+        );
+        let limits = pad_degenerate(Limits::new(*limits.min() - margin, *limits.max() + margin));
+
+        let (span_x, span_y) = limits.span();
+        if !span_x.is_finite() || !span_y.is_finite() {
+            return Err("Data range is too large to plot (exceeds the range of f64)".into());
+        }
+        Ok(limits)
     }
 
     /// Scales the visible data so that [`Graph::view_limits`] maps onto `new_limits`.
@@ -275,19 +306,10 @@ impl<T: Graphable> Graph<T> {
         });
         Ok(scaled_graph)
     }
-
-    /// Generates labels for axes. Graph limits define the expected numerical values for the
-    /// labels.
-    pub fn get_axes_labels(&self, graph_limits: &Limits<T>) -> Result<Vec<Label>> {
-        match &self.axes {
-            Some(axes) => {
-                let limits = self.limits()?;
-                axes.get_labels(&limits, graph_limits)
-            }
-            None => Ok(Vec::new()),
-        }
-    }
 }
+
+/// Fraction of the data span added on each side of axes without explicit limits.
+pub const DATA_MARGIN: f64 = 0.05;
 
 fn is_finite_point<T: Graphable>(p: &Point<T>) -> bool {
     let (x, y): (f64, f64) = (p.x.into(), p.y.into());
@@ -318,14 +340,13 @@ impl<T: IntConvertable + Graphable> Drawable for Graph<T> {
         let mut mask_points = Vec::new();
         let limits = self.limits()?;
 
-        // add axes if they are defined
-        if let Some(axes) = &self.axes {
-            mask_points.extend(axes.get_mask(&limits)?);
-        }
-
-        // add grid lines if they are defined
+        // grid lines first so the axes and data are drawn over them
         if let Some(grid_lines) = &self.grid_lines {
             mask_points.extend(grid_lines.get_mask(&limits)?);
+        }
+
+        if let Some(axes) = &self.axes {
+            mask_points.extend(axes.get_mask(&limits)?);
         }
 
         // add series data
@@ -608,22 +629,6 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("no data"));
     }
 
-    #[test]
-    fn get_axes_labels_on_empty_graph_with_axes_returns_error() {
-        use crate::plotting::axes::AxesPositioning;
-        use crate::plotting::line::LineStyle;
-        use crate::plotting::text::TextStyle;
-        let axes = Axes::new(
-            AxesPositioning::XY(LineStyle::default()),
-            TextStyle::default(),
-        );
-        let g = Graph::<i32>::new().with_axes(axes);
-        let dummy_limits = Limits::new(Point::new(0, 0), Point::new(10, 10));
-        let result = g.get_axes_labels(&dummy_limits);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no data"));
-    }
-
     // --- non-finite data and invalid explicit limits ---
 
     #[test]
@@ -681,8 +686,30 @@ mod tests {
     }
 
     #[test]
-    fn view_limits_leave_nonzero_spans_unchanged() {
+    fn view_limits_add_margin_to_automatic_axes() {
+        // data spans 0..10 x 0..20; 5% of each span is added on both sides
         let view = graph_with_data().view_limits().unwrap();
+        assert_eq!(
+            view,
+            Limits::new(Point::new(-0.5, -1.0), Point::new(10.5, 21.0))
+        );
+    }
+
+    #[test]
+    fn view_limits_do_not_add_margin_to_explicit_axes() {
+        let view = graph_with_data()
+            .with_x_limits(0, 10)
+            .view_limits()
+            .unwrap();
+        assert_eq!(
+            view,
+            Limits::new(Point::new(0.0, -1.0), Point::new(10.0, 21.0))
+        );
+        let view = graph_with_data()
+            .with_x_limits(0, 10)
+            .with_y_limits(0, 20)
+            .view_limits()
+            .unwrap();
         assert_eq!(
             view,
             Limits::new(Point::new(0.0, 0.0), Point::new(10.0, 20.0))
@@ -699,9 +726,13 @@ mod tests {
     }
 
     #[test]
-    fn scale_maps_data_extremes_to_new_limits() {
+    fn scale_maps_explicit_limits_to_new_limits() {
         let new_limits = Limits::new(Point::new(10.0, 10.0), Point::new(110.0, 210.0));
-        let scaled = graph_with_data().scale(new_limits).unwrap();
+        let scaled = graph_with_data()
+            .with_x_limits(0, 10)
+            .with_y_limits(0, 20)
+            .scale(new_limits)
+            .unwrap();
         let points = scaled.data()[0].data();
         assert_eq!(points[0], Point::new(10.0, 10.0));
         assert_eq!(points[1], Point::new(110.0, 210.0));
