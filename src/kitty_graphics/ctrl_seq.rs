@@ -6,6 +6,7 @@ pub trait CtrlSeq {
 ///
 /// Only `Direct` works when the terminal runs on another machine (e.g. over SSH); the other media
 /// name a file or shared-memory object that the terminal itself must be able to open.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Transmission {
     /// The data is sent inline in the escape sequence.
     Direct(Vec<u8>),
@@ -29,12 +30,32 @@ impl CtrlSeq for Transmission {
     }
 }
 
-#[derive(Clone)]
+/// The format of the image data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
+    /// PNG data; the terminal reads the size from it.
     Png,
-    PngBounded { rows: u32, cols: u32 },
-    Rgb { width: u32, height: u32 },
-    Rgba { width: u32, height: u32 },
+    /// PNG data scaled to fit a number of terminal rows and columns.
+    PngBounded {
+        /// Rows of text the image covers.
+        rows: u32,
+        /// Columns of text the image covers.
+        cols: u32,
+    },
+    /// Raw 8-bit RGB pixels, row-major from the top row.
+    Rgb {
+        /// Width in pixels.
+        width: u32,
+        /// Height in pixels.
+        height: u32,
+    },
+    /// Raw 8-bit RGBA pixels, row-major from the top row.
+    Rgba {
+        /// Width in pixels.
+        width: u32,
+        /// Height in pixels.
+        height: u32,
+    },
 }
 
 impl CtrlSeq for PixelFormat {
@@ -54,6 +75,7 @@ impl CtrlSeq for PixelFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     TransmitDisplay,
     Query,
@@ -68,10 +90,10 @@ impl CtrlSeq for Action {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Metadata {
     Id(u32),
     MoreData(bool),
-    StackingOrder(u16),
     /// Suppresses the terminal's replies: `Quiet(1)` suppresses `OK` replies, `Quiet(2)` also
     /// suppresses errors. Replies nobody reads would otherwise show up as typed input.
     Quiet(u8),
@@ -84,56 +106,23 @@ impl CtrlSeq for Metadata {
         match self {
             Metadata::Id(id) => format!("i={id}"),
             Metadata::MoreData(more) => format!("m={}", if *more { 1 } else { 0 }),
-            Metadata::StackingOrder(z) => format!("z={z}"),
             Metadata::Quiet(level) => format!("q={level}"),
             Metadata::NoCursorMovement => String::from("C=1"),
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Positioning {
-    Current,
     WithCellOffset { offset_x: u32, offset_y: u32 },
 }
 
 impl CtrlSeq for Positioning {
     fn get_ctrl_seq(&self) -> String {
         match self {
-            Positioning::Current => String::from(""),
             Positioning::WithCellOffset { offset_x, offset_y } => {
                 format!("X={offset_x},Y={offset_y}")
             }
-        }
-    }
-}
-
-pub enum DisplayRegion {
-    Rectangle {
-        x: u16,
-        y: u16,
-        width: u16,
-        height: u16,
-    },
-    Rows(u16),
-    Cols(u16),
-    RowsCols {
-        rows: u16,
-        cols: u16,
-    },
-}
-
-impl CtrlSeq for DisplayRegion {
-    fn get_ctrl_seq(&self) -> String {
-        match self {
-            DisplayRegion::Rectangle {
-                x,
-                y,
-                width,
-                height,
-            } => format!("x={x},y={y},w={width},h={height}"),
-            DisplayRegion::Rows(rows) => format!("r={rows}"),
-            DisplayRegion::Cols(cols) => format!("c={cols}"),
-            DisplayRegion::RowsCols { rows, cols } => format!("r={rows},c={cols}"),
         }
     }
 }

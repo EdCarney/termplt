@@ -8,7 +8,7 @@ Review of commit `74918e3` (v0.1.2). How the review was done:
 - Wrote throwaway library tests to probe edge cases.
 - Rendered plots to PNG and inspected them.
 
-Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42), Phase 2 (items 7, 10–12, 14, 15, 23 and 43), Phase 3 (items 16, 17 and 19–24, plus most of 18) and Phase 4 (items 25–31; Unicode fallback renderer and tmux Unicode placeholders deferred) are done. See the note under each item.
+Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42), Phase 2 (items 7, 10–12, 14, 15, 23 and 43), Phase 3 (items 16, 17 and 19–24, plus most of 18) Phase 4 (items 25–31; Unicode fallback renderer and tmux Unicode placeholders deferred) and Phase 5 (items 32–41, released as 0.2.0 with breaking changes) are done. See the note under each item.
 
 Items marked **(reproduced)** were confirmed by running code. The rest come from reading the source.
 
@@ -254,15 +254,21 @@ Reading VT replies from a raw console stdin depends on VT input mode. CI only ru
 ## P2: library API ergonomics
 
 ### 32. Add a high-level entry point
+✅ **Done (Phase 5):** `termplt::Plot` with `line`, `scatter`, `line_points` and `series`, plus limits, size, background and grid, and `show()`/`show_in()`, `save_png()` and `render()`. `show()` sizes itself to the terminal through the new `terminal::Terminal`, which is the CLI's support/tmux/size logic moved into the library. Also added `termplt::prelude`. `.title()` waits on item 13 (the font).
+
 The README example needs about 50 lines, 10 imports and hand-wired `Image` + `PixelFormat` + `Transmission` code.
 - Add `termplt::prelude`.
 - Add a one-call API that sizes itself to the terminal like the CLI does, for example `Plot::new().line(&xs, &ys).scatter(&pts).title("…").show()?`, plus `.save_png(path)`.
 - Keep the current builders as the lower layer.
 
 ### 33. Accept common input shapes
+✅ **Done (Phase 5):** `Series::from_xy` and `Series::from_y`, `FromIterator<(x, y)>`, `From<Vec<(x, y)>>`, `From<&[(x, y)]>`, `From<(xs, ys)>` for slices, `Vec`s and `&Vec`s, and `From<Vec<Point<T>>>`, each with mixed numeric types.
+
 `Series::from_xy(&xs, &ys)`, `impl FromIterator<(T, T)>`, and `From<Vec<(T, T)>>`.
 
 ### 34. Reconsider the generic numeric design
+✅ **Done (Phase 5), option B at the API.** `Series`, `Graph` and `TerminalCanvas` store `f64`, and `Graphable` uses a crate `ToF64` trait (`as` casts), so every primitive integer works. `Point`/`Limits` stay generic for pixel math. `Scalable`/`Shiftable` and the `GraphLimits` state machine are gone (−640 lines).
+
 - `Graphable` requires `Into<f64>`, so **`i64`, `u64` and `usize` are excluded**. Those are the most common types for counts and indices.
 - The pipeline converts everything to `f64` before scaling anyway, so the `Convertable`/`Scalable`/`Shiftable` layers over `T` buy nothing at runtime.
 - **Option A:** keep generics and switch the bound to `num_traits::AsPrimitive<f64>`/`ToPrimitive`.
@@ -270,27 +276,39 @@ The README example needs about 50 lines, 10 imports and hand-wired `Image` + `Pi
 - **Trade-off:** option B is a breaking change, but it greatly simplifies maintenance. Option A is additive.
 
 ### 35. Typed errors
+✅ **Done (Phase 5):** `termplt::Error` (`#[non_exhaustive]`, `Send + Sync`, hand-written `Display`/`source`, no `thiserror` dependency) replaces `Box<dyn Error>`. The CLI matches on variants.
+
 Replace `Box<dyn Error>` with `pub enum Error` (using `thiserror`), so callers can distinguish cases like `TerminalUnsupported`, `InvalidData` and `CanvasTooSmall`. Two current error types are unhelpful: `ImageError`'s `Display` just prints its `Debug` output, and `TerminalCommandError` carries no context.
 
 ### 36. Implement the standard traits
+✅ **Done (Phase 5).** `Default` for `LineStyle`, `Graph`, `Series` and `Plot`, plus `LineStyle::solid`/`dashed`. `Debug`/`Clone`/`Copy`/`PartialEq` derives on `BufferType`, `PositioningType`, `Image`, `WindowSize` and the protocol enums. `MarkerStyle` was already `Copy`.
+
 Follow C-COMMON-TRAITS [6]:
 - Implement `Default` instead of inherent `default()` functions (clippy `should_implement_trait`).
 - Derive `Copy` for `MarkerStyle`.
 - Derive `Debug` and `Clone` for `BufferType`, `PositioningType` and the `ctrl_seq` enums.
 
 ### 37. Public surface is too wide
+✅ **Done (Phase 5).** `kitty_graphics`, `terminal_commands` and `plotting::{common, numbers, ticks}` are private, as are `Marker`, `Line`, `TextChar` and the point helpers. What users need is re-exported from `termplt::terminal` and `termplt::plotting`. The png/rgb/rgba demo helpers and dead protocol code were removed.
+
 `numbers`, `encoding`, `ctrl_seq`, `csi_cmds` and `kitty_cmds` are public, so any change to them is a semver break. Make them `pub(crate)` or `#[doc(hidden)]` before 1.0.
 
 ### 38. Rustdoc
+✅ **Done (Phase 5).** `#![warn(missing_docs)]` and `#![doc = include_str!("../README.md")]`, so the README examples are doctests. CI runs `cargo doc` with `-D warnings`.
+
 Most public items have no docs.
 - Add crate-level docs.
 - Add `#![warn(missing_docs)]`.
 - Use `#![doc = include_str!("../README.md")]` so the README example is compiled as a doctest.
 
 ### 39. `Limits::intersects` misses some overlaps
+✅ **Done (Phase 5):** the interval-overlap test, with a cross-shaped case.
+
 `limits.rs:84` only checks whether a corner of one rectangle lies inside the other, so it misses cross-shaped overlaps. It's used for label collision. Use an interval-overlap test on each axis.
 
 ### 40. Performance (measured)
+✅ **Done (Phase 5), pixel-exact.** 1M points at 800×800 (release): scatter 1145 → ~115 ms, line 412 → ~210 ms, line + markers 1562 → ~270 ms, thick line 7395 → ~540 ms. Uses a flat buffer, `Series::draw_into` with marker stamps, incremental disc stamps and repeated-pixel skipping, and a fold for `Graph::limits`. Decimation was not needed, and it would have changed pixels.
+
 1M points on an 800×800 canvas take 1.37 s in a release build.
 - Each marker allocates a `Vec<Point<u32>>`.
 - The filled circle regenerates overlapping pixel ranges.
@@ -302,6 +320,8 @@ Improvements:
 - Decimate dense line series (min and max per pixel column).
 
 ### 41. Trim dependencies
+✅ **Done (Phase 5).** `image` now has only `png` (unique dependencies 125 → 63). The CLI's `--output` accepts only `.png`.
+
 `image` with default features pulls in many codecs. Use `default-features = false, features = ["png"]`.
 
 ---

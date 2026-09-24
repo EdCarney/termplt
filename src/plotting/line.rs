@@ -1,66 +1,68 @@
 use super::{
+    canvas::Canvas,
     colors,
-    common::{
-        Convertable, Drawable, FloatConvertable, Graphable, IntConvertable, MaskPoints, Scalable,
-        Shiftable,
-    },
-    limits::Limits,
+    common::{Convertable, Drawable, Graphable, IntConvertable, MaskPoints},
     line_positioning::LinePositioning,
     point::Point,
 };
 use crate::{common::Result, plotting::common::UIntConvertable};
 use rgb::RGB8;
 
+/// How a line is drawn. A thickness of 0 is one pixel wide; each step adds a pixel on both
+/// sides.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum LineStyle {
-    Solid { color: RGB8, thickness: u32 },
-    Dashed { color: RGB8, thickness: u32 },
+    /// A continuous line.
+    Solid {
+        /// Line color.
+        color: RGB8,
+        /// Extra pixels on each side of a one-pixel line.
+        thickness: u32,
+    },
+    /// A dashed line (6 pixels on, 4 off).
+    Dashed {
+        /// Line color.
+        color: RGB8,
+        /// Extra pixels on each side of a one-pixel line.
+        thickness: u32,
+    },
+}
+
+impl Default for LineStyle {
+    /// A thin solid white line.
+    fn default() -> LineStyle {
+        LineStyle::solid(colors::WHITE, 0)
+    }
 }
 
 impl LineStyle {
-    pub const fn default() -> LineStyle {
-        Self::Solid {
-            color: colors::WHITE,
-            thickness: 0,
-        }
+    /// A solid line. A thickness of 0 is one pixel wide; each step adds a pixel on both sides.
+    pub const fn solid(color: RGB8, thickness: u32) -> LineStyle {
+        LineStyle::Solid { color, thickness }
     }
 
-    pub const fn default_with_thickness(thickness: u32) -> LineStyle {
-        Self::Solid {
-            color: colors::WHITE,
-            thickness,
-        }
+    /// A dashed line (6 pixels on, 4 off).
+    pub const fn dashed(color: RGB8, thickness: u32) -> LineStyle {
+        LineStyle::Dashed { color, thickness }
     }
 
+    /// The line's thickness (see [`LineStyle::solid`]).
     pub fn thickness(&self) -> u32 {
         match self {
-            LineStyle::Solid {
-                color: _,
-                thickness,
-            } => *thickness,
-            LineStyle::Dashed {
-                color: _,
-                thickness,
-            } => *thickness,
+            LineStyle::Solid { thickness, .. } | LineStyle::Dashed { thickness, .. } => *thickness,
         }
     }
 
+    /// The line's color.
     pub fn color(&self) -> RGB8 {
         match self {
-            LineStyle::Solid {
-                color,
-                thickness: _,
-            } => *color,
-            LineStyle::Dashed {
-                color,
-                thickness: _,
-            } => *color,
+            LineStyle::Solid { color, .. } | LineStyle::Dashed { color, .. } => *color,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Line<T: Graphable> {
+pub(crate) struct Line<T: Graphable> {
     style: LineStyle,
     positioning: LinePositioning<T>,
 }
@@ -75,105 +77,127 @@ impl<T: Graphable, U: Graphable> Convertable<U> for Line<T> {
 }
 
 impl<T: Graphable> Line<T> {
-    pub fn new(positioning: LinePositioning<T>, style: LineStyle) -> Line<T> {
+    pub(crate) fn new(positioning: LinePositioning<T>, style: LineStyle) -> Line<T> {
         Line { style, positioning }
     }
 
-    pub fn default(positioning: LinePositioning<T>) -> Line<T> {
-        Line {
-            style: LineStyle::default(),
-            positioning,
-        }
-    }
-
-    pub fn style(&self) -> &LineStyle {
+    pub(crate) fn style(&self) -> &LineStyle {
         &self.style
-    }
-
-    pub fn limits(&self) -> Limits<T> {
-        self.positioning.limits()
-    }
-}
-
-impl<T, U> Scalable<T, U> for Line<T>
-where
-    T: FloatConvertable + Graphable,
-    U: FloatConvertable + Graphable,
-{
-    type ScaleTo = Line<f64>;
-    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
-        let style = self.style;
-        let positioning = self.positioning.scale_to(old_limits, new_limits);
-        Line { style, positioning }
-    }
-}
-
-impl<T> Shiftable<T> for Line<T>
-where
-    T: FloatConvertable + Graphable,
-{
-    fn shift_by(self, amount: Point<T>) -> Self {
-        let style = self.style;
-        let positioning = self.positioning.shift_by(amount);
-        Line { style, positioning }
     }
 }
 
 impl Line<i32> {
-    /// Gets drawable limits for the line.
-    pub fn drawable_limits(&self) -> Limits<u32> {
-        let limits = self.limits().convert_to_u32();
-        let min = *limits.min() - self.style.thickness();
-        let max = *limits.max() + self.style.thickness();
-        Limits::new(min, max)
-    }
-
     // Gets the full point set between the start and end of the line. Note that this does not
     // take into account empy space for dashed lines. Additionally this fn assumes the line is
     // already in a plottable space.
-    pub fn full_drawable_points(&self) -> Vec<Point<u32>> {
+    pub(crate) fn full_drawable_points(&self) -> Vec<Point<u32>> {
         match self.positioning {
             LinePositioning::Vertical { .. } | LinePositioning::Horizontal { .. } => {
                 Point::limit_range(self.positioning.limits())
             }
             LinePositioning::BetweenPoints { start, end } => {
-                // Bresenham's line algorithm — handles all orientations including
-                // vertical, horizontal, steep, shallow, and any direction.
-                let mut x0 = start.x;
-                let mut y0 = start.y;
-                let x1 = end.x;
-                let y1 = end.y;
-
-                let dx = (x1 - x0).abs();
-                let dy = -(y1 - y0).abs();
-                let sx = if x0 < x1 { 1 } else { -1 };
-                let sy = if y0 < y1 { 1 } else { -1 };
-                let mut err = dx + dy;
-
                 let mut points = Vec::new();
-                loop {
-                    let point = Point::new(x0, y0).convert_to_u32();
-                    if points.last() != Some(&point) {
-                        points.push(point);
-                    }
-
-                    if x0 == x1 && y0 == y1 {
-                        break;
-                    }
-
-                    let e2 = 2 * err;
-                    if e2 >= dy {
-                        err += dy;
-                        x0 += sx;
-                    }
-                    if e2 <= dx {
-                        err += dx;
-                        y0 += sy;
-                    }
-                }
+                bresenham(start, end, |p| points.push(p.convert_to_u32()));
                 points
             }
         }
+    }
+}
+
+/// Bresenham's line algorithm: calls `f` for every pixel from `start` to `end` in order. Handles
+/// all orientations (vertical, horizontal, steep, shallow, any direction); consecutive pixels
+/// always differ.
+fn bresenham(start: Point<i32>, end: Point<i32>, mut f: impl FnMut(Point<i32>)) {
+    let (mut x0, mut y0) = (start.x, start.y);
+    let (x1, y1) = (end.x, end.y);
+
+    let dx = (x1 - x0).abs();
+    let dy = -(y1 - y0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx + dy;
+
+    loop {
+        f(Point::new(x0, y0));
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x0 += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+/// A line segment drawn straight into a canvas: the same pixels as
+/// `Line::new(BetweenPoints { start, end }, style).get_mask()`, without the intermediate
+/// allocations. `stamp` must be `LineStamp::new(style)`, and `last` the last pixel stamped with
+/// it in this color (whose stamp is therefore fully painted), which is updated.
+pub(crate) fn draw_segment(
+    canvas: &mut Canvas,
+    (start, end): (Point<u32>, Point<u32>),
+    style: &LineStyle,
+    stamp: &LineStamp,
+    last: &mut Option<Point<i32>>,
+) {
+    let color = style.color();
+    let dashed = matches!(style, LineStyle::Dashed { .. });
+    let mut index = 0;
+    bresenham(start.convert_to_i32(), end.convert_to_i32(), |p| {
+        let on = !dashed || index % (DASH_ON + DASH_OFF) < DASH_ON;
+        index += 1;
+        if !on {
+            return;
+        }
+        // the previous stamp is already painted, so a neighbouring pixel only needs the part of
+        // its stamp that the previous one did not cover (and a repeated pixel needs nothing);
+        // dense data revisits the same pixels many times
+        let offsets = match *last {
+            Some(prev) if prev == p => return,
+            Some(prev) if (p.x - prev.x).abs() <= 1 && (p.y - prev.y).abs() <= 1 => {
+                &stamp.steps[LineStamp::step_index(p.x - prev.x, p.y - prev.y)]
+            }
+            _ => &stamp.full,
+        };
+        *last = Some(p);
+        for offset in offsets {
+            let q = (p + *offset).convert_to_u32();
+            canvas.put(q.x, q.y, color);
+        }
+    });
+}
+
+/// The pixels stamped at each point of a line: a disc of radius `thickness` (just the point for
+/// a thickness of 0), plus, for each of the 8 steps to a neighbouring pixel, the part of the disc
+/// that the disc at the previous pixel does not cover.
+pub(crate) struct LineStamp {
+    full: Vec<Point<i32>>,
+    steps: [Vec<Point<i32>>; 9],
+}
+
+impl LineStamp {
+    pub(crate) fn new(style: &LineStyle) -> LineStamp {
+        let full = disc_offsets(style.thickness());
+        let steps = std::array::from_fn(|i| {
+            let (dx, dy) = (i as i32 % 3 - 1, i as i32 / 3 - 1);
+            // offsets relative to the new pixel that are outside the disc around the old one
+            full.iter()
+                .copied()
+                .filter(|o| !full.contains(&Point::new(o.x + dx, o.y + dy)))
+                .collect()
+        });
+        LineStamp { full, steps }
+    }
+
+    /// Index into `steps` for a step of (`dx`, `dy`), each in -1..=1.
+    fn step_index(dx: i32, dy: i32) -> usize {
+        ((dy + 1) * 3 + (dx + 1)) as usize
     }
 }
 

@@ -1,6 +1,7 @@
 use core::f32;
 
 use super::{
+    canvas::Canvas,
     colors,
     common::{Drawable, MaskPoints},
     limits::Limits,
@@ -12,30 +13,43 @@ use crate::{
 };
 use rgb::RGB8;
 
+/// The marker drawn at each data point. `size` is the radius in pixels (0 is a single pixel).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MarkerStyle {
     /// No marker is drawn (e.g. for a line-only series).
     None,
+    /// A filled square.
     FilledSquare {
+        /// Radius in pixels (0 is a single pixel).
         size: u32,
+        /// Marker color.
         color: RGB8,
     },
+    /// An outlined square.
     HollowSquare {
+        /// Radius in pixels (0 is a single pixel).
         size: u32,
+        /// Marker color.
         color: RGB8,
     },
+    /// A filled circle.
     FilledCircle {
+        /// Radius in pixels (0 is a single pixel).
         size: u32,
+        /// Marker color.
         color: RGB8,
     },
+    /// An outlined circle.
     HollowCircle {
+        /// Radius in pixels (0 is a single pixel).
         size: u32,
+        /// Marker color.
         color: RGB8,
     },
 }
 
 #[derive(Debug)]
-pub struct Marker {
+pub(crate) struct Marker {
     style: MarkerStyle,
     center: Point<u32>,
 }
@@ -50,6 +64,17 @@ impl Default for MarkerStyle {
 }
 
 impl MarkerStyle {
+    /// The marker color; `None` for [`MarkerStyle::None`].
+    pub fn color(&self) -> Option<RGB8> {
+        match self {
+            MarkerStyle::None => None,
+            MarkerStyle::FilledSquare { color, .. }
+            | MarkerStyle::HollowSquare { color, .. }
+            | MarkerStyle::FilledCircle { color, .. }
+            | MarkerStyle::HollowCircle { color, .. } => Some(*color),
+        }
+    }
+
     /// Marker radius in pixels; zero for [`MarkerStyle::None`].
     pub fn size(&self) -> u32 {
         match self {
@@ -63,11 +88,11 @@ impl MarkerStyle {
 }
 
 impl Marker {
-    pub fn new(center: Point<u32>, style: MarkerStyle) -> Marker {
+    pub(crate) fn new(center: Point<u32>, style: MarkerStyle) -> Marker {
         Marker { center, style }
     }
 
-    pub fn limits(&self) -> Limits<u32> {
+    pub(crate) fn limits(&self) -> Limits<u32> {
         let size = self.style.size();
         let min = Point::new(
             self.center.x.saturating_sub(size),
@@ -79,13 +104,38 @@ impl Marker {
         );
         Limits::new(min, max)
     }
+}
 
-    pub fn style(&self) -> &MarkerStyle {
-        &self.style
-    }
+/// The pixel offsets from a marker's center that a marker of this style covers, sorted and
+/// without duplicates. Every marker of a style covers the same offsets (clamped at 0 near the
+/// canvas edge), so they are computed once and stamped at each point.
+pub(crate) fn marker_stamp(style: &MarkerStyle) -> Result<Vec<Point<i32>>> {
+    // far enough from the origin that no offset is clamped
+    let c = style.size().saturating_add(1);
+    let mut offsets: Vec<Point<i32>> = Marker::new(Point::new(c, c), *style)
+        .get_mask()?
+        .iter()
+        .flat_map(|mask| mask.points.iter())
+        .map(|p| Point::new(p.x as i32 - c as i32, p.y as i32 - c as i32))
+        .collect();
+    offsets.sort_by_key(|p| (p.x, p.y));
+    offsets.dedup();
+    Ok(offsets)
+}
 
-    pub fn center(&self) -> &Point<u32> {
-        &self.center
+/// Draws a marker stamp (from [`marker_stamp`]) centered on `center`; offsets that would fall
+/// below 0 are clamped to 0, like [`Marker::get_mask`].
+pub(crate) fn draw_marker(
+    canvas: &mut Canvas,
+    center: Point<u32>,
+    stamp: &[Point<i32>],
+    color: RGB8,
+) {
+    let clamp = |v: i64| v.clamp(0, u32::MAX as i64) as u32;
+    for offset in stamp {
+        let x = clamp(center.x as i64 + offset.x as i64);
+        let y = clamp(center.y as i64 + offset.y as i64);
+        canvas.put(x, y, color);
     }
 }
 

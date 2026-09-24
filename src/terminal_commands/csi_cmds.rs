@@ -56,10 +56,6 @@ pub fn set_cursor_pos(row: u32, col: u32) -> Result<()> {
     CsiCommand::new(&cmd, "").execute()
 }
 
-pub fn clear_screen() -> Result<()> {
-    CsiCommand::new("2J", "").execute()
-}
-
 /// Query terminal text area size in pixels using xterm CSI 14 t.
 /// Returns (width_px, height_px).
 pub fn get_text_area_size_pixels() -> Result<(u32, u32)> {

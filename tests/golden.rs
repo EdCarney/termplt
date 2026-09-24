@@ -23,7 +23,7 @@ use termplt::plotting::{
 /// libraries (e.g. the trigonometry used for circle markers).
 const TOLERANCE: f64 = 0.001;
 
-fn check(name: &str, width: u32, height: u32, canvas: TerminalCanvas<f64>) {
+fn check(name: &str, width: u32, height: u32, canvas: TerminalCanvas) {
     let actual = canvas.draw().expect("scene should draw").get_bytes();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("tests/snapshots").join(format!("{name}.png"));

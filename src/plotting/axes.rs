@@ -8,13 +8,18 @@ use super::{
 };
 use crate::common::Result;
 
+/// Which axes to draw, and their line style.
 #[derive(Debug, Clone)]
 pub enum AxesPositioning {
+    /// Only the x axis (along the bottom).
     XOnly(LineStyle),
+    /// Only the y axis (along the left side).
     YOnly(LineStyle),
+    /// Both axes.
     XY(LineStyle),
 }
 
+/// Axes around the plot area, with tick labels drawn in the given text style.
 #[derive(Debug, Clone)]
 pub struct Axes {
     positioning: AxesPositioning,
@@ -22,18 +27,22 @@ pub struct Axes {
 }
 
 impl Axes {
+    /// Creates axes with the given lines and tick-label style.
     pub fn new(positioning: AxesPositioning, style: TextStyle) -> Axes {
         Axes { positioning, style }
     }
 
+    /// Which axes are drawn.
     pub fn positioning(&self) -> &AxesPositioning {
         &self.positioning
     }
 
+    /// The tick-label style.
     pub fn style(&self) -> &TextStyle {
         &self.style
     }
 
+    /// The axis lines just outside `limits` (pixel coordinates).
     pub fn get_mask<T: FloatConvertable + Graphable>(
         &self,
         limits: &Limits<T>,

@@ -1,8 +1,7 @@
 use super::responses::{TermCommand, TerminalCommandError};
-use crate::common::Result;
-use crate::kitty_graphics::ctrl_seq::{CtrlSeq, Metadata};
+use crate::kitty_graphics::ctrl_seq::{Action, CtrlSeq, Metadata};
 use crate::kitty_graphics::encoding;
-use std::{error::Error, fmt};
+use crate::{Error, common::Result};
 
 const CMD_START: &[u8] = b"\x1B_G";
 const CMD_SEP: &[u8] = b";";
@@ -52,31 +51,6 @@ impl Passthrough {
         }
     }
 }
-
-#[derive(Debug)]
-pub enum GraphicsSupportError {
-    /// The terminal answered other queries but not the graphics query.
-    Unsupported,
-    /// The terminal understood the query but reported an error.
-    Rejected(String),
-}
-
-impl fmt::Display for GraphicsSupportError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GraphicsSupportError::Unsupported => write!(
-                f,
-                "this terminal does not support the Kitty graphics protocol (e.g. Kitty, \
-                 WezTerm, Ghostty or Konsole)"
-            ),
-            GraphicsSupportError::Rejected(msg) => {
-                write!(f, "the terminal rejected a test image: {msg}")
-            }
-        }
-    }
-}
-
-impl Error for GraphicsSupportError {}
 
 pub struct KittyCommand {
     cmd: Vec<u8>,
@@ -138,14 +112,15 @@ impl KittyCommand {
 /// Asks the terminal whether it supports the Kitty graphics protocol, by sending a query for a
 /// 1x1 image (nothing is stored or displayed) followed by the DA1 sentinel.
 ///
-/// Returns [`GraphicsSupportError`] when the terminal answers without supporting the protocol.
+/// Returns [`Error::GraphicsUnsupported`] or [`Error::GraphicsRejected`] when the terminal
+/// answers without supporting the protocol.
 /// Other errors (no terminal, or a terminal that answers nothing at all) are passed through, so
 /// callers can decide whether to try drawing anyway. Inside tmux the outer terminal's reply
 /// does not reach the program, so callers should skip the query there.
 pub fn query_support() -> Result<()> {
     let ctrl = [
-        format!("i={QUERY_ID}"),
-        String::from("a=q"),
+        Metadata::Id(QUERY_ID).get_ctrl_seq(),
+        Action::Query.get_ctrl_seq(),
         String::from("s=1"),
         String::from("v=1"),
         String::from("f=24"),
@@ -154,12 +129,8 @@ pub fn query_support() -> Result<()> {
     let cmd = KittyCommand::with_passthrough(&[0, 0, 0], &ctrl, Passthrough::None);
     match cmd.execute_with_response() {
         Ok(reply) => parse_query_reply(&reply),
-        Err(e) => match e.downcast_ref::<TerminalCommandError>() {
-            Some(TerminalCommandError::Unsupported) => {
-                Err(Box::new(GraphicsSupportError::Unsupported))
-            }
-            _ => Err(e),
-        },
+        Err(Error::Terminal(TerminalCommandError::Unsupported)) => Err(Error::GraphicsUnsupported),
+        Err(e) => Err(e),
     }
 }
 
@@ -169,7 +140,7 @@ fn parse_query_reply(reply: &str) -> Result<()> {
     if msg == "OK" {
         Ok(())
     } else {
-        Err(Box::new(GraphicsSupportError::Rejected(msg.to_string())))
+        Err(Error::GraphicsRejected(msg.to_string()))
     }
 }
 

@@ -1,8 +1,9 @@
 use super::{
-    common::{Convertable, FloatConvertable, Graphable, Scalable, Shiftable},
+    common::{Convertable, FloatConvertable, Graphable},
     point::Point,
 };
 
+/// An axis-aligned rectangle given by its lower-left (`min`) and upper-right (`max`) corners.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Limits<T: Graphable> {
     min: Point<T>,
@@ -32,24 +33,29 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
         Limits { min, max }
     }
 
-    /// Creates a new instance, returning an error if `min` exceeds `max` in either dimension or
-    /// if either point is not comparable (e.g. contains NaN).
-    pub fn try_new(min: Point<T>, max: Point<T>) -> crate::common::Result<Limits<T>> {
-        if min.x <= max.x && min.y <= max.y {
-            Ok(Limits { min, max })
-        } else {
-            Err(format!("Invalid limits: min {min:?} must not exceed max {max:?}").into())
+    /// Creates a new instance, returning [`Error::InvalidLimits`](crate::Error::InvalidLimits)
+    /// if `min` exceeds `max` in either dimension or if either point is not comparable (e.g.
+    /// contains NaN).
+    pub fn try_new(min: Point<T>, max: Point<T>) -> crate::Result<Limits<T>> {
+        let invalid = |axis, min: T, max: T| crate::Error::InvalidLimits {
+            axis,
+            min: min.to_f64(),
+            max: max.to_f64(),
+        };
+        // NaN compares as unordered, which is also invalid
+        let ordered = |a: T, b: T| {
+            matches!(
+                a.partial_cmp(&b),
+                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            )
+        };
+        if !ordered(min.x, max.x) {
+            return Err(invalid("x", min.x, max.x));
         }
-    }
-
-    pub fn update_min(&mut self, new_min: Point<T>) {
-        Self::validate_limit(&new_min, &self.max);
-        self.min = new_min;
-    }
-
-    pub fn update_max(&mut self, new_max: Point<T>) {
-        Self::validate_limit(&self.min, &new_max);
-        self.max = new_max;
+        if !ordered(min.y, max.y) {
+            return Err(invalid("y", min.y, max.y));
+        }
+        Ok(Limits { min, max })
     }
 
     fn validate_limit(min: &Point<T>, max: &Point<T>) {
@@ -61,31 +67,38 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
         }
     }
 
+    /// Width and height (`max - min`).
     pub fn span(&self) -> (T, T) {
         let diff = self.max - self.min;
         (diff.x, diff.y)
     }
 
+    /// The lower-left corner.
     pub fn min(&self) -> &Point<T> {
         &self.min
     }
 
+    /// The upper-right corner.
     pub fn max(&self) -> &Point<T> {
         &self.max
     }
 
+    /// The upper-left corner.
     pub fn upper_left(&self) -> Point<T> {
         Point::new(self.min().x, self.max().y)
     }
 
+    /// The upper-right corner.
     pub fn upper_right(&self) -> Point<T> {
         *self.max()
     }
 
+    /// The lower-right corner.
     pub fn lower_right(&self) -> Point<T> {
         Point::new(self.max().x, self.min().y)
     }
 
+    /// The lower-left corner.
     pub fn lower_left(&self) -> Point<T> {
         *self.min()
     }
@@ -95,19 +108,17 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
         (self.min.x..=self.max.x).contains(&point.x) && (self.min.y..=self.max.y).contains(&point.y)
     }
 
-    /// Checks if this limit intersects with another limit.
+    /// Checks if this limit intersects with another limit (touching edges count). Two
+    /// rectangles overlap exactly when their ranges overlap on both axes; testing corners alone
+    /// misses cross-shaped overlaps, where no corner of either lies inside the other.
     pub fn intersects<U: FloatConvertable + Graphable>(&self, other: Limits<U>) -> bool {
         let this = self.convert_to_f64();
         let other = other.convert_to_f64();
 
-        this.contains(&other.upper_left())
-            || this.contains(&other.upper_right())
-            || this.contains(&other.lower_right())
-            || this.contains(&other.lower_left())
-            || other.contains(&this.upper_left())
-            || other.contains(&this.upper_right())
-            || other.contains(&this.lower_right())
-            || other.contains(&this.lower_left())
+        this.min.x <= other.max.x
+            && other.min.x <= this.max.x
+            && this.min.y <= other.max.y
+            && other.min.y <= this.max.y
     }
 
     /// Chunks the limits into a collection of x and y points that will split the limit range into
@@ -127,30 +138,6 @@ impl<T: FloatConvertable + Graphable> Limits<T> {
             .collect::<Vec<_>>();
 
         (x_points, y_points)
-    }
-}
-
-impl<T, U> Scalable<T, U> for Limits<T>
-where
-    T: FloatConvertable + Graphable,
-    U: FloatConvertable + Graphable,
-{
-    type ScaleTo = Limits<f64>;
-    fn scale_to(self, old_limits: &Limits<T>, new_limits: &Limits<U>) -> Self::ScaleTo {
-        let min = self.min.scale_to(old_limits, new_limits);
-        let max = self.max.scale_to(old_limits, new_limits);
-        Limits { min, max }
-    }
-}
-
-impl<T> Shiftable<T> for Limits<T>
-where
-    T: FloatConvertable + Graphable,
-{
-    fn shift_by(self, amount: Point<T>) -> Self {
-        let min = self.min + amount;
-        let max = self.max + amount;
-        Limits { min, max }
     }
 }
 
@@ -183,50 +170,6 @@ mod tests {
     }
 
     #[test]
-    fn update_min_valid() {
-        let min = Point { x: 0, y: 0 };
-        let max = Point { x: 10, y: 5 };
-        let mut limits = Limits::new(min, max);
-        assert_eq!(limits.span(), (10, 5));
-
-        limits.update_min(Point { x: 1, y: 1 });
-        assert_eq!(limits.span(), (9, 4));
-    }
-
-    #[test]
-    #[should_panic]
-    fn update_min_invalid() {
-        let min = Point { x: 0, y: 0 };
-        let max = Point { x: 10, y: 5 };
-        let mut limits = Limits::new(min, max);
-        assert_eq!(limits.span(), (10, 5));
-
-        limits.update_min(Point { x: 11, y: 1 });
-    }
-
-    #[test]
-    fn update_max_valid() {
-        let min = Point { x: 0, y: 0 };
-        let max = Point { x: 10, y: 5 };
-        let mut limits = Limits::new(min, max);
-        assert_eq!(limits.span(), (10, 5));
-
-        limits.update_max(Point { x: 15, y: 10 });
-        assert_eq!(limits.span(), (15, 10));
-    }
-
-    #[test]
-    #[should_panic]
-    fn update_max_invalid() {
-        let min = Point { x: 0, y: 0 };
-        let max = Point { x: 10, y: 5 };
-        let mut limits = Limits::new(min, max);
-        assert_eq!(limits.span(), (10, 5));
-
-        limits.update_max(Point { x: -1, y: 10 });
-    }
-
-    #[test]
     fn point_contained_in_limits() {
         let min = Point { x: 0, y: 0 };
         let max = Point { x: 10, y: 5 };
@@ -249,5 +192,18 @@ mod tests {
         assert!(!limits.contains(&Point { x: 1, y: -1 }));
         assert!(!limits.contains(&Point { x: 11, y: 4 }));
         assert!(!limits.contains(&Point { x: 9, y: 6 }));
+    }
+
+    #[test]
+    fn intersects_detects_cross_shaped_overlap() {
+        let wide = Limits::new(Point::new(0, 4), Point::new(10, 6));
+        let tall = Limits::new(Point::new(4, 0), Point::new(6, 10));
+        assert!(wide.intersects(tall.clone()));
+        assert!(tall.intersects(wide.clone()));
+
+        let apart = Limits::new(Point::new(11, 0), Point::new(12, 10));
+        assert!(!wide.intersects(apart));
+        let touching = Limits::new(Point::new(10, 0), Point::new(12, 4));
+        assert!(wide.intersects(touching));
     }
 }

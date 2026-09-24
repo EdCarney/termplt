@@ -1,34 +1,20 @@
 use crate::terminal_commands::csi_cmds;
-use std::{error::Error, fmt};
+use crate::{Error, Result};
 
-#[derive(Debug)]
-pub enum WindowCtrlError {
-    InvalidDimensions { rows: u32, cols: u32 },
-}
-
-impl fmt::Display for WindowCtrlError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WindowCtrlError::InvalidDimensions { rows, cols } => {
-                write!(
-                    f,
-                    "Terminal reported invalid dimensions (rows={}, cols={}) — cannot render",
-                    rows, cols
-                )
-            }
-        }
-    }
-}
-
-impl Error for WindowCtrlError {}
-
-#[derive(Debug)]
+/// The terminal's size in cells and pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowSize {
+    /// Rows of text.
     pub rows: u32,
+    /// Columns of text.
     pub cols: u32,
+    /// Width in pixels.
     pub x_pix: u32,
+    /// Height in pixels.
     pub y_pix: u32,
+    /// Pixels per row (cell height).
     pub pix_per_row: u32,
+    /// Pixels per column (cell width).
     pub pix_per_col: u32,
 }
 
@@ -38,17 +24,16 @@ pub struct WindowSize {
 /// since reading it needs no round trip to the terminal. Missing parts (pixel sizes are often
 /// zero, and Windows has no pixel sizes at all) are queried from the terminal with
 /// `CSI 14 t` (pixels) and `CSI 18 t` (cells).
-pub fn get_window_size() -> Result<WindowSize, Box<dyn Error>> {
-    let context = |e: Box<dyn Error>| format!("Could not determine terminal window size: {e}");
+pub fn get_window_size() -> Result<WindowSize> {
     let (rows, cols, x_pix, y_pix) = combine(
         os_window_size(),
         csi_cmds::get_text_area_size_cells,
         csi_cmds::get_text_area_size_pixels,
     )
-    .map_err(context)?;
+    .map_err(|e| Error::WindowSize(Box::new(e)))?;
 
     if rows == 0 || cols == 0 || x_pix == 0 || y_pix == 0 {
-        return Err(Box::new(WindowCtrlError::InvalidDimensions { rows, cols }));
+        return Err(Error::InvalidWindowSize { rows, cols });
     }
 
     let pix_per_col = x_pix / cols;
@@ -80,7 +65,7 @@ fn os_window_size() -> Option<(u32, u32, u32, u32)> {
     }
 }
 
-type Query = fn() -> Result<(u32, u32), Box<dyn Error>>;
+type Query = fn() -> Result<(u32, u32)>;
 
 /// Fills in whatever the OS did not report by querying the terminal. `query_cells` returns
 /// (rows, cols), `query_pixels` returns (width, height).
@@ -88,7 +73,7 @@ fn combine(
     os: Option<(u32, u32, u32, u32)>,
     query_cells: Query,
     query_pixels: Query,
-) -> Result<(u32, u32, u32, u32), Box<dyn Error>> {
+) -> Result<(u32, u32, u32, u32)> {
     let (mut rows, mut cols, mut x_pix, mut y_pix) = os.unwrap_or_default();
     if rows == 0 || cols == 0 {
         (rows, cols) = query_cells()?;
@@ -103,15 +88,15 @@ fn combine(
 mod tests {
     use super::*;
 
-    fn cells() -> Result<(u32, u32), Box<dyn Error>> {
+    fn cells() -> Result<(u32, u32)> {
         Ok((50, 160))
     }
 
-    fn pixels() -> Result<(u32, u32), Box<dyn Error>> {
+    fn pixels() -> Result<(u32, u32)> {
         Ok((1600, 1000))
     }
 
-    fn unreachable_query() -> Result<(u32, u32), Box<dyn Error>> {
+    fn unreachable_query() -> Result<(u32, u32)> {
         panic!("the terminal should not be queried")
     }
 
@@ -138,8 +123,8 @@ mod tests {
 
     #[test]
     fn query_errors_propagate() {
-        fn failing() -> Result<(u32, u32), Box<dyn Error>> {
-            Err("no reply".into())
+        fn failing() -> Result<(u32, u32)> {
+            Err(Error::NoData)
         }
         assert!(combine(Some((40, 100, 0, 0)), cells, failing).is_err());
     }
