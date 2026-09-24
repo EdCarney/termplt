@@ -13,3 +13,4 @@ pub mod numbers;
 pub mod point;
 pub mod series;
 pub mod text;
+pub mod ticks;

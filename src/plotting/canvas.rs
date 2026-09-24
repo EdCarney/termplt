@@ -1,10 +1,12 @@
 use super::{
-    axes::AxesPositioning,
+    axes::{Axes, AxesPositioning},
+    colors,
     common::{Drawable, FloatConvertable, Graphable, MaskPoints},
     graph::Graph,
     limits::Limits,
     point::Point,
-    text::Label,
+    text::{Label, Text, TextPositioning, TextStyle},
+    ticks::{AxisTicks, fit_ticks},
 };
 use crate::common::Result;
 use rgb::RGB8;
@@ -111,9 +113,26 @@ impl Canvas {
     }
 }
 
+/// Gap in pixels between tick labels and the plot area.
+const LABEL_GAP: u32 = 4;
+/// Minimum horizontal gap in pixels between neighbouring x tick labels.
+const X_LABEL_SPACING: f64 = 8.0;
+/// Minimum vertical gap in pixels between neighbouring y tick labels.
+const Y_LABEL_SPACING: f64 = 4.0;
+
+/// Where a graph is drawn on the canvas.
+struct Layout {
+    /// Area the view limits of the data are mapped onto.
+    plot: Limits<u32>,
+    x_ticks: AxisTicks,
+    y_ticks: AxisTicks,
+    labels: Vec<Label>,
+}
+
 #[derive(Debug)]
 pub struct TerminalCanvas<T: Graphable> {
     canvas: Canvas,
+    background: RGB8,
     buffer: CanvasBuffer,
     graph: Option<Graph<T>>,
     labels: Vec<Label>,
@@ -127,6 +146,7 @@ where
     pub fn new(width: u32, height: u32, background: RGB8) -> TerminalCanvas<T> {
         TerminalCanvas {
             canvas: Canvas::new(width, height, background),
+            background,
             buffer: CanvasBuffer::new(BufferType::None),
             graph: None,
             labels: Vec::new(),
@@ -137,6 +157,8 @@ where
         }
     }
 
+    /// Sets the empty space around the edges of the canvas. Tick labels are placed inside the
+    /// buffered area automatically, so the buffer does not need to leave room for them.
     pub fn with_buffer(mut self, buffer_type: BufferType) -> Self {
         self.buffer = CanvasBuffer::new(buffer_type);
         self
@@ -162,26 +184,38 @@ where
             return Err("Canvas width and height must be nonzero".into());
         }
 
-        let canvas_limits = self.get_drawable_limits()?.convert_to_f64();
-
         if let Some(graph) = self.graph.take() {
-            // the view limits are the data values at the edges of the drawable area, so they
-            // determine the numbers shown on the axes labels
-            let view_limits = graph.view_limits()?;
-            let scaled_graph = graph.scale_with_view(&view_limits, canvas_limits)?;
+            let view = graph.view_limits()?;
+            let layout = self.layout(&graph, &view)?;
+            let plot = layout.plot.convert_to_f64();
+            let scaled_graph = graph.scale_with_view(&view, plot.clone())?;
 
-            scaled_graph
-                .get_axes_labels(&view_limits)?
-                .into_iter()
-                .for_each(|label| self.labels.push(label));
+            let mut masks = Vec::new();
 
-            scaled_graph
-                .get_mask()?
+            // grid lines first so the axes and data are drawn over them
+            if let Some(grid_lines) = graph.grid_lines() {
+                let xs: Vec<f64> = (layout.x_ticks.values.iter())
+                    .map(|&v| to_canvas(v, view.min().x, view.max().x, plot.min().x, plot.max().x))
+                    .collect();
+                let ys: Vec<f64> = (layout.y_ticks.values.iter())
+                    .map(|&v| to_canvas(v, view.min().y, view.max().y, plot.min().y, plot.max().y))
+                    .collect();
+                masks.extend(grid_lines.get_mask_at(&plot, &xs, &ys)?);
+            }
+            if let Some(axes) = graph.axes() {
+                masks.extend(axes.get_mask(&plot)?);
+            }
+            for series in scaled_graph.data() {
+                masks.extend(series.get_mask()?);
+            }
+
+            masks
                 .iter()
                 .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
+            self.labels.extend(layout.labels);
         }
 
-        // labels must be drawn after graph since axes labels are added to the canvas
+        // labels are drawn last so they are not covered by the graph
         let label_masks: Vec<Vec<MaskPoints>> = self
             .labels
             .iter()
@@ -195,69 +229,212 @@ where
         Ok(self)
     }
 
+    /// Returns the area the graph's data is mapped onto: the canvas minus the buffer, the space
+    /// taken by tick labels, and an inset for markers, thick lines and axes.
     pub fn get_drawable_limits(&self) -> Result<Limits<u32>> {
-        // set initial point from the buffer; use saturating_sub to avoid u32 overflow
-        // when the canvas is smaller than the buffer
-        let mut min = Point::new(self.buffer.left, self.buffer.bottom);
-        let mut max = Point::new(
+        match &self.graph {
+            Some(graph) => Ok(self.layout(graph, &graph.view_limits()?)?.plot),
+            None => {
+                let (min, max) = self.buffered_area();
+                check_area(&min, &max)?;
+                Ok(Limits::new(min, max))
+            }
+        }
+    }
+
+    /// Corners of the canvas inside the buffer. Uses saturating arithmetic so a canvas smaller
+    /// than its buffer yields an empty area rather than overflowing.
+    fn buffered_area(&self) -> (Point<u32>, Point<u32>) {
+        let min = Point::new(self.buffer.left, self.buffer.bottom);
+        let max = Point::new(
             self.limits.max().x.saturating_sub(self.buffer.right),
             self.limits.max().y.saturating_sub(self.buffer.top),
         );
-
-        if let Some(graph) = &self.graph {
-            let largest_marker_sz = graph
-                .data()
-                .iter()
-                // thick lines extend past the data points just like markers do
-                .map(|s| {
-                    let line_thickness = s.line_style().map_or(0, |l| l.thickness());
-                    s.marker_style().size().max(line_thickness)
-                })
-                .max()
-                .ok_or("Graph has no series data; cannot compute drawable limits")?;
-
-            // axes thickness in x/y pixels
-            let axes_thickness = match graph.axes() {
-                Some(axes) => match axes.positioning() {
-                    AxesPositioning::XOnly(line_style) => (0, 2 * line_style.thickness()),
-                    AxesPositioning::YOnly(line_style) => (2 * line_style.thickness(), 0),
-                    AxesPositioning::XY(line_style) => {
-                        (2 * line_style.thickness(), 2 * line_style.thickness())
-                    }
-                },
-                None => (0, 0),
-            };
-
-            // note that axes and markers can overlap; so use the larger of marker/axes as bounds
-            let inset_x = u32::max(largest_marker_sz, axes_thickness.0);
-            let inset_y = u32::max(largest_marker_sz, axes_thickness.1);
-
-            let min_x = min.x + inset_x;
-            let min_y = min.y + inset_y;
-            let max_x = max.x.saturating_sub(inset_x);
-            let max_y = max.y.saturating_sub(inset_y);
-
-            // include axes text
-
-            min = Point::new(min_x, min_y);
-            max = Point::new(max_x, max_y);
-        }
-
-        if min.x >= max.x || min.y >= max.y {
-            return Err(format!(
-                "Canvas too small for the configured buffer and graph elements. \
-                 Drawable area would be {}x{} pixels (min={:?}, max={:?}). \
-                 Try a larger terminal window or smaller buffer/marker sizes.",
-                max.x.saturating_sub(min.x),
-                max.y.saturating_sub(min.y),
-                min,
-                max,
-            )
-            .into());
-        }
-
-        Ok(Limits::new(min, max))
+        (min, max)
     }
+
+    /// Text style for tick labels. A label color identical to the background (e.g. the black
+    /// default text on the default black canvas) is replaced with black or white, whichever
+    /// contrasts with the background.
+    fn label_style(&self, axes: Option<&Axes>) -> TextStyle {
+        let style = axes.map(|a| a.style().clone()).unwrap_or_default();
+        let color = if style.color() == self.background {
+            let luminance = 0.2126 * self.background.r as f64
+                + 0.7152 * self.background.g as f64
+                + 0.0722 * self.background.b as f64;
+            if luminance > 127.5 {
+                colors::BLACK
+            } else {
+                colors::WHITE
+            }
+        } else {
+            style.color()
+        };
+        TextStyle::new(color, style.scale(), style.padding())
+    }
+
+    fn layout(&self, graph: &Graph<T>, view: &Limits<f64>) -> Result<Layout> {
+        let (outer_min, outer_max) = self.buffered_area();
+
+        let largest_marker_sz = graph
+            .data()
+            .iter()
+            // thick lines extend past the data points just like markers do
+            .map(|s| {
+                let line_thickness = s.line_style().map_or(0, |l| l.thickness());
+                s.marker_style().size().max(line_thickness)
+            })
+            .max()
+            .ok_or("Graph has no series data; cannot compute drawable limits")?;
+
+        // axes are drawn just outside the plot area, so leave room for their thickness
+        let axes = graph.axes();
+        let (axes_inset, show_x_labels, show_y_labels) =
+            match axes.as_ref().map(|a| a.positioning()) {
+                Some(AxesPositioning::XOnly(line)) => ((0, 2 * line.thickness()), true, false),
+                Some(AxesPositioning::YOnly(line)) => ((2 * line.thickness(), 0), false, true),
+                Some(AxesPositioning::XY(line)) => {
+                    ((2 * line.thickness(), 2 * line.thickness()), true, true)
+                }
+                None => ((0, 0), false, false),
+            };
+        // axes and markers can overlap, so use the larger of the two
+        let inset_x = largest_marker_sz.max(axes_inset.0);
+        let inset_y = largest_marker_sz.max(axes_inset.1);
+
+        let style = self.label_style(axes.as_ref());
+        let text = |label: &str| Text::new(label, style.clone());
+        let text_h = text("0").height() as u32;
+
+        // x labels sit in a band along the bottom; the top y label needs half a line above
+        let bottom = if show_x_labels { text_h + LABEL_GAP } else { 0 };
+        let top = if show_y_labels { text_h / 2 } else { 0 };
+        let plot_min_y = outer_min.y + bottom + inset_y;
+        let plot_max_y = outer_max.y.saturating_sub(top + inset_y);
+        check_area(
+            &Point::new(outer_min.x, plot_min_y),
+            &Point::new(outer_max.x, plot_max_y),
+        )?;
+
+        // y ticks depend only on the plot height; their labels then set the left margin
+        let y_ticks = fit_ticks(
+            view.min().y,
+            view.max().y,
+            (plot_max_y - plot_min_y) as f64,
+            |_, spacing| spacing >= text_h as f64 + Y_LABEL_SPACING,
+        );
+        let y_label_w = if show_y_labels {
+            (y_ticks.labels.iter())
+                .map(|l| text(l).width() as u32)
+                .max()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        let left = if show_y_labels {
+            y_label_w + LABEL_GAP
+        } else {
+            0
+        };
+        let plot_min_x = outer_min.x + left + inset_x;
+        let plot_max_x = outer_max.x.saturating_sub(inset_x);
+        let plot_min = Point::new(plot_min_x, plot_min_y);
+        let plot_max = Point::new(plot_max_x, plot_max_y);
+        check_area(&plot_min, &plot_max)?;
+
+        let x_ticks = fit_ticks(
+            view.min().x,
+            view.max().x,
+            (plot_max_x - plot_min_x) as f64,
+            |labels, spacing| {
+                let widest = labels.iter().map(|l| text(l).width()).max().unwrap_or(0);
+                spacing >= widest as f64 + X_LABEL_SPACING
+            },
+        );
+
+        let plot = Limits::new(plot_min, plot_max);
+        let (canvas_max_x, canvas_max_y) = (self.limits.max().x, self.limits.max().y);
+        let mut labels = Vec::new();
+
+        if show_x_labels {
+            let center_y = outer_min.y + text_h / 2;
+            for (&value, label) in x_ticks.values.iter().zip(&x_ticks.labels) {
+                let txt = text(label);
+                let w = txt.width() as u32;
+                let x = to_canvas(
+                    value,
+                    view.min().x,
+                    view.max().x,
+                    plot_min_x as f64,
+                    plot_max_x as f64,
+                );
+                // keep labels at the ends of the axis inside the canvas
+                let lo = w / 2;
+                let hi = canvas_max_x.saturating_sub(w - w / 2).max(lo);
+                let x = (x.round() as u32).clamp(lo, hi);
+                labels.push(Label::new(
+                    txt,
+                    TextPositioning::Centered(Point::new(x, center_y)),
+                ));
+            }
+        }
+
+        if show_y_labels {
+            // stay above the x label band and inside the canvas
+            let lo = if show_x_labels {
+                outer_min.y + text_h + 1 + text_h / 2
+            } else {
+                text_h / 2
+            };
+            let hi = canvas_max_y.saturating_sub(text_h - text_h / 2).max(lo);
+            for (&value, label) in y_ticks.values.iter().zip(&y_ticks.labels) {
+                let txt = text(label);
+                // right-align labels against the plot area
+                let x = outer_min.x + y_label_w - txt.width() as u32;
+                let y = to_canvas(
+                    value,
+                    view.min().y,
+                    view.max().y,
+                    plot_min_y as f64,
+                    plot_max_y as f64,
+                );
+                let y = (y.round() as u32).clamp(lo, hi);
+                labels.push(Label::new(
+                    txt,
+                    TextPositioning::LeftAligned(Point::new(x, y)),
+                ));
+            }
+        }
+
+        Ok(Layout {
+            plot,
+            x_ticks,
+            y_ticks,
+            labels,
+        })
+    }
+}
+
+/// Linearly maps `value` from the data range `[view_min, view_max]` onto the pixel range
+/// `[plot_min, plot_max]`.
+fn to_canvas(value: f64, view_min: f64, view_max: f64, plot_min: f64, plot_max: f64) -> f64 {
+    plot_min + (value - view_min) * (plot_max - plot_min) / (view_max - view_min)
+}
+
+fn check_area(min: &Point<u32>, max: &Point<u32>) -> Result<()> {
+    if min.x >= max.x || min.y >= max.y {
+        return Err(format!(
+            "Canvas too small for the configured buffer and graph elements. \
+             Drawable area would be {}x{} pixels (min={:?}, max={:?}). \
+             Try a larger terminal window or smaller buffer/marker sizes.",
+            max.x.saturating_sub(min.x),
+            max.y.saturating_sub(min.y),
+            min,
+            max,
+        )
+        .into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -403,7 +580,8 @@ mod tests {
             .draw()
             .unwrap()
             .get_bytes();
-        assert_eq!(red_pixels(&bytes, 101), vec![(10, 50), (90, 50)]);
+        // x is padded by 5% of the span on each side: 10 + 80 * 0.5 / 11 = 13.6 (truncated)
+        assert_eq!(red_pixels(&bytes, 101), vec![(13, 50), (86, 50)]);
     }
 
     #[test]

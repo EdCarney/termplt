@@ -583,44 +583,33 @@ fn run() -> Result<()> {
     let size = std::cmp::max(size, 200); // minimum 200px
     let width = size;
     let height = size;
-    let buffer = std::cmp::max(size / 10, 20);
+    // tick labels are laid out inside the canvas automatically; the buffer is just breathing
+    // room around the edges
+    let buffer = std::cmp::max(size / 40, 8);
+
+    let canvas = TerminalCanvas::new(width, height, colors::BLACK)
+        .with_buffer(BufferType::Uniform(buffer))
+        .with_graph(graph);
 
     if verbose {
         eprintln!("[verbose] canvas: {}x{} pixels", width, height);
         eprintln!("[verbose] buffer: {} pixels (uniform)", buffer);
-
-        let largest_marker = graph
-            .data()
-            .iter()
-            .map(|s| s.marker_style().size())
-            .max()
-            .unwrap_or(0);
-        let axes_bound = 2 * axes_thickness;
-        let inset = u32::max(largest_marker, axes_bound);
-        let drawable_w = (width - 1).saturating_sub(2 * (buffer + inset));
-        let drawable_h = (height - 1).saturating_sub(2 * (buffer + inset));
-        eprintln!(
-            "[verbose] largest marker: {}, axes bound: {}, effective inset: {}",
-            largest_marker, axes_bound, inset
-        );
-        eprintln!(
-            "[verbose] estimated drawable area: ~{}x{} pixels",
-            drawable_w, drawable_h
-        );
-        if drawable_w == 0 || drawable_h == 0 {
-            eprintln!(
-                "[verbose] WARNING: drawable area is zero! Canvas {}x{} is too small \
-                 for buffer ({}) + inset ({}). Consider a larger terminal window.",
-                width, height, buffer, inset
-            );
+        match canvas.get_drawable_limits() {
+            Ok(plot) => {
+                let (w, h) = plot.span();
+                eprintln!(
+                    "[verbose] plot area: {}x{} pixels at ({}, {})",
+                    w,
+                    h,
+                    plot.min().x,
+                    plot.min().y
+                );
+            }
+            Err(e) => eprintln!("[verbose] plot area unavailable: {e}"),
         }
     }
 
-    let bytes = TerminalCanvas::new(width, height, colors::BLACK)
-        .with_buffer(BufferType::Uniform(buffer))
-        .with_graph(graph)
-        .draw()?
-        .get_bytes();
+    let bytes = canvas.draw()?.get_bytes();
 
     Image::new(
         PixelFormat::Rgb { width, height },
