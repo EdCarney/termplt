@@ -20,6 +20,7 @@ const ESC: u8 = 0x1b;
 
 /// Failures talking to the terminal.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum TerminalCommandError {
     /// No terminal is attached to send the query to (e.g. running from a pipe, cron or CI).
     NoTerminal(io::Error),

@@ -14,7 +14,7 @@ pub const NUM_GRID_SECTIONS: u32 = 10;
 /// the axis the lines run parallel to.
 ///
 /// [`AxesPositioning`]: crate::plotting::axes::AxesPositioning
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GridLines {
     /// Horizontal lines (parallel to the x axis), at the y ticks.
     XOnly(LineStyle),

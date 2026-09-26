@@ -6,7 +6,7 @@ pub trait CtrlSeq {
 ///
 /// Only `Direct` works when the terminal runs on another machine (e.g. over SSH); the other media
 /// name a file or shared-memory object that the terminal itself must be able to open.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Transmission {
     /// The data is sent inline in the escape sequence.
     Direct(Vec<u8>),
@@ -17,6 +17,18 @@ pub enum Transmission {
     TempFile(String),
     /// A POSIX shared-memory object name.
     SharedMemory(String),
+}
+
+/// Shows the size of inline data rather than every byte of it.
+impl std::fmt::Debug for Transmission {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Transmission::Direct(data) => write!(f, "Direct(<{} bytes>)", data.len()),
+            Transmission::File(path) => f.debug_tuple("File").field(path).finish(),
+            Transmission::TempFile(path) => f.debug_tuple("TempFile").field(path).finish(),
+            Transmission::SharedMemory(name) => f.debug_tuple("SharedMemory").field(name).finish(),
+        }
+    }
 }
 
 impl CtrlSeq for Transmission {

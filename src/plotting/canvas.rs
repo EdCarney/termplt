@@ -276,7 +276,7 @@ impl TerminalCanvas {
     /// default text on the default black canvas) is replaced with black or white, whichever
     /// contrasts with the background.
     fn label_style(&self, axes: Option<&Axes>) -> TextStyle {
-        let style = axes.map(|a| a.style().clone()).unwrap_or_default();
+        let style = axes.map(|a| *a.style()).unwrap_or_default();
         let color = if style.color() == self.background {
             let luminance = 0.2126 * self.background.r as f64
                 + 0.7152 * self.background.g as f64
@@ -327,7 +327,7 @@ impl TerminalCanvas {
         let inset_y = largest_marker_sz.max(axes_inset.1);
 
         let style = self.label_style(axes.as_ref());
-        let text = |label: &str| Text::new(label, style.clone());
+        let text = |label: &str| Text::new(label, style);
         let text_h = text("0").height() as u32;
 
         // x labels sit in a band along the bottom; the top y label needs half a line above

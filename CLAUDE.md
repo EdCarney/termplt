@@ -31,7 +31,7 @@ Releases (`.github/workflows/release.yml`): push a `v*` tag equal to the `Cargo.
 Public API layers, top-down:
 - `Plot` (`plot.rs`): one-call builder (`line`/`scatter`/`line_points`/`series`, limits, size, background, grid; `show`, `save_png`, `render`). The CLI uses it too.
 - `plotting::{series::Series, graph::Graph, canvas::TerminalCanvas}` and the style types; `prelude` re-exports the common ones.
-- `terminal`: `Terminal` (support check, size, tmux handling, display) plus re-exported `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
+- `terminal`: `Terminal` (support check, size, tmux handling, display) plus re-exported `WindowSize`, `get_window_size`, `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
 - `Error`/`Result` (`error.rs`): one `#[non_exhaustive]` enum for the whole crate.
 
 `kitty_graphics`, `terminal_commands` and `plotting::{common, numbers, ticks}` are private; re-export what users need rather than making them public.
@@ -55,7 +55,7 @@ TerminalCanvas::draw()
   ├── grid_lines.get_mask_at(..)     # grid at tick positions (drawn first)
   ├── axes.get_mask(plot)            # axis lines just outside the plot area
   ├── series.draw_into(canvas)       # markers, then lines, straight into the canvas
-  ├── Canvas::set_pixels()           # write RGB8 into 2D pixel buffer
+  ├── Canvas::set_pixels()           # write RGB8 into the flat pixel buffer
   └── labels → get_mask → set_pixels # tick labels (bitmap font), drawn last
 ```
 

@@ -9,7 +9,7 @@ use super::{
 use crate::common::Result;
 
 /// Which axes to draw, and their line style.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AxesPositioning {
     /// Only the x axis (along the bottom).
     XOnly(LineStyle),
@@ -20,7 +20,7 @@ pub enum AxesPositioning {
 }
 
 /// Axes around the plot area, with tick labels drawn in the given text style.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Axes {
     positioning: AxesPositioning,
     style: TextStyle,

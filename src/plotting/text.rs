@@ -9,7 +9,7 @@ use crate::common::Result;
 use rgb::RGB8;
 
 /// Where a label is anchored.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextPositioning {
     /// Centered on the point.
     Centered(Point<u32>),
@@ -80,7 +80,7 @@ impl TextChar {
 }
 
 /// Color, scale and padding of bitmap text.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextStyle {
     color: RGB8,
     scale: usize,
@@ -184,59 +184,47 @@ impl Text {
     }
 }
 
+/// Rounds to `sig_figs` significant figures. Plain decimals are used when the magnitude lies
+/// between `0.1^sig_figs` and `10^sig_figs`, scientific notation otherwise; trailing zeros are
+/// dropped.
 fn num_to_str(number: f64, sig_figs: usize) -> String {
     let sig_figs = sig_figs.max(1);
+    if number == 0.0 {
+        return "0".to_string();
+    }
+    if !number.is_finite() {
+        return number.to_string();
+    }
+
+    // formatting in scientific notation rounds to the right number of figures
+    let scientific = format!("{:.*e}", sig_figs - 1, number);
+    let (mantissa, exponent) = scientific
+        .split_once('e')
+        .expect("{:e} output has an exponent");
+    let exponent: i32 = exponent.parse().expect("{:e} exponents are integers");
+    let rounded: f64 = scientific.parse().expect("{:e} output parses");
 
     let min = 0.1_f64.powi(sig_figs as i32);
     let max = 10_f64.powi(sig_figs as i32);
-
-    let mut trunc_str = Vec::new();
-    let mut sig_fig_count = 0;
-
-    let num_str = if min < number.abs() && number.abs() < max {
-        number.to_string()
+    if min < rounded.abs() && rounded.abs() < max {
+        let decimals = (sig_figs as i32 - 1 - exponent).max(0) as usize;
+        trim_trailing_zeros(format!("{rounded:.decimals$}"))
     } else {
-        format!("{number:e}")
-    };
-
-    let is_leading_zero = |s: &str, ind: usize| ind == 0 && s.chars().nth(ind).unwrap() == '0';
-
-    // get the first part of the number, up to the required number of sig figs or the
-    // scientific exponent (whichever comes first)
-    for (ind, c) in num_str.chars().enumerate() {
-        if sig_fig_count == sig_figs || c == 'e' {
-            break;
-        }
-        trunc_str.push(c);
-        if !is_leading_zero(&num_str, ind) && c.is_ascii_digit() {
-            sig_fig_count += 1;
-        }
-    }
-
-    // for decimal numbers, remove any trailing zeros (these are technically sig figs but removing
-    // them yields a cleaner graph)
-    while trunc_str.contains(&'.') && trunc_str.len() > 1 {
-        if trunc_str.last().unwrap() == &'0' {
-            trunc_str.pop()
+        let mantissa = trim_trailing_zeros(mantissa.to_string());
+        if exponent == 0 {
+            mantissa
         } else {
-            break;
-        };
-    }
-
-    // add the scientific component, but only if it is nonzero
-    if num_str.contains('e') && !num_str.ends_with("e0") {
-        let mut end_str = Vec::new();
-        let mut chars = num_str.chars();
-        while let Some(c) = chars.next_back() {
-            end_str.insert(0, c);
-            if c == 'e' {
-                break;
-            }
+            format!("{mantissa}e{exponent}")
         }
-        trunc_str.extend(&end_str);
     }
+}
 
-    String::from_iter(trunc_str)
+fn trim_trailing_zeros(s: String) -> String {
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
+    }
 }
 
 /// Text placed on the canvas.
@@ -319,7 +307,7 @@ impl Drawable for Label {
                 anchor.x.saturating_add(x_offset),
                 anchor.y.saturating_sub(height_shift),
             );
-            masks.extend(c.get_mask(char_lower_left.convert_to_u32(), self.txt.style.clone())?);
+            masks.extend(c.get_mask(char_lower_left.convert_to_u32(), self.txt.style)?);
             x_offset = x_offset.saturating_add(i32::try_from(c.width()).unwrap_or(i32::MAX));
         }
         Ok(masks)
@@ -432,7 +420,17 @@ mod test {
         let sig_figs: usize = 2;
         let num_str = num_to_str(number, sig_figs);
 
-        assert_eq!(num_str, "2.5e6");
+        // rounded, not truncated
+        assert_eq!(num_str, "2.6e6");
+    }
+
+    #[test]
+    fn num_to_str_negative_and_rounding() {
+        assert_eq!(num_to_str(-0.5, 1), "-0.5");
+        assert_eq!(num_to_str(-0.25, 2), "-0.25");
+        assert_eq!(num_to_str(0.96, 1), "1");
+        assert_eq!(num_to_str(-1234.0, 2), "-1.2e3");
+        assert_eq!(num_to_str(-0.0, 3), "0");
     }
 
     #[test]

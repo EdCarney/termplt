@@ -22,7 +22,7 @@ use std::ops::{Add, Div, Mul, Sub};
 /// let d = Series::from(vec![(1.0, 2.0), (3.0, 4.0)]);
 /// assert_eq!(c.data()[3], Point::new(3.0, 9.0));
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Series {
     data: Vec<Point<f64>>,
     marker_style: MarkerStyle,
@@ -151,6 +151,46 @@ impl<X: Graphable, Y: Graphable> From<(Vec<X>, Vec<Y>)> for Series {
     /// Pairs up x and y values like [`Series::from_xy`].
     fn from((xs, ys): (Vec<X>, Vec<Y>)) -> Series {
         Series::from_xy(&xs, &ys)
+    }
+}
+
+impl<X: Graphable, Y: Graphable> From<&Vec<(X, Y)>> for Series {
+    fn from(data: &Vec<(X, Y)>) -> Series {
+        data.iter().copied().collect()
+    }
+}
+
+impl<X: Graphable, Y: Graphable, const N: usize> From<[(X, Y); N]> for Series {
+    fn from(data: [(X, Y); N]) -> Series {
+        data.into_iter().collect()
+    }
+}
+
+impl<X: Graphable, Y: Graphable, const N: usize> From<&[(X, Y); N]> for Series {
+    fn from(data: &[(X, Y); N]) -> Series {
+        data.iter().copied().collect()
+    }
+}
+
+impl<X: Graphable, Y: Graphable, const N: usize, const M: usize> From<([X; N], [Y; M])> for Series {
+    /// Pairs up x and y values like [`Series::from_xy`].
+    fn from((xs, ys): ([X; N], [Y; M])) -> Series {
+        Series::from_xy(&xs, &ys)
+    }
+}
+
+impl<X: Graphable, Y: Graphable, const N: usize, const M: usize> From<(&[X; N], &[Y; M])>
+    for Series
+{
+    /// Pairs up x and y values like [`Series::from_xy`].
+    fn from((xs, ys): (&[X; N], &[Y; M])) -> Series {
+        Series::from_xy(xs, ys)
+    }
+}
+
+impl<T: Graphable> From<&[Point<T>]> for Series {
+    fn from(data: &[Point<T>]) -> Series {
+        Series::new(data)
     }
 }
 

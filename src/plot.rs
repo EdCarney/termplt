@@ -42,7 +42,7 @@ pub const DEFAULT_PNG_SIZE: (u32, u32) = (800, 600);
 /// `Vec` of `(x, y)` tuples, or a `Vec` of [`Point`](crate::plotting::point::Point)s, with any
 /// primitive numeric type. For full control over styles, pass a styled [`Series`] to
 /// [`Plot::series`], or use [`Plot::canvas`] to get the lower-level [`TerminalCanvas`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Plot {
     series: Vec<Series>,
     x_limits: Option<(f64, f64)>,
@@ -246,7 +246,13 @@ mod tests {
             .line((&xs, &ys))
             .line((xs.as_slice(), ys.as_slice()))
             .line((xs.clone(), ys.clone()))
-            .line(vec![Point::new(0, 1), Point::new(1, 3), Point::new(2, 2)]);
+            .line(vec![Point::new(0, 1), Point::new(1, 3), Point::new(2, 2)])
+            .line([(0, 1), (1, 3), (2, 2)])
+            .line([(0, 1), (1, 3), (2, 2)])
+            .line(vec![(0u8, 1i64), (1, 3), (2, 2)])
+            .line(([0.0, 1.0, 2.0], [1, 3, 2]))
+            .line((&[0.0, 1.0, 2.0], &[1, 3, 2]))
+            .line(&[Point::new(0, 1), Point::new(1, 3), Point::new(2, 2)][..]);
         for series in plot.graph().data() {
             assert_eq!(series.data()[1], Point::new(1.0, 3.0));
         }

@@ -9,7 +9,7 @@ use super::{
 use crate::{Error, common::Result};
 
 /// A set of series drawn on shared axes, with optional axis limits, axes and grid lines.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Graph {
     data: Vec<Series>,
     x_limits: Option<(f64, f64)>,
@@ -173,7 +173,7 @@ impl Graph {
             x_limits: self.x_limits,
             y_limits: self.y_limits,
             axes: self.axes.clone(),
-            grid_lines: self.grid_lines.clone(),
+            grid_lines: self.grid_lines,
         }
     }
 

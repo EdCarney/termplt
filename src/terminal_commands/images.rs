@@ -33,7 +33,7 @@ struct PositionDetails {
 }
 
 /// An image ready to be sent to the terminal with the Kitty graphics protocol.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
     format: PixelFormat,
     transmission: Transmission,

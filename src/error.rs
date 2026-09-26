@@ -137,12 +137,15 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {
+    /// The wrapped error's own source. The wrapped error's message is already part of this
+    /// error's message, so returning the wrapped error itself would make error reporters
+    /// (`anyhow`'s `{:#}`, `eyre`) print it twice.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Terminal(e) => Some(e),
-            Error::WindowSize(e) => Some(e.as_ref()),
-            Error::Image(e) => Some(e),
-            Error::Io(e) => Some(e),
+            Error::Terminal(e) => e.source(),
+            Error::WindowSize(e) => e.source(),
+            Error::Image(e) => e.source(),
+            Error::Io(e) => e.source(),
             _ => None,
         }
     }
@@ -193,10 +196,22 @@ mod tests {
     }
 
     #[test]
-    fn sources_are_exposed() {
+    fn messages_are_not_repeated_down_the_source_chain() {
         use std::error::Error as _;
-        let e = Error::WindowSize(Box::new(Error::Io(io::Error::other("closed"))));
-        assert!(e.source().is_some());
+        let inner = io::Error::other("closed");
+        let e = Error::WindowSize(Box::new(Error::Io(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            inner,
+        ))));
+        // the message has the whole story once...
         assert!(e.to_string().contains("closed"));
+        // ...and no source repeats a message that is already shown
+        let mut shown = e.to_string();
+        let mut source = e.source();
+        while let Some(s) = source {
+            assert!(!shown.contains(&s.to_string()), "{s} repeated in {shown}");
+            shown.push_str(&s.to_string());
+            source = s.source();
+        }
     }
 }

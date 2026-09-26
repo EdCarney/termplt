@@ -12,7 +12,7 @@
 //! # Ok::<(), termplt::Error>(())
 //! ```
 
-use crate::{Error, Result, WindowSize};
+use crate::{Error, Result};
 use std::io::{self, IsTerminal, Write};
 
 pub use crate::{
@@ -22,6 +22,7 @@ pub use crate::{
         kitty_cmds::{Passthrough, query_support},
         responses::TerminalCommandError,
     },
+    window_ctrl::{WindowSize, get_window_size},
 };
 
 /// Cell size assumed when the terminal's pixel size is unknown (a common size for 12-14 pt
@@ -241,7 +242,7 @@ impl Backend for Tty {
     }
 
     fn window_size(&self) -> Result<WindowSize> {
-        crate::get_window_size()
+        get_window_size()
     }
 
     fn cell_count(&self) -> Option<(u16, u16)> {
