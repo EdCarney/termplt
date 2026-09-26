@@ -1,5 +1,6 @@
 mod cli;
 mod data;
+mod names;
 mod series;
 
 use clap::{CommandFactory, Parser};
