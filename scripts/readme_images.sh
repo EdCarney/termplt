@@ -21,4 +21,7 @@ mkdir -p "$out"
 "$termplt" test_data/sine.csv test_data/cosine.csv --title "Sine and cosine" \
     --xlabel "angle (rad)" --ylabel "value" -o "$out/titles.png"
 
+"$termplt" test_data/sine.csv test_data/damped_sine.csv \
+    -s "file=test_data/cosine.csv,label=cos(x)" -o "$out/legend.png"
+
 echo "Wrote $(ls "$out" | wc -l | tr -d ' ') images to $out/"

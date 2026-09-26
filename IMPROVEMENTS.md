@@ -127,9 +127,7 @@ Markers at the minimum and maximum sit on the axis lines. Add default padding of
 The mask order is axes, then grid, then series (`graph.rs` `get_mask`). Draw the grid first.
 
 ### 13. No title, axis names or legend
-◐ **Titles and axis names done (0.3.0):** TrueType text (embedded Go font, `ab_glyph`), `Plot::title`/`x_label`/`y_label`, `--title`/`--xlabel`/`--ylabel`, and names from CSV headers. The legend is next.
-
-The bitmap font covers only `0-9 . - e` and space. Add a small ASCII bitmap font (for example a public-domain 6×8 font, scaled) so titles, axis names and a legend with per-series names become possible. In the CLI that could be `--label "sin(x)"` per series and `--title`.
+✅ **Done (0.3.0).** TrueType text (embedded Go font, `ab_glyph`); titles and axis names (`Plot::title`/`x_label`/`y_label`, `--title`/`--xlabel`/`--ylabel`, names from CSV headers); and a matplotlib-style legend (`Series::with_label`, `Plot::legend`/`legend_location`, automatic CLI names, `label=`, `--legend`/`--no-legend`/`--legend-loc`).
 
 ### 14. Default text color is black
 ✅ **Done (Phase 2).** A tick-label color that equals the background is swapped for black or white.
