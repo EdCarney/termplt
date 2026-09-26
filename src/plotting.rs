@@ -17,13 +17,12 @@ pub mod line;
 mod line_positioning;
 /// Marker styles.
 pub mod marker;
-mod numbers;
 /// 2D points.
 pub mod point;
 /// Data series.
 pub mod series;
 mod srgb;
-/// Bitmap text for labels.
+/// Text styles and labels.
 pub mod text;
 mod ticks;
 

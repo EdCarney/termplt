@@ -14,7 +14,7 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 - **Axes and grid lines** — round tick values, with label space laid out automatically
 - **Axis limits** — optionally constrain x/y ranges with automatic point clipping
 - **Configurable canvas** — set dimensions, background color, and buffer padding
-- **Bitmap text** — built-in 10x11 pixel font for labels and numeric annotations
+- **TrueType text** — an embedded, anti-aliased Go font covering Latin-1, Greek and common math symbols; load your own font for other scripts
 - **Typed errors** — match on `termplt::Error` (no data, canvas too small, terminal unsupported, ...)
 - **Fast** — a million points render in about 0.1-0.3 s
 
