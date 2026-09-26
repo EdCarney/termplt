@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-09-25
 
 A large rework of the library and CLI. The library API has **breaking changes**; see
 "Changed" and "Removed".
@@ -109,6 +109,6 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 
 First releases (0.1.0 and 0.1.1, published the same day).
 
-[0.2.0]: https://github.com/EdCarney/termplt/compare/v0.1.2...HEAD
+[0.2.0]: https://github.com/EdCarney/termplt/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/EdCarney/termplt/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/EdCarney/termplt/releases/tag/v0.1.1
