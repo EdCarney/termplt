@@ -7,12 +7,13 @@ use crate::{
         axes::{Axes, AxesPositioning},
         canvas::{BufferType, TerminalCanvas},
         colors,
+        font::Font,
         graph::Graph,
         grid_lines::GridLines,
         line::LineStyle,
         marker::MarkerStyle,
         series::Series,
-        text::TextStyle,
+        text::{DEFAULT_FONT_SIZE, TextStyle},
     },
     terminal::Terminal,
 };
@@ -50,6 +51,11 @@ pub struct Plot {
     size: Option<(u32, u32)>,
     background: RGB8,
     grid: bool,
+    title: Option<String>,
+    x_label: Option<String>,
+    y_label: Option<String>,
+    font: Font,
+    font_size: Option<u32>,
 }
 
 impl Default for Plot {
@@ -61,6 +67,11 @@ impl Default for Plot {
             size: None,
             background: colors::BLACK,
             grid: true,
+            title: None,
+            x_label: None,
+            y_label: None,
+            font: Font::default(),
+            font_size: None,
         }
     }
 }
@@ -141,6 +152,38 @@ impl Plot {
         self
     }
 
+    /// Sets the title, drawn above the plot. Long titles wrap onto up to 3 lines.
+    pub fn title(mut self, text: impl Into<String>) -> Self {
+        self.title = Some(text.into());
+        self
+    }
+
+    /// Names the x axis.
+    pub fn x_label(mut self, text: impl Into<String>) -> Self {
+        self.x_label = Some(text.into());
+        self
+    }
+
+    /// Names the y axis (drawn turned to read upwards).
+    pub fn y_label(mut self, text: impl Into<String>) -> Self {
+        self.y_label = Some(text.into());
+        self
+    }
+
+    /// Sets the font for all text; characters it lacks are drawn with the built-in Go font.
+    pub fn font(mut self, font: Font) -> Self {
+        self.font = font;
+        self
+    }
+
+    /// Sets the base text size in pixels: tick labels and axis names use it, and the title is
+    /// 1.2 times larger. By default [`Plot::show`] matches the terminal's text
+    /// ([`Terminal::text_size`]), and other output uses [`DEFAULT_FONT_SIZE`].
+    pub fn font_size(mut self, px: u32) -> Self {
+        self.font_size = Some(px);
+        self
+    }
+
     fn next_color(&self) -> RGB8 {
         colors::PALETTE[self.series.len() % colors::PALETTE.len()]
     }
@@ -170,17 +213,37 @@ impl Plot {
         if let Some((min, max)) = self.y_limits {
             graph = graph.with_y_limits(min, max);
         }
+        if let Some(text) = &self.title {
+            graph = graph.with_title(text.clone());
+        }
+        if let Some(text) = &self.x_label {
+            graph = graph.with_x_label(text.clone());
+        }
+        if let Some(text) = &self.y_label {
+            graph = graph.with_y_label(text.clone());
+        }
         graph
     }
 
     /// The canvas the plot is drawn on, for callers that want to adjust it before drawing.
     pub fn canvas(&self, width: u32, height: u32) -> TerminalCanvas {
+        self.canvas_with_font_size(width, height, self.font_size.unwrap_or(DEFAULT_FONT_SIZE))
+    }
+
+    fn canvas_with_font_size(&self, width: u32, height: u32, font_size: u32) -> TerminalCanvas {
         // tick labels are laid out inside the canvas automatically; the buffer is just
         // breathing room around the edges
         let buffer = (width.min(height) / 40).max(8);
         TerminalCanvas::new(width, height, self.background)
             .with_buffer(BufferType::Uniform(buffer))
+            .with_font(self.font.clone())
+            .with_font_size(font_size)
             .with_graph(self.graph())
+    }
+
+    /// The base text size [`Plot::show_in`] uses: the one set, or the terminal's.
+    fn font_size_in(&self, terminal: &Terminal) -> u32 {
+        self.font_size.unwrap_or_else(|| terminal.text_size())
     }
 
     /// Draws the plot and returns its RGB8 pixels (`width * height * 3` bytes, row-major, top
@@ -214,7 +277,11 @@ impl Plot {
     /// Like [`Plot::show`], with a [`Terminal`] that was already connected.
     pub fn show_in(&self, terminal: &Terminal) -> Result<()> {
         let (width, height) = self.size.unwrap_or_else(|| terminal.default_plot_size());
-        terminal.show_rgb(&self.render(width, height)?, width, height)
+        let rgb = self
+            .canvas_with_font_size(width, height, self.font_size_in(terminal))
+            .draw()?
+            .into_bytes();
+        terminal.show_rgb(&rgb, width, height)
     }
 }
 
@@ -222,6 +289,45 @@ impl Plot {
 mod tests {
     use super::*;
     use crate::plotting::point::Point;
+
+    #[test]
+    fn titles_and_names_reach_the_graph() {
+        let graph = Plot::new()
+            .line(vec![(0, 0), (1, 1)])
+            .title("T")
+            .x_label("x")
+            .y_label("y")
+            .graph();
+        assert_eq!(graph.title(), Some("T"));
+        assert_eq!(graph.x_label(), Some("x"));
+        assert_eq!(graph.y_label(), Some("y"));
+    }
+
+    #[test]
+    fn font_size_sets_the_text_size_of_the_canvas() {
+        let plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let area = |p: &Plot| p.canvas(800, 600).get_drawable_limits().unwrap().span();
+        assert_eq!(
+            area(&plot),
+            area(&plot.clone().font_size(DEFAULT_FONT_SIZE))
+        );
+        // bigger text leaves less room for the plot
+        assert!(area(&plot.clone().font_size(40)).1 < area(&plot).1);
+    }
+
+    #[test]
+    fn show_matches_the_terminal_text_unless_a_size_is_set() {
+        let terminal = Terminal::with_window(crate::terminal::WindowSize {
+            rows: 50,
+            cols: 160,
+            x_pix: 1600,
+            y_pix: 1700,
+            pix_per_row: 34,
+            pix_per_col: 10,
+        });
+        assert_eq!(Plot::new().font_size_in(&terminal), 28);
+        assert_eq!(Plot::new().font_size(20).font_size_in(&terminal), 20);
+    }
 
     #[test]
     fn series_get_palette_colors_in_order() {
