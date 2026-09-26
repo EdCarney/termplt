@@ -34,6 +34,8 @@ termplt --data "(1,1),(2,4),(3,9),(4,16)"
 ```
 <img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/64f9f8a0-3631-4c6f-baf4-782694f673e1" />
 
+The `test_data/` files in the next examples come from `scripts/generate_test_data.py` (see [Test Data Generation](#test-data-generation)).
+
 ```bash
 # Scatter plot (no connecting lines)
 termplt test_data/random_clusters.csv --line none
@@ -268,11 +270,15 @@ Key abstractions:
 
 ```bash
 cargo build       # Build the library and CLI binary
-cargo test        # Run unit, golden-image and property tests
+cargo test        # Run unit, golden-image, property and end-to-end CLI tests
 cargo clippy --all-targets -- -D warnings   # Lint
 cargo run -- data.csv                       # Render a plot (requires a Kitty-compatible terminal)
 cargo run -- data.csv -o plot.png           # Or write it to an image file
 ```
+
+The end-to-end tests run the CLI binary: `tests/cli.rs` writes PNGs and checks errors, and on Unix `tests/pty.rs` runs it in a pseudo-terminal against a scripted fake terminal (Kitty-like, silent, no graphics, tmux with passthrough on and off), so the terminal handling is tested without a real terminal. CI runs the tests on Linux, macOS and Windows, and on the minimum supported Rust version (1.88).
+
+Releases are made by pushing a tag that matches the version in `Cargo.toml` (`git tag v0.2.1 && git push origin v0.2.1`). The release workflow tests, builds binaries for Linux, macOS (Intel and Apple Silicon) and Windows, attaches them with a `SHA256SUMS` file to a GitHub release, and publishes to crates.io when the `CARGO_REGISTRY_TOKEN` secret is set. See [CHANGELOG.md](https://github.com/EdCarney/termplt/blob/main/CHANGELOG.md) for what changed in each version.
 
 ### Test Data Generation
 
