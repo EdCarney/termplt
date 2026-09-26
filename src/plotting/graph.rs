@@ -101,6 +101,12 @@ impl Graph {
         &self.data
     }
 
+    /// The series, in drawing order, for changing their data or styles in place. Use
+    /// [`Graph::with_series`] to add one.
+    pub fn data_mut(&mut self) -> &mut [Series] {
+        &mut self.data
+    }
+
     /// The axes, if any.
     pub fn axes(&self) -> Option<&Axes> {
         self.axes.as_ref()
@@ -401,6 +407,26 @@ mod tests {
         assert!(!scaled.legend_visible());
         assert_eq!(scaled.legend_location(), LegendLocation::Center);
         assert_eq!(scaled.data()[0].label(), Some("a"));
+    }
+
+    #[test]
+    fn data_mut_returns_every_series_in_order() {
+        let mut graph = Graph::new()
+            .with_series(Series::from(vec![(0, 0)]).with_label("a"))
+            .with_series(Series::from(vec![(1, 1)]).with_label("b"))
+            .with_series(Series::from(vec![(2, 2)]).with_label("c"));
+        let labels: Vec<_> = graph.data_mut().iter().map(|s| s.label()).collect();
+        assert_eq!(labels, [Some("a"), Some("b"), Some("c")]);
+
+        graph.data_mut()[1].push(5, 7);
+        assert_eq!(
+            graph.data()[1].data(),
+            [Point::new(1.0, 1.0), Point::new(5.0, 7.0)]
+        );
+        assert_eq!(
+            graph.limits().unwrap(),
+            Limits::new(Point::new(0.0, 0.0), Point::new(5.0, 7.0))
+        );
     }
 
     #[test]

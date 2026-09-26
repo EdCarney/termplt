@@ -203,6 +203,20 @@ impl Plot {
         self
     }
 
+    /// The series, in the order they were added, for changing their data or styles in place,
+    /// for example to append points and redraw. Use [`Plot::line`] and the others to add one.
+    ///
+    /// ```
+    /// use termplt::Plot;
+    ///
+    /// let mut plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+    /// plot.series_mut()[0].push(2, 4);
+    /// assert_eq!(plot.graph().data()[0].data().len(), 3);
+    /// ```
+    pub fn series_mut(&mut self) -> &mut [Series] {
+        &mut self.series
+    }
+
     fn next_color(&self) -> RGB8 {
         colors::PALETTE[self.series.len() % colors::PALETTE.len()]
     }
@@ -325,6 +339,55 @@ mod tests {
             .graph();
         assert!(!graph.legend_visible());
         assert_eq!(graph.legend_location(), LegendLocation::UpperLeft);
+    }
+
+    #[test]
+    fn series_mut_returns_every_series_in_order() {
+        let mut plot = Plot::new()
+            .line(Series::from(vec![(0, 0), (1, 1)]).with_label("a"))
+            .scatter(Series::from(vec![(0, 1)]).with_label("b"))
+            .line_points(Series::from(vec![(1, 0)]).with_label("c"));
+        let labels: Vec<_> = plot.series_mut().iter().map(|s| s.label()).collect();
+        assert_eq!(labels, [Some("a"), Some("b"), Some("c")]);
+
+        plot.series_mut()[2].push(2, 3);
+        plot.series_mut()[0].keep_last(1);
+        let graph = plot.graph();
+        assert_eq!(graph.data()[0].data(), [Point::new(1.0, 1.0)]);
+        assert_eq!(graph.data()[1].data(), [Point::new(0.0, 1.0)]);
+        assert_eq!(
+            graph.data()[2].data(),
+            [Point::new(1.0, 0.0), Point::new(2.0, 3.0)]
+        );
+        // the styles set by the builders stay
+        assert_eq!(
+            graph.data()[2].line_style().unwrap().color(),
+            colors::PALETTE[2]
+        );
+    }
+
+    #[test]
+    fn a_plot_updated_in_place_renders_like_one_built_from_scratch() {
+        let points = |range: std::ops::Range<i32>| -> Vec<(i32, i32)> {
+            range.map(|i| (i, (i * 7) % 11)).collect()
+        };
+        let mut live = Plot::new()
+            .line(Series::from(points(0..5)).with_label("line"))
+            .scatter(Series::from(points(0..5)).with_label("points"))
+            .title("live");
+        for i in 5..40 {
+            for series in live.series_mut() {
+                series.push(i, (i * 7) % 11);
+                series.keep_last(20);
+            }
+        }
+
+        let fresh = Plot::new()
+            .line(Series::from(points(20..40)).with_label("line"))
+            .scatter(Series::from(points(20..40)).with_label("points"))
+            .title("live");
+        assert_eq!(live, fresh);
+        assert!(live.render(320, 240).unwrap() == fresh.render(320, 240).unwrap());
     }
 
     #[test]

@@ -86,6 +86,55 @@ impl Series {
         self.label.as_deref().filter(|label| !label.is_empty())
     }
 
+    /// Appends a point, converted to `f64` like the points of [`Series::from`]. Non-finite
+    /// values are allowed: they are not drawn, and the line breaks there.
+    ///
+    /// ```
+    /// use termplt::plotting::{point::Point, series::Series};
+    ///
+    /// let mut series = Series::from(vec![(0, 1.5)]);
+    /// series.push(1u64, 2.5f32);
+    /// assert_eq!(series.data()[1], Point::new(1.0, 2.5));
+    /// ```
+    pub fn push<X: Graphable, Y: Graphable>(&mut self, x: X, y: Y) {
+        self.data.push(Point::new(x.to_f64(), y.to_f64()));
+    }
+
+    /// Appends points, converted to `f64` like the points of [`Series::from`].
+    pub fn extend<X: Graphable, Y: Graphable>(&mut self, points: impl IntoIterator<Item = (X, Y)>) {
+        self.data.extend(
+            points
+                .into_iter()
+                .map(|(x, y)| Point::new(x.to_f64(), y.to_f64())),
+        );
+    }
+
+    /// Removes every point; the styles and label stay.
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
+
+    /// Drops the oldest points so that at most `n` remain (a sliding window). Does nothing when
+    /// the series has `n` points or fewer; `keep_last(0)` removes every point.
+    ///
+    /// ```
+    /// use termplt::plotting::series::Series;
+    ///
+    /// let mut series = Series::from_y(&[1, 2, 3, 4, 5]);
+    /// series.keep_last(2);
+    /// assert_eq!(series.data().len(), 2);
+    /// assert_eq!(series.data()[0].y, 4.0);
+    /// ```
+    pub fn keep_last(&mut self, n: usize) {
+        let excess = self.data.len().saturating_sub(n);
+        self.data.drain(..excess);
+    }
+
+    /// The points, for changes the methods above don't cover (`retain`, `drain`, ...).
+    pub fn data_mut(&mut self) -> &mut Vec<Point<f64>> {
+        &mut self.data
+    }
+
     /// A series with the same styles and the points produced by `f`.
     pub(crate) fn map_points(&self, f: impl FnOnce(&[Point<f64>]) -> Vec<Point<f64>>) -> Series {
         Series {
@@ -275,6 +324,92 @@ mod tests {
         assert_eq!(series.label(), None);
         assert_eq!(series.clone().with_label("sin").label(), Some("sin"));
         assert_eq!(series.with_label("").label(), None);
+    }
+
+    #[test]
+    fn push_and_extend_convert_like_from() {
+        let expected = Series::from(vec![(1u8, 10.5f32), (2, 20.0), (3, -4.0)]);
+
+        let mut pushed = Series::default();
+        pushed.push(1u8, 10.5f32);
+        pushed.push(2i64, 20u16);
+        pushed.push(3usize, -4i32);
+        assert_eq!(pushed.data(), expected.data());
+
+        let mut extended = Series::from(vec![(1i16, 10.5f64)]);
+        extended.extend([(2u64, 20i8), (3, -4)]);
+        assert_eq!(extended.data(), expected.data());
+    }
+
+    #[test]
+    fn push_accepts_non_finite_points() {
+        let mut series = Series::from(vec![(0, 0)]);
+        series.push(f64::NAN, 1.0);
+        series.push(2.0, f64::INFINITY);
+        assert_eq!(series.data().len(), 3);
+        assert!(series.data()[1].x.is_nan());
+        assert_eq!(series.data()[2].y, f64::INFINITY);
+    }
+
+    #[test]
+    fn keep_last_keeps_the_newest_points() {
+        let mut series: Series = (0..10).map(|i| (i, i * i)).collect();
+        series.keep_last(3);
+        assert_eq!(
+            series.data(),
+            [
+                Point::new(7.0, 49.0),
+                Point::new(8.0, 64.0),
+                Point::new(9.0, 81.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn keep_last_with_at_least_len_is_a_no_op() {
+        let original: Series = (0..4).map(|i| (i, i)).collect();
+        for n in [4, 5, usize::MAX] {
+            let mut series = original.clone();
+            series.keep_last(n);
+            assert_eq!(series, original, "n = {n}");
+        }
+    }
+
+    #[test]
+    fn keep_last_zero_empties_the_series() {
+        let mut series: Series = (0..4).map(|i| (i, i)).collect();
+        series.keep_last(0);
+        assert!(series.data().is_empty());
+    }
+
+    #[test]
+    fn clear_keeps_the_styles_and_label() {
+        let marker = MarkerStyle::HollowSquare {
+            size: 3,
+            color: crate::plotting::colors::RED,
+        };
+        let line = LineStyle::dashed(crate::plotting::colors::LIME, 2);
+        let mut series = Series::from(vec![(0, 0), (1, 1)])
+            .with_marker_style(marker)
+            .with_line_style(line)
+            .with_label("sin");
+        series.clear();
+        assert!(series.data().is_empty());
+        assert_eq!(*series.marker_style(), marker);
+        assert_eq!(series.line_style(), Some(&line));
+        assert_eq!(series.label(), Some("sin"));
+    }
+
+    #[test]
+    fn data_mut_round_trips() {
+        let mut series: Series = (0..6).map(|i| (i, 10 * i)).collect();
+        series.data_mut().retain(|p| p.x >= 4.0);
+        assert_eq!(
+            series.data(),
+            [Point::new(4.0, 40.0), Point::new(5.0, 50.0)]
+        );
+        series.data_mut().push(Point::new(6.0, 60.0));
+        assert_eq!(series.data().last(), Some(&Point::new(6.0, 60.0)));
     }
 
     #[test]
