@@ -197,8 +197,6 @@ impl TableReader {
     }
 
     /// The field count of the header, or of the first data row (for the single-column rule).
-    // `Table` keeps its widest-row width, so until `--follow` (#52) only tests call this
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn width(&self) -> Option<usize> {
         self.width
     }

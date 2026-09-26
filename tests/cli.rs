@@ -82,6 +82,32 @@ fn not_a_terminal_suggests_output() {
 }
 
 #[test]
+fn follow_cannot_write_a_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let png = dir.path().join("plot.png");
+    // stdin stays empty: the CLI exits without reading it, which could break a longer write
+    let out = termplt(&["--follow", "--output", png.to_str().unwrap()], "");
+    assert!(!out.status.success());
+    let err = stderr(&out);
+    assert!(
+        err.contains("'--follow' cannot be used with '--output <FILE>'"),
+        "{err}"
+    );
+    assert!(!png.exists());
+}
+
+#[test]
+fn follow_without_a_terminal_does_not_suggest_output() {
+    let out = termplt(&["--follow"], "");
+    assert!(!out.status.success());
+    let err = stderr(&out);
+    assert!(err.contains("not a terminal"), "{err}");
+    // --follow can't write a file, so that is no way out
+    assert!(!err.contains("--output"), "{err}");
+    assert!(!out.stdout.contains(&0x1b));
+}
+
+#[test]
 fn rejects_non_png_output_before_reading_data() {
     let out = termplt(&["missing.csv", "-o", "plot.jpg"], "");
     assert!(!out.status.success());
