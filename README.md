@@ -32,7 +32,7 @@ seq 0 50 | awk '{print $1/5, sin($1/5)}' | termplt
 # Inline points
 termplt --data "(1,1),(2,4),(3,9),(4,16)"
 ```
-<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/64f9f8a0-3631-4c6f-baf4-782694f673e1" />
+<img width="600" height="450" alt="Line plot of the points (1,1), (2,4), (3,9) and (4,16)" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/inline-points.png" />
 
 The `test_data/` files in the next examples come from `scripts/generate_test_data.py` (see [Test Data Generation](#test-data-generation)).
 
@@ -40,7 +40,7 @@ The `test_data/` files in the next examples come from `scripts/generate_test_dat
 # Scatter plot (no connecting lines)
 termplt test_data/random_clusters.csv --line none
 ```
-<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/97be7e79-5224-44c3-b9a3-e7676887ef4e" />
+<img width="600" height="450" alt="Scatter plot of three clusters of random points" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/scatter.png" />
 
 ```bash
 # Multiple series with automatic color cycling
@@ -49,24 +49,22 @@ termplt test_data/sine.csv test_data/cosine.csv
 # Several columns of one file, selected by header name
 termplt sensors.csv -x time -y temp,humidity
 ```
-<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/4a9a3f03-2ff5-452f-a904-3006e8b4f3ed" />
+<img width="600" height="450" alt="Sine and cosine curves in two palette colors" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/multiple-series.png" />
 
 ```bash
 # Custom styling for every series
 termplt test_data/lissajous.csv --marker hollow-circle --marker-size 4 --color cyan --line-thickness 1
 ```
-<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/24d56a94-9013-40bf-b4cb-eaa38082c7a6" />
+<img width="600" height="450" alt="Cyan Lissajous curve with hollow circle markers" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/custom-style.png" />
 
 ```bash
 # Per-series data and style with --series
 termplt -s "file=a.csv,color=red" -s "file=b.csv,color=#1e90ff,marker=none,line=dashed"
 
 # Line-only plot, axis limits, and write a PNG instead of displaying it
-termplt data.csv --marker none --color lime --line-thickness 1 --xlim 0,10 -o plot.png
+termplt test_data/noisy_linear.csv --marker none --color lime --line-thickness 1 --xlim 0,10 -o plot.png
 ```
-<img width="517" height="518" alt="image" src="https://github.com/user-attachments/assets/18e2f854-94c1-4a8a-ae4e-c446683488cf" />
-
-_The screenshots above are from an earlier version; axes now use round tick values._
+<img width="600" height="450" alt="Green line of noisy linear data with the x axis limited to 0 to 10" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/line-limits.png" />
 
 ### Options
 

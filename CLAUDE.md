@@ -12,6 +12,7 @@ cargo test draw_into_matches_get_mask # Run a single test by name
 cargo clippy --all-targets -- -D warnings  # Lint (CI fails on any warning)
 cargo fmt --check                    # Formatting (enforced in CI)
 TERMPLT_UPDATE_SNAPSHOTS=1 cargo test --test golden  # Regenerate golden PNGs after an intentional rendering change (review them!)
+scripts/readme_images.sh             # Regenerate the README images in docs/images/ (same commands as the README)
 PROPTEST_CASES=20000 cargo test --test properties    # Longer property-test run
 cargo run -- --data "(1,1),(2,4)"    # Render a plot via the CLI (needs a Kitty-protocol terminal)
 cargo run -- data.csv -o plot.png    # Write a PNG instead (no terminal needed; handy for checking output)
