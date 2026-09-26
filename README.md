@@ -148,7 +148,7 @@ echo 'set -g allow-passthrough on' >> ~/.tmux.conf   # permanently
 
 The CLI stops with that hint when passthrough is off. tmux doesn't track the image itself, so it disappears when tmux redraws the pane (switching windows, resizing, scrolling in copy mode); run the command again to redraw it.
 
-**Windows.** Rendering works in terminals that implement the protocol on Windows, such as WezTerm. Terminal queries are read from the console (`CONIN$`) with VT input; this path is compiled and unit-tested in CI but has not been verified interactively yet. Windows Terminal does not implement the Kitty protocol, so use `--output` there. If you try it, please report what works:
+**Windows.** Rendering works in terminals that implement the protocol on Windows, such as WezTerm. Terminal queries are read from the console (`CONIN$`) with VT input enabled while the query runs. This path compiles and is linted in CI, and its reply parsing is unit-tested, but the console handling itself has not been run on Windows yet. One known limitation for library users: after the first query, a background thread keeps reading the console, so a long-running interactive program that calls `Plot::show()` loses the next line typed at the console (the CLI exits after drawing and is unaffected). Windows Terminal does not implement the Kitty protocol, so use `--output` there. If you try it, please report what works:
 
 1. `termplt --data "(1,1),(2,4)" -v` shows a plot and prints the detected terminal size.
 2. `Get-Content data.csv | termplt -v` (PowerShell) works with piped input (queries still reach the console).

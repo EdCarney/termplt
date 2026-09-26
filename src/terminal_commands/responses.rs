@@ -88,6 +88,8 @@ pub trait TermCommand {
         // raw mode must be active before the request is written so the reply is neither echoed
         // nor line-buffered; the guard restores the previous mode on every exit path
         let _raw_mode = RawModeGuard::enable()?;
+        // declared after the raw-mode guard, so it is dropped (and the mode restored) first
+        let _vt_input = sys::VtInputGuard::enable();
 
         tty.write_all(self.get_request())?;
         tty.write_all(DA1_REQUEST)?;
@@ -229,6 +231,15 @@ mod sys {
         os::fd::{AsRawFd, RawFd},
         time::{Duration, Instant},
     };
+
+    /// Terminal replies already arrive as bytes on Unix.
+    pub struct VtInputGuard;
+
+    impl VtInputGuard {
+        pub fn enable() -> VtInputGuard {
+            VtInputGuard
+        }
+    }
 
     /// The controlling terminal, opened directly so that queries work even when stdin/stdout are
     /// redirected.
@@ -383,6 +394,42 @@ mod sys {
         time::Duration,
     };
 
+    use crossterm_winapi::{ConsoleMode, Handle};
+
+    /// `ENABLE_VIRTUAL_TERMINAL_INPUT`: the console delivers input, including the terminal's
+    /// replies to queries, as VT byte sequences that `ReadFile` returns. Without it, replies
+    /// are translated into key events and may never reach `ReadFile`.
+    /// <https://learn.microsoft.com/en-us/windows/console/setconsolemode>
+    const ENABLE_VIRTUAL_TERMINAL_INPUT: u32 = 0x0200;
+
+    /// Enables VT input on the console for the duration of a query and restores the previous
+    /// mode when dropped. Best effort: consoles that don't support the flag are left alone.
+    pub struct VtInputGuard {
+        restore: Option<(ConsoleMode, u32)>,
+    }
+
+    impl VtInputGuard {
+        pub fn enable() -> VtInputGuard {
+            let restore = Handle::current_in_handle()
+                .map(ConsoleMode::from)
+                .and_then(|mode| {
+                    let previous = mode.mode()?;
+                    mode.set_mode(previous | ENABLE_VIRTUAL_TERMINAL_INPUT)?;
+                    Ok((mode, previous))
+                })
+                .ok();
+            VtInputGuard { restore }
+        }
+    }
+
+    impl Drop for VtInputGuard {
+        fn drop(&mut self) {
+            if let Some((mode, previous)) = &self.restore {
+                let _ = mode.set_mode(*previous);
+            }
+        }
+    }
+
     /// The console's input and output buffers. Opened by name rather than through stdin/stdout
     /// so queries still work when those are redirected (e.g. data piped into the CLI).
     const CONSOLE_IN: &str = "CONIN$";
@@ -391,6 +438,10 @@ mod sys {
     /// Console input cannot be polled with a timeout using only the standard library, so a
     /// background thread performs blocking reads from the console and forwards the bytes over a
     /// channel. The thread is shared by all queries and lives for the rest of the process.
+    ///
+    /// Known limitation: after a query, the thread stays blocked in a read of the console, so
+    /// in a long-running interactive program the next line typed at the console goes to it
+    /// rather than to the program. The CLI exits right after drawing, so it is unaffected.
     static INPUT: OnceLock<Mutex<Receiver<io::Result<Vec<u8>>>>> = OnceLock::new();
 
     fn input() -> &'static Mutex<Receiver<io::Result<Vec<u8>>>> {

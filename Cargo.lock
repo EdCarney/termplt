@@ -630,6 +630,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "crossterm",
+ "crossterm_winapi",
  "image",
  "libc",
  "proptest",

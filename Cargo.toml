@@ -26,6 +26,10 @@ rgb = "0.8.50"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Already a crossterm dependency on Windows; used to enable VT input while querying the console.
+[target.'cfg(windows)'.dependencies]
+crossterm_winapi = "0.9"
+
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }
 tempfile = "3"
