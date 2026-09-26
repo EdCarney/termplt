@@ -58,12 +58,22 @@ pub fn series_names(sources: &[NameSource]) -> Vec<Option<String>> {
         names[i].is_some()
             && (names.iter().enumerate()).any(|(j, other)| j != i && *other == names[i])
     };
-    let clashing: Vec<usize> = (0..names.len())
-        .filter(|&i| automatic(i) && repeated(&names, i))
-        .collect();
-    for i in clashing {
+    let stem_name = |i: usize| {
         let path = sources[i].path.as_deref().unwrap_or_default();
-        names[i] = Some(file_name(&sources[i], &stem(path)));
+        Some(file_name(&sources[i], &stem(path)))
+    };
+    // a file name can equal a name that didn't clash before, so repeat until nothing changes;
+    // each round moves at least one name to its file name, which never changes again
+    loop {
+        let clashing: Vec<usize> = (0..names.len())
+            .filter(|&i| automatic(i) && repeated(&names, i) && names[i] != stem_name(i))
+            .collect();
+        if clashing.is_empty() {
+            break;
+        }
+        for i in clashing {
+            names[i] = stem_name(i);
+        }
     }
     let clashing: Vec<usize> = (0..names.len())
         .filter(|&i| automatic(i) && repeated(&names, i))
@@ -215,6 +225,19 @@ mod tests {
                 file("runs/2/d.csv", Some("value"), 2),
             ],
             &[Some("runs/1/d.csv"), Some("runs/2/d.csv")],
+        );
+    }
+
+    #[test]
+    fn a_renamed_series_does_not_take_another_series_name() {
+        // b.csv's name falls back to "b", which is a.csv's header: a.csv falls back to "a"
+        check(
+            &[
+                file("a.csv", Some("b"), 2),
+                file("b.csv", Some("value"), 2),
+                file("c.csv", Some("value"), 2),
+            ],
+            &[Some("a"), Some("b"), Some("c")],
         );
     }
 
