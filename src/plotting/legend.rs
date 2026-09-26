@@ -117,6 +117,14 @@ impl Entry {
     fn sample_reach(&self) -> u32 {
         (self.marker.size()).max(self.line.map_or(0, |line| line.thickness()))
     }
+
+    /// The narrowest sample that shows this entry: the marker whole, and the line's round ends
+    /// with `run` pixels of straight line between them, so a thick line still reads as a line.
+    fn min_sample_width(&self, run: u32) -> u32 {
+        let diameter = |reach: u32| reach.saturating_mul(2).saturating_add(1);
+        let line = (self.line).map_or(0, |line| diameter(line.thickness()).saturating_add(run));
+        diameter(self.marker.size()).max(line)
+    }
 }
 
 /// A legend laid out with its top-left pixel at (0, 0) and offsets counting down.
@@ -168,9 +176,10 @@ pub(crate) fn build(
     let (pad, spacing, axes_pad) = (px(BORDER_PAD), px(LABEL_SPACING), px(BORDER_AXES_PAD));
     let pitch = (text.size as f32 * LINE_SPACING).round() as u32;
 
-    // one sample column for every entry, wide enough for the widest marker or line
+    // one sample column for every entry, wide enough for the widest marker, and for 1 em of
+    // straight line between a thick line's round ends
     let sample_width = (entries.iter())
-        .map(|e| e.sample_reach().saturating_mul(2).saturating_add(1))
+        .map(|e| e.min_sample_width(px(1.0)))
         .fold(px(HANDLE_LENGTH), u32::max);
     let max_width = (plot_width / 2).min(plot_width.saturating_sub(2 * axes_pad));
     let max_height = plot_height.saturating_sub(2 * axes_pad);
@@ -577,6 +586,20 @@ mod tests {
         // "+7 more" wider than a 14 px text column
         assert_eq!(build(&entries, TEXT, measure, 130, 120), None);
         assert_eq!(build(&[], TEXT, measure, 400, 300), None);
+    }
+
+    #[test]
+    fn a_thick_line_keeps_a_straight_run_of_one_em() {
+        let thick = Entry {
+            line: Some(LineStyle::solid(colors::RED, 20)),
+            ..entry("thick")
+        };
+        let legend = build(&[thick], TEXT, measure, 400, 300).unwrap();
+        // the round ends take 2 × 20 + 1 px; 1 em (14 px) of straight line stays between them
+        assert_eq!(legend.sample_width, 41 + 14);
+        // thin lines keep matplotlib's 2 em
+        let thin = build(&[entry("thin")], TEXT, measure, 400, 300).unwrap();
+        assert_eq!(thin.sample_width, 28);
     }
 
     #[test]

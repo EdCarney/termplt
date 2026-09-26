@@ -31,7 +31,7 @@ Finish IMPROVEMENTS.md item 13: series get names, and a plot with named series s
 | Architecture | `Graph` holds the settings, `TerminalCanvas` draws the legend, `plotting/legend.rs` computes it | Every way of drawing gets legends. `draw()` already holds the scaled series that "best" needs. |
 
 **Deliberate differences from matplotlib**
-- **Big markers and thick lines:** an entry is tall enough for its sample, and the sample column widens for a marker wider than 2 em. matplotlib lets them spill into the next row; pixel markers can be large next to 14 px text.
+- **Big markers and thick lines:** an entry is tall enough for its sample, and the sample column widens for a marker wider than 2 em, or a line too thick to show 1 em of straight line within 2 em. matplotlib lets them spill into the next row; pixel markers can be large next to 14 px text.
 - **Overflow:** the size caps, wrapping, `…` and the `+N more` row. matplotlib's legend grows without limit.
 - **Edge:** always 1 px, colored from the text and background colors (on black text over white this is matplotlib's `0.8` gray exactly). matplotlib's edge is 1 pt, so it scales with dpi.
 - **Blending:** the 80% frame is blended in linear light with `Canvas::blend`, like text. matplotlib's Agg blends in sRGB, so data under the frame shows through slightly differently.
@@ -138,7 +138,7 @@ Plot::new()
 - A series with a line gets a horizontal line across the sample in its own `LineStyle`: color, thickness, and for a dashed line the 6-on/4-off pattern starting at the sample's left edge.
 - A series with a marker gets one marker, at its own size, in the middle of the sample (matplotlib's `numpoints=1`, `markerscale=1`). Line and marker together give both.
 - A series with neither gets an empty sample and its label.
-- The sample column is `max(HANDLE_LENGTH, widest marker diameter)` wide, the same for every entry, so the labels line up.
+- The sample column is `max(HANDLE_LENGTH, widest marker diameter, widest line's 2 × thickness + 1 plus 1 em)` wide, the same for every entry, so the labels line up. The extra em keeps a thick line's sample a line between its round ends, not a disc.
 
 **One entry:** the sample's vertical center sits on the text's center line: for one line, the middle of the digit height (as y tick labels are placed in spec 1); for two lines, halfway between the two lines' centers (matplotlib's `multilinebaseline`). The entry is as tall as the text block and the sample together (a marker is `2 × size + 1` px tall, a line `2 × thickness + 1`).
 
