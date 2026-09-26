@@ -2,6 +2,7 @@ use super::{
     axes::Axes,
     common::{Drawable, Graphable, MaskPoints},
     grid_lines::GridLines,
+    legend::LegendLocation,
     limits::Limits,
     point::Point,
     series::Series,
@@ -19,6 +20,9 @@ pub struct Graph {
     title: Option<String>,
     x_label: Option<String>,
     y_label: Option<String>,
+    /// `false` by default, so the derived `Default` shows the legend.
+    hide_legend: bool,
+    legend_location: LegendLocation,
 }
 
 impl Graph {
@@ -66,6 +70,20 @@ impl Graph {
         self
     }
 
+    /// Shows or hides the legend. It is shown by default whenever a series has a label
+    /// ([`Series::with_label`]).
+    pub fn with_legend(mut self, show: bool) -> Self {
+        self.hide_legend = !show;
+        self
+    }
+
+    /// Where the legend goes. [`LegendLocation::Best`], the default, picks the location that
+    /// covers the least data.
+    pub fn with_legend_location(mut self, location: LegendLocation) -> Self {
+        self.legend_location = location;
+        self
+    }
+
     /// Fixes the x range; points outside it are not drawn, and lines break where they were. Without it, the range fits the data.
     pub fn with_x_limits<T: Graphable>(mut self, min: T, max: T) -> Self {
         self.x_limits = Some((min.to_f64(), max.to_f64()));
@@ -106,6 +124,16 @@ impl Graph {
     /// The y axis name, if one was set.
     pub fn y_label(&self) -> Option<&str> {
         self.y_label.as_deref()
+    }
+
+    /// Whether a legend is drawn when some series has a label.
+    pub fn legend_visible(&self) -> bool {
+        !self.hide_legend
+    }
+
+    /// Where the legend goes.
+    pub fn legend_location(&self) -> LegendLocation {
+        self.legend_location
     }
 
     /// The explicit x range, if one was set.
@@ -216,6 +244,8 @@ impl Graph {
             title: self.title.clone(),
             x_label: self.x_label.clone(),
             y_label: self.y_label.clone(),
+            hide_legend: self.hide_legend,
+            legend_location: self.legend_location,
         }
     }
 
@@ -355,6 +385,23 @@ impl Drawable for Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legend_settings_default_and_survive_scaling() {
+        let graph = Graph::new().with_series(Series::from(vec![(0, 0), (1, 1)]).with_label("a"));
+        assert!(graph.legend_visible());
+        assert_eq!(graph.legend_location(), LegendLocation::Best);
+
+        let graph = graph
+            .with_legend(false)
+            .with_legend_location(LegendLocation::Center);
+        let scaled = graph
+            .scale(Limits::new(Point::new(0.0, 0.0), Point::new(10.0, 10.0)))
+            .unwrap();
+        assert!(!scaled.legend_visible());
+        assert_eq!(scaled.legend_location(), LegendLocation::Center);
+        assert_eq!(scaled.data()[0].label(), Some("a"));
+    }
 
     #[test]
     fn removed_points_leave_one_gap() {

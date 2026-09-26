@@ -10,6 +10,7 @@ use crate::{
         font::Font,
         graph::Graph,
         grid_lines::GridLines,
+        legend::LegendLocation,
         line::LineStyle,
         marker::MarkerStyle,
         series::Series,
@@ -56,6 +57,8 @@ pub struct Plot {
     y_label: Option<String>,
     font: Font,
     font_size: Option<u32>,
+    legend: bool,
+    legend_location: LegendLocation,
 }
 
 impl Default for Plot {
@@ -72,6 +75,8 @@ impl Default for Plot {
             y_label: None,
             font: Font::default(),
             font_size: None,
+            legend: true,
+            legend_location: LegendLocation::Best,
         }
     }
 }
@@ -184,6 +189,20 @@ impl Plot {
         self
     }
 
+    /// Shows or hides the legend. It is shown by default whenever a series has a label: pass
+    /// `Series::from(data).with_label("name")` to [`Plot::line`] and the others.
+    pub fn legend(mut self, show: bool) -> Self {
+        self.legend = show;
+        self
+    }
+
+    /// Where the legend goes inside the plot. By default it's the location covering the least
+    /// data, as matplotlib's `loc="best"` picks it.
+    pub fn legend_location(mut self, location: LegendLocation) -> Self {
+        self.legend_location = location;
+        self
+    }
+
     fn next_color(&self) -> RGB8 {
         colors::PALETTE[self.series.len() % colors::PALETTE.len()]
     }
@@ -203,7 +222,9 @@ impl Plot {
             .with_axes(Axes::new(
                 AxesPositioning::XY(LineStyle::solid(foreground, 1)),
                 TextStyle::with_color(foreground),
-            ));
+            ))
+            .with_legend(self.legend)
+            .with_legend_location(self.legend_location);
         if self.grid {
             graph = graph.with_grid_lines(GridLines::XY(LineStyle::solid(grid_color, 0)));
         }
@@ -289,6 +310,22 @@ impl Plot {
 mod tests {
     use super::*;
     use crate::plotting::point::Point;
+
+    #[test]
+    fn legend_settings_reach_the_graph() {
+        let plot = Plot::new().line(Series::from(vec![(0, 0), (1, 1)]).with_label("sin"));
+        let graph = plot.graph();
+        assert_eq!(graph.data()[0].label(), Some("sin"));
+        assert!(graph.legend_visible());
+        assert_eq!(graph.legend_location(), LegendLocation::Best);
+
+        let graph = plot
+            .legend(false)
+            .legend_location(LegendLocation::UpperLeft)
+            .graph();
+        assert!(!graph.legend_visible());
+        assert_eq!(graph.legend_location(), LegendLocation::UpperLeft);
+    }
 
     #[test]
     fn titles_and_names_reach_the_graph() {

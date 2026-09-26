@@ -27,6 +27,7 @@ pub struct Series {
     data: Vec<Point<f64>>,
     marker_style: MarkerStyle,
     line_style: Option<LineStyle>,
+    label: Option<String>,
 }
 
 impl Series {
@@ -73,12 +74,25 @@ impl Series {
         self
     }
 
+    /// Names the series in the legend. An empty label is the same as none; series without a
+    /// label are left out of the legend.
+    pub fn with_label(mut self, text: impl Into<String>) -> Self {
+        self.label = Some(text.into());
+        self
+    }
+
+    /// The series' name in the legend; `None` when it has none, or an empty one.
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref().filter(|label| !label.is_empty())
+    }
+
     /// A series with the same styles and the points produced by `f`.
     pub(crate) fn map_points(&self, f: impl FnOnce(&[Point<f64>]) -> Vec<Point<f64>>) -> Series {
         Series {
             data: f(&self.data),
             marker_style: self.marker_style,
             line_style: self.line_style,
+            label: self.label.clone(),
         }
     }
 }
@@ -254,6 +268,14 @@ impl_series_op!(Sub, sub, Point<f64>);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn labels_round_trip_and_an_empty_one_is_none() {
+        let series = Series::from(vec![(0, 0), (1, 1)]);
+        assert_eq!(series.label(), None);
+        assert_eq!(series.clone().with_label("sin").label(), Some("sin"));
+        assert_eq!(series.with_label("").label(), None);
+    }
 
     #[test]
     fn add_f32_to_series() {
