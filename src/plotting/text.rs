@@ -140,7 +140,7 @@ impl TextStyle {
     }
 }
 
-/// A line of bitmap text. The font covers `0-9 . - e` and space; other characters are drawn
+/// A line of bitmap text. The font covers `0-9 . - + e` and space; other characters are drawn
 /// as a box.
 #[derive(Debug, Clone)]
 pub struct Text {

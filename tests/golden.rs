@@ -223,6 +223,34 @@ fn scientific_notation_ticks() {
 }
 
 #[test]
+fn large_offset_ticks() {
+    // timestamps on x, and y values near 1e15 that f64 can only store 0.125 apart: both axes
+    // are labeled relative to an offset (+1.7e9, +1e15) with evenly spaced ticks
+    let (w, h) = (320, 240);
+    let points: Vec<_> = (0..=15)
+        .map(|i| Point::new(1_700_000_000.0 + 10.0 * i as f64, 1e15 + 0.1 * i as f64))
+        .collect();
+    let series = Series::new(&points)
+        .with_marker_style(MarkerStyle::FilledSquare {
+            size: 1,
+            color: colors::GOLD,
+        })
+        .with_line_style(LineStyle::Solid {
+            color: colors::GOLD,
+            thickness: 0,
+        });
+    let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(
+            Graph::new()
+                .with_series(series)
+                .with_axes(axes())
+                .with_grid_lines(grid()),
+        );
+    check("large_offset_ticks", w, h, canvas);
+}
+
+#[test]
 fn label_color_matching_background_is_replaced() {
     // white labels on a white canvas are drawn in black instead
     let (w, h) = (240, 180);

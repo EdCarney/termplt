@@ -171,6 +171,19 @@ const CHAR_DASH: &str = "
           
           
 ";
+const CHAR_PLUS: &str = "
+          
+          
+          
+    ++    
+    ++    
+  ++++++  
+  ++++++  
+    ++    
+    ++    
+          
+          
+";
 const CHAR_E: &str = "
           
           
@@ -216,6 +229,7 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
         ' ' => CHAR_SPACE,
         '.' => CHAR_DECIMAL,
         '-' => CHAR_DASH,
+        '+' => CHAR_PLUS,
         'e' => CHAR_E,
         _ => CHAR_UNKNOWN,
     };
@@ -291,6 +305,40 @@ pub fn get_bitmap(c: char, style: &TextStyle) -> Vec<Vec<bool>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_glyph_has_all_its_rows() {
+        // empty lines are skipped, so a blank row that lost its spaces (an editor trimming
+        // trailing whitespace) would silently shift the rest of the glyph up
+        let glyphs = [
+            NUM_ZERO,
+            NUM_ONE,
+            NUM_TWO,
+            NUM_THREE,
+            NUM_FOUR,
+            NUM_FIVE,
+            NUM_SIX,
+            NUM_SEVEN,
+            NUM_EIGHT,
+            NUM_NINE,
+            CHAR_SPACE,
+            CHAR_DECIMAL,
+            CHAR_DASH,
+            CHAR_PLUS,
+            CHAR_E,
+            CHAR_UNKNOWN,
+        ];
+        for (i, glyph) in glyphs.iter().enumerate() {
+            let rows = glyph.lines().filter(|l| !l.is_empty()).count();
+            assert_eq!(rows, CHAR_HEIGHT, "glyph {i}:{glyph}");
+        }
+    }
+
+    #[test]
+    fn plus_has_a_glyph() {
+        let style = TextStyle::default();
+        assert_ne!(get_bitmap('+', &style), get_bitmap('?', &style));
+    }
 
     #[test]
     fn unknown_character_uses_placeholder() {

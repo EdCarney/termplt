@@ -6,7 +6,7 @@ use super::{
     limits::Limits,
     point::Point,
     text::{Label, Text, TextPositioning, TextStyle},
-    ticks::{AxisTicks, fit_ticks},
+    ticks::{AxisTicks, axis_offset, fit_ticks, format_offset},
 };
 use crate::{Error, common::Result};
 use rgb::RGB8;
@@ -132,8 +132,15 @@ const Y_LABEL_SPACING: f64 = 4.0;
 struct Layout {
     /// Area the view limits of the data are mapped onto.
     plot: Limits<u32>,
+    /// Ticks relative to `x_offset`.
     x_ticks: AxisTicks,
+    /// Ticks relative to `y_offset`.
     y_ticks: AxisTicks,
+    /// Offset of the x axis ([`axis_offset`]), 0 for none.
+    x_offset: f64,
+    /// Offset of the y axis, 0 for none.
+    y_offset: f64,
+    /// Tick labels (x, then y), then the offset labels.
     labels: Vec<Label>,
 }
 
@@ -213,11 +220,20 @@ impl TerminalCanvas {
 
             // grid lines first so the axes and data are drawn over them
             if let Some(grid_lines) = graph.grid_lines() {
+                // tick values are relative to the axis offsets
+                let (x_min, x_max) = (
+                    view.min().x - layout.x_offset,
+                    view.max().x - layout.x_offset,
+                );
+                let (y_min, y_max) = (
+                    view.min().y - layout.y_offset,
+                    view.max().y - layout.y_offset,
+                );
                 let xs: Vec<f64> = (layout.x_ticks.values.iter())
-                    .map(|&v| to_canvas(v, view.min().x, view.max().x, plot.min().x, plot.max().x))
+                    .map(|&v| to_canvas(v, x_min, x_max, plot.min().x, plot.max().x))
                     .collect();
                 let ys: Vec<f64> = (layout.y_ticks.values.iter())
-                    .map(|&v| to_canvas(v, view.min().y, view.max().y, plot.min().y, plot.max().y))
+                    .map(|&v| to_canvas(v, y_min, y_max, plot.min().y, plot.max().y))
                     .collect();
                 masks.extend(grid_lines.get_mask_at(&plot, &xs, &ys)?);
             }
@@ -330,9 +346,31 @@ impl TerminalCanvas {
         let text = |label: &str| Text::new(label, style);
         let text_h = text("0").height() as u32;
 
-        // x labels sit in a band along the bottom; the top y label needs half a line above
-        let bottom = if show_x_labels { text_h + LABEL_GAP } else { 0 };
-        let top = if show_y_labels { text_h / 2 } else { 0 };
+        // Far from zero, f64 can't hold evenly spaced ticks, and the labels get long. As in
+        // matplotlib, such an axis gets an offset (`+1e15`) that its ticks are fitted, placed and
+        // labeled relative to. It's decided first because its label changes the margins.
+        let x_offset = axis_offset(view.min().x, view.max().x);
+        let y_offset = axis_offset(view.min().y, view.max().y);
+        let (x_min, x_max) = (view.min().x - x_offset, view.max().x - x_offset);
+        let (y_min, y_max) = (view.min().y - y_offset, view.max().y - y_offset);
+        let x_offset_label = format_offset(x_offset).filter(|_| show_x_labels);
+        let y_offset_label = format_offset(y_offset).filter(|_| show_y_labels);
+
+        // x labels sit in a band along the bottom, with the x offset label on a line below them;
+        // the top y label needs half a line above the plot, the y offset label a full line
+        let x_band = if show_x_labels {
+            text_h + x_offset_label.as_ref().map_or(0, |_| text_h + 1)
+        } else {
+            0
+        };
+        let bottom = if show_x_labels { x_band + LABEL_GAP } else { 0 };
+        let top = if y_offset_label.is_some() {
+            text_h + LABEL_GAP
+        } else if show_y_labels {
+            text_h / 2
+        } else {
+            0
+        };
         // saturating: huge markers, lines or buffers must end in CanvasTooSmall, not overflow
         let plot_min_y = outer_min.y.saturating_add(bottom).saturating_add(inset_y);
         let plot_max_y = outer_max.y.saturating_sub(top.saturating_add(inset_y));
@@ -344,26 +382,20 @@ impl TerminalCanvas {
         let (canvas_max_x, canvas_max_y) = (self.limits.max().x, self.limits.max().y);
         // y labels stay above the x label band and inside the canvas
         let y_lo = if show_x_labels {
-            outer_min.y + text_h + 1 + text_h / 2
+            outer_min.y + x_band + 1 + text_h / 2
         } else {
             text_h / 2
         };
         let y_hi = canvas_max_y.saturating_sub(text_h - text_h / 2).max(y_lo);
         let y_label_center = |value: f64| {
-            let y = to_canvas(
-                value,
-                view.min().y,
-                view.max().y,
-                plot_min_y as f64,
-                plot_max_y as f64,
-            );
+            let y = to_canvas(value, y_min, y_max, plot_min_y as f64, plot_max_y as f64);
             (y.round() as u32).clamp(y_lo, y_hi)
         };
 
         // y ticks depend only on the plot height; their labels then set the left margin
         let y_ticks = fit_ticks(
-            view.min().y,
-            view.max().y,
+            y_min,
+            y_max,
             (plot_max_y - plot_min_y) as f64,
             |ticks, spacing| {
                 // the clamp above can push end labels into their neighbours
@@ -392,21 +424,15 @@ impl TerminalCanvas {
         check_area(&plot_min, &plot_max)?;
 
         let x_label_center = |value: f64, w: u32| {
-            let x = to_canvas(
-                value,
-                view.min().x,
-                view.max().x,
-                plot_min_x as f64,
-                plot_max_x as f64,
-            );
+            let x = to_canvas(value, x_min, x_max, plot_min_x as f64, plot_max_x as f64);
             // keep labels at the ends of the axis inside the canvas
             let lo = w / 2;
             let hi = canvas_max_x.saturating_sub(w - w / 2).max(lo);
             (x.round() as u32).clamp(lo, hi)
         };
         let x_ticks = fit_ticks(
-            view.min().x,
-            view.max().x,
+            x_min,
+            x_max,
             (plot_max_x - plot_min_x) as f64,
             |ticks, spacing| {
                 let widths: Vec<u32> = ticks
@@ -433,7 +459,8 @@ impl TerminalCanvas {
         let mut labels = Vec::new();
 
         if show_x_labels {
-            let center_y = outer_min.y + text_h / 2;
+            // the top line of the band
+            let center_y = outer_min.y + x_band - text_h + text_h / 2;
             for (&value, label) in x_ticks.values.iter().zip(&x_ticks.labels) {
                 let txt = text(label);
                 let x = x_label_center(value, txt.width() as u32);
@@ -457,10 +484,33 @@ impl TerminalCanvas {
             }
         }
 
+        // where matplotlib puts them: the x offset under the right end of the x axis, the y
+        // offset above the top of the y axis
+        if let Some(label) = x_offset_label {
+            let txt = text(&label);
+            let x = (plot_max_x + 1).saturating_sub(txt.width() as u32);
+            let y = outer_min.y + text_h / 2;
+            labels.push(Label::new(
+                txt,
+                TextPositioning::LeftAligned(Point::new(x, y)),
+            ));
+        }
+        if let Some(label) = y_offset_label {
+            let txt = text(&label);
+            let x = plot_min_x.saturating_sub(axes_inset.0);
+            let y = outer_max.y.saturating_sub(text_h - text_h / 2);
+            labels.push(Label::new(
+                txt,
+                TextPositioning::LeftAligned(Point::new(x, y)),
+            ));
+        }
+
         Ok(Layout {
             plot,
             x_ticks,
             y_ticks,
+            x_offset,
+            y_offset,
             labels,
         })
     }
@@ -696,6 +746,71 @@ mod tests {
             .with_graph(Graph::new().with_series(Series::new(&points)))
             .draw();
         assert!(result.is_err());
+    }
+
+    fn white_axes() -> Axes {
+        use crate::plotting::line::LineStyle;
+        Axes::new(
+            AxesPositioning::XY(LineStyle::solid(colors::WHITE, 1)),
+            TextStyle::with_color(colors::WHITE),
+        )
+    }
+
+    #[test]
+    fn ticks_near_1e15_use_an_offset() {
+        // f64 values are 0.125 apart here, so 1e15 + 0.1 * i can't be stored exactly
+        let points: Vec<_> = (0..16)
+            .map(|i| Point::new(i as f64, 1e15 + 0.1 * i as f64))
+            .collect();
+        let graph = Graph::new()
+            .with_series(Series::new(&points))
+            .with_axes(white_axes());
+        let canvas = TerminalCanvas::new(700, 700, colors::BLACK)
+            .with_buffer(BufferType::Uniform(8))
+            .with_graph(graph.clone());
+        let layout = canvas
+            .layout(&graph, &graph.view_limits().unwrap())
+            .unwrap();
+        assert_eq!(layout.y_offset, 1e15);
+        assert_eq!(
+            layout.y_ticks.labels,
+            ["0", "0.2", "0.4", "0.6", "0.8", "1.0", "1.2", "1.4", "1.6"]
+        );
+        assert_eq!(layout.x_offset, 0.0);
+    }
+
+    #[test]
+    fn offset_labels_stay_clear_of_other_labels() {
+        // timestamps on x and values near 1e15 on y give both axes an offset label
+        let points: Vec<_> = (0..=10)
+            .map(|i| Point::new(1_700_000_000.0 + 10.0 * i as f64, 1e15 + 0.1 * i as f64))
+            .collect();
+        let graph = Graph::new()
+            .with_series(Series::new(&points))
+            .with_axes(white_axes());
+        for (w, h) in [(800, 600), (500, 300), (300, 200)] {
+            let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+                .with_buffer(BufferType::Uniform(8))
+                .with_graph(graph.clone());
+            let layout = canvas
+                .layout(&graph, &graph.view_limits().unwrap())
+                .unwrap();
+            let ticks = layout.x_ticks.labels.len() + layout.y_ticks.labels.len();
+            assert_eq!(layout.labels.len(), ticks + 2, "{w}x{h}: offset labels");
+            let boxes: Vec<_> = layout.labels.iter().map(|l| l.limits()).collect();
+            for offset in &boxes[ticks..] {
+                assert!(
+                    offset.max().x < w && offset.max().y < h,
+                    "{w}x{h}: {offset:?}"
+                );
+                for other in boxes.iter().filter(|b| *b != offset) {
+                    assert!(
+                        !offset.intersects(other.clone()),
+                        "{w}x{h}: {offset:?} overlaps {other:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
