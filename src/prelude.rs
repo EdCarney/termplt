@@ -9,6 +9,7 @@ pub use crate::{
         font::Font,
         graph::Graph,
         grid_lines::GridLines,
+        legend::LegendLocation,
         line::LineStyle,
         marker::MarkerStyle,
         point::Point,

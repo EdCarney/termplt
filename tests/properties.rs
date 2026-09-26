@@ -7,6 +7,7 @@ use termplt::plotting::{
     colors,
     graph::Graph,
     grid_lines::GridLines,
+    legend::LegendLocation,
     limits::Limits,
     line::LineStyle,
     marker::MarkerStyle,
@@ -118,6 +119,33 @@ fn text() -> impl Strategy<Value = Option<String>> {
     ])
 }
 
+/// Legend labels: any printable text, blank, or far too long.
+fn label() -> impl Strategy<Value = String> {
+    prop_oneof![
+        4 => "\\PC{0,40}",
+        1 => "[a-z ]{50,200}",
+        1 => Just(String::new()),
+        1 => Just(" \n ".to_string()),
+    ]
+}
+
+fn location() -> impl Strategy<Value = LegendLocation> {
+    use LegendLocation::*;
+    prop::sample::select(vec![
+        Best,
+        UpperRight,
+        UpperLeft,
+        LowerLeft,
+        LowerRight,
+        Right,
+        CenterLeft,
+        CenterRight,
+        LowerCenter,
+        UpperCenter,
+        Center,
+    ])
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
@@ -200,6 +228,55 @@ proptest! {
                 p.y >= min_y - tolerance && p.y <= min_y + h + tolerance,
                 "y {} outside {}..{}", p.y, min_y, min_y + h
             );
+        }
+    }
+
+    #[test]
+    fn the_legend_stays_inside_the_plot_area(
+        series in prop::collection::vec(series(), 1..5),
+        labels in prop::collection::vec(label(), 1..5),
+        width in 1u32..400,
+        height in 1u32..400,
+        font_size in prop_oneof![4 => 1u32..40, 1 => 1u32..=400],
+        location in location(),
+    ) {
+        let graph = |labeled: bool| {
+            let mut graph = Graph::new()
+                .with_axes(Axes::new(
+                    AxesPositioning::XY(LineStyle::solid(colors::WHITE, 1)),
+                    TextStyle::with_color(colors::WHITE),
+                ))
+                .with_legend_location(location);
+            for (s, label) in series.iter().zip(labels.iter().cycle()) {
+                let s = if labeled { s.clone().with_label(label.clone()) } else { s.clone() };
+                graph = graph.with_series(s);
+            }
+            graph
+        };
+        let canvas = |graph: Graph| {
+            TerminalCanvas::new(width, height, colors::BLACK)
+                .with_buffer(BufferType::Uniform(4))
+                .with_font_size(font_size)
+                .with_graph(graph)
+        };
+        // all three run before any result is looked at: a panic fails the test, errors are fine
+        let (plain, labeled, plot) = (
+            canvas(graph(false)).draw(),
+            canvas(graph(true)).draw(),
+            canvas(graph(false)).get_drawable_limits(),
+        );
+        let (Ok(plain), Ok(labeled), Ok(plot)) = (plain, labeled, plot) else {
+            return Ok(());
+        };
+        let (plain, labeled) = (plain.into_bytes(), labeled.into_bytes());
+        for (i, (a, b)) in plain.chunks(3).zip(labeled.chunks(3)).enumerate() {
+            if a != b {
+                let (x, y) = (i as u32 % width, height - 1 - i as u32 / width);
+                prop_assert!(
+                    plot.contains(&Point::new(x, y)),
+                    "pixel ({}, {}) changed outside the plot area {:?}", x, y, plot
+                );
+            }
         }
     }
 }

@@ -10,6 +10,8 @@ pub mod font;
 pub mod graph;
 /// Grid lines at the tick positions.
 pub mod grid_lines;
+/// The legend and where it goes.
+pub mod legend;
 /// Axis-aligned rectangles.
 pub mod limits;
 /// Line styles.
