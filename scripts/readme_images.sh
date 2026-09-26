@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Regenerates the README images in docs/images/ with the current CLI. Each command matches the
 # one shown above its image in README.md. Run after a visual change and review the PNGs.
+# docs/images/{follow,scope,oscillator}.gif are screen recordings of the --follow commands in the
+# README, made by hand in a Kitty-protocol terminal; they are not regenerated here.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
