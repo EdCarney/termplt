@@ -100,3 +100,111 @@ fn bad_data_is_reported_with_its_line() {
     assert!(err.contains("bad.csv:3:"), "{err}");
     assert!(!png.exists());
 }
+
+const HEADED: &str = "time,temp\n0,20\n1,21\n2,23\n";
+const BARE: &str = "0,20\n1,21\n2,23\n";
+
+/// Plots `csv` with `args` into a 320x240 PNG and returns its pixels.
+fn render(csv: &str, args: &[&str]) -> image::RgbImage {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data.csv");
+    std::fs::write(&data, csv).unwrap();
+    let png = dir.path().join("plot.png");
+    let mut all = vec![
+        data.to_str().unwrap(),
+        "-o",
+        png.to_str().unwrap(),
+        "--width",
+        "320",
+        "--height",
+        "240",
+    ];
+    all.extend_from_slice(args);
+    let out = termplt(&all, "");
+    assert!(out.status.success(), "{}", stderr(&out));
+    image::open(&png).unwrap().to_rgb8()
+}
+
+#[test]
+fn a_title_is_drawn() {
+    assert_ne!(
+        render(BARE, &[]),
+        render(BARE, &["--title", "Temperatures"])
+    );
+}
+
+#[test]
+fn a_title_may_start_with_a_hyphen() {
+    assert_ne!(render(BARE, &["--title", "-5 dB"]), render(BARE, &[]));
+}
+
+#[test]
+fn axes_are_named_from_the_header_unless_told_otherwise() {
+    let bare = render(BARE, &[]);
+    // the header names the axes...
+    assert_ne!(render(HEADED, &[]), bare);
+    // ...an empty --xlabel/--ylabel removes those names...
+    assert_eq!(render(HEADED, &["--xlabel", "", "--ylabel", ""]), bare);
+    // ...and explicit names replace them
+    let named = ["--xlabel", "t", "--ylabel", "T"];
+    assert_eq!(render(HEADED, &named), render(BARE, &named));
+}
+
+#[test]
+fn font_errors_name_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let png = dir.path().join("plot.png");
+    let run = |font: &Path| {
+        termplt(
+            &[
+                "-d",
+                "(1,1),(2,2)",
+                "-o",
+                png.to_str().unwrap(),
+                "--font",
+                font.to_str().unwrap(),
+            ],
+            "",
+        )
+    };
+    let out = run(&dir.path().join("missing.ttf"));
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("cannot read font"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(stderr(&out).contains("missing.ttf"), "{}", stderr(&out));
+
+    let notes = dir.path().join("notes.txt");
+    std::fs::write(&notes, "not a font").unwrap();
+    let out = run(&notes);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("is not a TrueType or OpenType font"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn font_size_must_be_at_least_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let png = dir.path().join("plot.png");
+    let args = [
+        "-d",
+        "(1,1),(2,2)",
+        "-o",
+        png.to_str().unwrap(),
+        "--font-size",
+        "0",
+    ];
+    let out = termplt(&args, "");
+    assert!(!out.status.success());
+    // clap's range check, not an unknown flag
+    assert!(
+        stderr(&out).contains("invalid value '0' for '--font-size"),
+        "{}",
+        stderr(&out)
+    );
+}

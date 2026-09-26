@@ -14,7 +14,7 @@ use std::{
 };
 use termplt::{
     DEFAULT_PNG_SIZE, Plot,
-    plotting::colors,
+    plotting::{colors, font::Font, text::DEFAULT_FONT_SIZE},
     terminal::{Image, Terminal},
 };
 
@@ -52,6 +52,8 @@ fn run(cli: Cli) -> Result<()> {
     if let Some(path) = &cli.output {
         check_output_path(path)?;
     }
+    // a bad font fails before any data is read
+    let font = cli.font.as_deref().map(load_font).transpose()?;
 
     let stdin_is_terminal = io::stdin().is_terminal();
     let specs = collect_specs(&cli, !stdin_is_terminal)?;
@@ -90,12 +92,16 @@ fn run(cli: Cli) -> Result<()> {
         }
         plot = plot.series(series);
     }
+    // explicit names win; an empty one removes a name taken from the headers
     let names = data::axis_names(&column_names);
-    if let Some(name) = names.x {
-        plot = plot.x_label(name);
+    if let Some(text) = cli.title.clone() {
+        plot = plot.title(text);
     }
-    if let Some(name) = names.y {
-        plot = plot.y_label(name);
+    if let Some(text) = cli.xlabel.clone().or(names.x) {
+        plot = plot.x_label(text);
+    }
+    if let Some(text) = cli.ylabel.clone().or(names.y) {
+        plot = plot.y_label(text);
     }
     if let Some((min, max)) = cli.xlim {
         plot = plot.x_limits(min, max);
@@ -119,7 +125,25 @@ fn run(cli: Cli) -> Result<()> {
         cli.width.unwrap_or(default_size.0),
         cli.height.unwrap_or(default_size.1),
     );
-    let plot = plot.size(width, height);
+    let (font_size, font_size_source) = match (cli.font_size, &terminal) {
+        (Some(px), _) => (px, "--font-size".to_string()),
+        (None, Some(terminal)) => (
+            terminal.text_size(),
+            format!("terminal rows are {} px", terminal.window().pix_per_row),
+        ),
+        (None, None) => (DEFAULT_FONT_SIZE, "default for --output".to_string()),
+    };
+    let mut plot = plot.size(width, height).font_size(font_size);
+    if let Some(font) = font {
+        plot = plot.font(font);
+    }
+    if cli.verbose {
+        let font_name = cli
+            .font
+            .as_ref()
+            .map_or_else(|| "Go (built in)".to_string(), |p| p.display().to_string());
+        eprintln!("[verbose] text: {font_size} px ({font_size_source}), font: {font_name}");
+    }
 
     if cli.verbose {
         eprintln!("[verbose] canvas: {width}x{height} pixels");
@@ -181,6 +205,13 @@ fn with_hint(e: termplt::Error) -> Box<dyn Error> {
 }
 
 /// Only PNG output is supported; catch other extensions before doing any work.
+/// Reads a font file for --font.
+fn load_font(path: &Path) -> Result<Font> {
+    let data = fs::read(path).map_err(|e| format!("cannot read font '{}': {e}", path.display()))?;
+    Font::from_bytes(data)
+        .map_err(|_| format!("'{}' is not a TrueType or OpenType font", path.display()).into())
+}
+
 fn check_output_path(path: &Path) -> Result<()> {
     match path.extension().and_then(|e| e.to_str()) {
         Some(ext) if ext.eq_ignore_ascii_case("png") => Ok(()),
