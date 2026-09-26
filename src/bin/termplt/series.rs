@@ -28,6 +28,11 @@ pub enum Source {
 }
 
 impl Source {
+    /// Whether the data comes from stdin (`-`).
+    pub fn is_stdin(&self) -> bool {
+        matches!(self, Source::File(path) if path == "-")
+    }
+
     pub fn describe(&self) -> String {
         match self {
             Source::Inline(_) => "inline data".to_string(),

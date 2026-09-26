@@ -743,3 +743,306 @@ fn unwrap_tmux_leaves_cursor_moves_alone() {
         ]
     );
 }
+
+// Follow mode: frames replaced in place.
+
+/// One step of what a `--follow` run drew.
+#[derive(Debug, PartialEq)]
+enum Step {
+    /// A whole transmission (`a=t`, every chunk) of the image with this id, and its PNG.
+    Transmit(u32),
+    /// A put (`a=p`) of the image with this id.
+    Put(u32),
+    /// A delete of the image with this id and its data (`a=d,d=I`).
+    Delete(u32),
+    Up(u32),
+    Down(u32),
+    Text(String),
+}
+
+/// The output as steps, checking the keys of every graphics command on the way: transmissions
+/// send PNG data without replies, puts keep the cursor where it is, and deletes free the data.
+/// Queries are skipped. Returns the steps and the size of each transmitted image.
+fn steps(output: &[u8]) -> (Vec<Step>, Vec<(u32, u32)>) {
+    let mut steps = Vec::new();
+    let mut sizes = Vec::new();
+    // the transmission whose chunks are arriving: its id and its payload so far
+    let mut transmission: Option<(u32, Vec<u8>)> = None;
+    for event in events(output) {
+        let (ctrl, payload) = match event {
+            Event::Apc { ctrl, payload } => (ctrl, payload),
+            Event::CursorUp(n) => {
+                steps.push(Step::Up(n));
+                continue;
+            }
+            Event::CursorDown(n) => {
+                steps.push(Step::Down(n));
+                continue;
+            }
+            Event::Text(text) => {
+                steps.push(Step::Text(String::from_utf8_lossy(&text).into_owned()));
+                continue;
+            }
+        };
+        let key = |key: &str| control_value(&ctrl, key);
+        let id = || key("i").expect("no image id").parse::<u32>().unwrap();
+        let (id, mut data) = match (transmission.take(), key("a")) {
+            (Some(started), None) => started,
+            (None, Some("q")) => continue,
+            (None, Some("t")) => {
+                for kv in ["f=100", "q=2"] {
+                    assert!(ctrl.split(',').any(|k| k == kv), "{kv} missing: {ctrl}");
+                }
+                (id(), Vec::new())
+            }
+            (None, Some("p")) => {
+                for kv in ["C=1", "q=2"] {
+                    assert!(ctrl.split(',').any(|k| k == kv), "{kv} missing: {ctrl}");
+                }
+                assert!(payload.is_empty() && key("m").is_none(), "{ctrl}");
+                steps.push(Step::Put(id()));
+                continue;
+            }
+            (None, Some("d")) => {
+                assert_eq!(key("d"), Some("I"), "{ctrl}");
+                assert_eq!(key("q"), Some("2"), "{ctrl}");
+                steps.push(Step::Delete(id()));
+                continue;
+            }
+            (started, action) => panic!("unexpected {action:?} after {started:?}: {ctrl}"),
+        };
+        data.extend_from_slice(&payload);
+        if key("m") == Some("1") {
+            transmission = Some((id, data));
+        } else {
+            let png =
+                image::load_from_memory_with_format(&base64_decode(&data), image::ImageFormat::Png)
+                    .expect("the payload is not a PNG");
+            sizes.push((png.width(), png.height()));
+            steps.push(Step::Transmit(id));
+        }
+    }
+    assert!(transmission.is_none(), "the last image has no final chunk");
+    (steps, sizes)
+}
+
+/// The steps of `frames` frames drawn in place over `rows` rows, the first with image `id`,
+/// after the first frame's line feeds (`\r`, then a line feed per row, which the pty turns into
+/// `\r\n`).
+fn frame_steps(id: u32, frames: u32, rows: u32) -> Vec<Step> {
+    let mut steps = vec![
+        Step::Text(format!("\r{}", "\r\n".repeat(rows as usize))),
+        Step::Up(rows),
+        Step::Transmit(id),
+        Step::Put(id),
+        Step::Down(rows),
+    ];
+    for k in 1..frames {
+        steps.extend([
+            Step::Transmit(id + k),
+            Step::Up(rows),
+            Step::Put(id + k),
+            Step::Delete(id + k - 1),
+            Step::Down(rows),
+        ]);
+    }
+    steps
+}
+
+/// A pipe script writing `lines` `gap` apart.
+fn lines(lines: &[&str], gap: Duration) -> Stdin {
+    Stdin::Pipe(
+        (lines.iter().enumerate())
+            .map(|(i, line)| {
+                (
+                    if i == 0 { Duration::ZERO } else { gap },
+                    format!("{line}\n"),
+                )
+            })
+            .collect(),
+    )
+}
+
+/// The steps after the graphics query and its DA1 sentinel, and the id of the first image.
+fn follow_steps(output: &[u8]) -> (Vec<Step>, Vec<(u32, u32)>, u32) {
+    let (mut steps, sizes) = steps(output);
+    // the query is skipped; its sentinel starts the text before the first frame
+    match steps.first_mut() {
+        Some(Step::Text(text)) if text.starts_with("\x1b[c") => {
+            text.drain(.."\x1b[c".len());
+        }
+        other => panic!("expected the DA1 sentinel first, got {other:?}"),
+    }
+    let first = steps
+        .iter()
+        .find_map(|step| match step {
+            Step::Transmit(id) => Some(*id),
+            _ => None,
+        })
+        .expect("no frame was drawn");
+    (steps, sizes, first)
+}
+
+/// 600 pixels over 20-pixel rows.
+const PLOT_ROWS: u32 = 30;
+
+#[test]
+fn follow_replaces_the_plot_as_lines_arrive() {
+    let stdin = lines(&["1,2", "2,3", "3,1"], Duration::from_millis(50));
+    let run = run_with(
+        FakeTerminal::KITTY,
+        &["--follow", "--interval", "0"],
+        &[],
+        stdin,
+    );
+    assert!(run.status.success(), "{}", run.text());
+    let (steps, sizes, first) = follow_steps(&run.output);
+    // a frame per line, each one sent, put over the last and the last deleted, with the cursor
+    // moved up and back down around it; nothing follows the last frame
+    assert_eq!(steps, frame_steps(first, 3, PLOT_ROWS));
+    assert_eq!(sizes, [PLOT_SIZE; 3]);
+    // ids name a block of frames, below 2^24
+    assert!(first >> 16 >= 1 && first < 1 << 24, "{first}");
+}
+
+#[test]
+fn follow_draws_at_most_once_per_interval_and_once_at_the_end() {
+    let data: Vec<String> = (0..10).map(|i| format!("{i},{}", i * i)).collect();
+    let data: Vec<&str> = data.iter().map(String::as_str).collect();
+    let run = run_with(
+        FakeTerminal::KITTY,
+        &["--follow", "--interval", "5000"],
+        &[],
+        lines(&data, Duration::from_millis(5)),
+    );
+    assert!(run.status.success(), "{}", run.text());
+    // the first point draws at once; the rest arrive within the interval, so they are drawn
+    // when stdin ends, without waiting for the interval to pass
+    let (steps, _, first) = follow_steps(&run.output);
+    assert_eq!(steps, frame_steps(first, 2, PLOT_ROWS));
+    assert!(run.elapsed < Duration::from_secs(5), "{:?}", run.elapsed);
+}
+
+#[test]
+fn follow_window_keeps_the_last_points() {
+    let followed = run_with(
+        FakeTerminal::KITTY,
+        &["-f", "--interval", "0", "--window", "2"],
+        &[],
+        lines(&["0,0", "1,1", "2,4", "3,9"], Duration::from_millis(20)),
+    );
+    assert!(followed.status.success(), "{}", followed.text());
+    // the last frame is the plot of the last two points
+    let last = transmissions(&followed.output).pop().unwrap().1;
+    let inline = run(FakeTerminal::KITTY, &["--data", "(2,4),(3,9)"], &[]);
+    let expected = transmissions(&inline.output).pop().unwrap().1;
+    let decode = |png: &[u8]| {
+        image::load_from_memory_with_format(png, image::ImageFormat::Png)
+            .unwrap()
+            .into_rgb8()
+    };
+    assert!(
+        decode(&last) == decode(&expected),
+        "the last frame is not the plot of the last two points"
+    );
+}
+
+#[test]
+fn follow_skips_missing_values_and_reports_them_at_the_end() {
+    let run = run_with(
+        FakeTerminal::KITTY,
+        &["--follow", "--interval", "0"],
+        &[],
+        lines(
+            &["x,y", "1,2", "2,NA", "3,nan", "4,5"],
+            Duration::from_millis(30),
+        ),
+    );
+    assert!(run.status.success(), "{}", run.text());
+    let (mut steps, _, first) = follow_steps(&run.output);
+    // the rows without a point draw no frame; the warning waits for the end, below the plot
+    let warning = steps.pop();
+    assert_eq!(steps, frame_steps(first, 2, PLOT_ROWS));
+    assert_eq!(
+        warning,
+        Some(Step::Text(
+            "warning: skipped 1 row(s) with missing values and 1 point(s) with NaN or infinite \
+             values in stdin\r\n"
+                .into()
+        ))
+    );
+}
+
+#[test]
+fn follow_stops_at_a_bad_row_with_its_line() {
+    let run = run_with(
+        FakeTerminal::KITTY,
+        &["--follow", "--interval", "0"],
+        &[],
+        lines(&["1,2", "foo,3", "4,5"], Duration::from_millis(30)),
+    );
+    assert!(!run.status.success());
+    let (mut steps, _, first) = follow_steps(&run.output);
+    let error = steps.pop();
+    assert_eq!(steps, frame_steps(first, 1, PLOT_ROWS));
+    assert_eq!(
+        error,
+        Some(Step::Text(
+            "Error: stdin:2: cannot parse x value 'foo' (column 1) as a number\r\n".into()
+        ))
+    );
+}
+
+#[test]
+fn follow_without_points_is_an_error() {
+    let run = run_with(
+        FakeTerminal::KITTY,
+        &["--follow"],
+        &[],
+        lines(&["time,temp", "# nothing yet"], Duration::ZERO),
+    );
+    assert!(!run.status.success());
+    assert!(
+        run.text().contains("no data points found in stdin"),
+        "{}",
+        run.text()
+    );
+    assert!(transmissions(&run.output).is_empty());
+}
+
+#[test]
+fn follow_in_tmux_wraps_only_the_graphics_commands() {
+    let (_dir, path) = fake_tmux("on");
+    let env = [("TMUX", "/tmp/tmux-1000/default,1,0"), ("PATH", &path)];
+    let run = run_with(
+        FakeTerminal::KITTY,
+        &["--follow", "--interval", "0"],
+        &env,
+        lines(&["1,2", "2,3"], Duration::from_millis(50)),
+    );
+    assert!(run.status.success(), "{}", run.text());
+    let plain = unwrap_tmux(&run.output);
+    // no query in tmux; every graphics command wrapped, and nothing else
+    assert!(!contains(&plain, b"a=q"));
+    assert_eq!(count(&run.output, TMUX_START), apc_commands(&plain).len());
+    let raw_moves = (events(&run.output).into_iter())
+        .filter(|e| matches!(e, Event::CursorUp(_) | Event::CursorDown(_)))
+        .count();
+    assert_eq!(raw_moves, 4, "the cursor moves are not wrapped");
+
+    let (steps, sizes) = steps(&plain);
+    let Some(Step::Transmit(first)) = steps.get(2) else {
+        panic!("{steps:?}");
+    };
+    assert_eq!(steps, frame_steps(*first, 2, PLOT_ROWS));
+    assert_eq!(sizes, [PLOT_SIZE; 2]);
+}
+
+#[test]
+fn follow_needs_piped_stdin() {
+    let run = run(FakeTerminal::KITTY, &["--follow"], &[]);
+    assert!(!run.status.success());
+    assert!(run.text().contains("stdin is a terminal"), "{}", run.text());
+    // nothing is sent, not even the query
+    assert!(!contains(&run.output, APC_START));
+}

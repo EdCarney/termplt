@@ -16,7 +16,7 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 - **Axis limits** — optionally constrain x/y ranges with automatic point clipping
 - **Configurable canvas** — set dimensions, background color, and buffer padding
 - **TrueType text** — an embedded, anti-aliased Go font covering Latin-1, Greek and common math symbols; load your own font for other scripts
-- **Live plots** — `plot.show_live()?` returns a handle whose `update(&plot)` redraws the plot in place, without flicker, as its data changes
+- **Live plots** — `plot.show_live()?` returns a handle whose `update(&plot)` redraws the plot in place, without flicker, as its data changes; in the CLI, `tail -f data.csv | termplt --follow`
 - **Typed errors** — match on `termplt::Error` (no data, canvas too small, terminal unsupported, ...)
 - **Fast** — a million points render in about 0.1-0.3 s
 
@@ -80,6 +80,22 @@ termplt test_data/sine.csv test_data/damped_sine.csv -s "file=test_data/cosine.c
 ```
 <img width="600" height="450" alt="Sine, damped sine and cosine curves with a legend in the emptiest corner" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/legend.png" />
 
+### Follow mode
+
+`--follow` (`-f`) keeps reading stdin and redraws the plot in place as lines arrive, like `tail -f`:
+
+```bash
+# A growing log: the plot follows it, keeping the last 500 points of each column
+tail -f sensors.csv | termplt --follow -x time -y temp,humidity --window 500
+
+# Redraw at most once a second
+./measure.sh 2>/dev/null | termplt -f --interval 1000
+```
+
+The first frame is drawn when the first point arrives, sized to the terminal. After that the plot is redrawn at most every `--interval` milliseconds (default: 100; `0` redraws for every line with a point), and the axes follow the data unless `--xlim`/`--ylim` fix them. `--window N` keeps the last N points of each series read from stdin. Headers, columns and legend names work as for a file, and files or `--data` given as well are drawn on every frame. Rows skipped for missing or non-finite values are counted and reported below the plot when stdin ends; a row that can't be read stops the program with its line number. Ctrl-C leaves the last frame on screen with the cursor below it.
+
+Frames are drawn relative to the cursor, so nothing else may write to the terminal while the plot is live: redirect the stderr of the command feeding the pipe, as above.
+
 ### Options
 
 | Option | Description |
@@ -101,6 +117,9 @@ termplt test_data/sine.csv test_data/damped_sine.csv -s "file=test_data/cosine.c
 | `--legend` / `--no-legend` | Show the legend even for one series / hide it (default: shown with 2 or more series) |
 | `--legend-loc <LOC>` | Where the legend goes: `best` (default: the location covering the least data, as in matplotlib), `upper-right`, `upper-left`, `lower-left`, `lower-right`, `right`, `center-left`, `center-right`, `lower-center`, `upper-center` or `center`; implies `--legend` |
 | `-o, --output <FILE>` | Write a PNG file (e.g. `plot.png`) instead of displaying; no terminal needed |
+| `-f, --follow` | Keep reading stdin and redraw the plot in place as lines arrive (see [Follow mode](#follow-mode)); stdin is always read, and files and `--data` are drawn on every frame. Not with `--output` |
+| `--interval <MS>` | With `--follow`: redraw at most every MS milliseconds (default: 100; `0` redraws whenever points arrive) |
+| `--window <N>` | With `--follow`: keep only the last N points of each series read from stdin (default: all) |
 | `--title <TEXT>` | Plot title; long titles wrap onto up to 3 lines |
 | `--xlabel <TEXT>` / `--ylabel <TEXT>` | Axis names (default: the column header when every series has the same one; `""` for none) |
 | `--font <FILE>` | A `.ttf`/`.otf` font for all text; characters it lacks use the built-in Go font |

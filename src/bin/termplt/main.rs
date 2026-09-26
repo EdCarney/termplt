@@ -1,11 +1,13 @@
 mod cli;
 mod data;
+mod follow;
 mod names;
 mod series;
 
 use clap::{CommandFactory, Parser, ValueEnum};
 use cli::{Cli, LegendLoc};
 use data::{Column, ColumnNames, Table};
+use follow::{Schedule, Stream};
 use names::NameSource;
 use series::{SeriesSpec, Source, Style};
 use std::{
@@ -13,10 +15,12 @@ use std::{
     fs,
     io::{self, IsTerminal, Read},
     path::Path,
+    sync::mpsc::RecvTimeoutError,
+    time::{Duration, Instant},
 };
 use termplt::{
-    DEFAULT_PNG_SIZE, Plot,
-    plotting::{colors, font::Font, text::DEFAULT_FONT_SIZE},
+    DEFAULT_PNG_SIZE, LivePlot, Plot,
+    plotting::{colors, font::Font, series::Series, text::DEFAULT_FONT_SIZE},
     terminal::{Image, Terminal},
 };
 
@@ -58,6 +62,13 @@ fn run(cli: Cli) -> Result<()> {
     let font = cli.font.as_deref().map(load_font).transpose()?;
 
     let stdin_is_terminal = io::stdin().is_terminal();
+    if cli.follow && stdin_is_terminal {
+        return Err(
+            "--follow plots data piped to stdin as it arrives, but stdin is a terminal; \
+                    pipe the data in, e.g. `tail -f data.csv | termplt --follow`"
+                .into(),
+        );
+    }
     let specs = collect_specs(&cli, !stdin_is_terminal)?;
     if specs.is_empty() {
         Cli::command().print_help()?;
@@ -73,127 +84,33 @@ fn run(cli: Cli) -> Result<()> {
         line_color: cli.line_color.clone(),
         line_thickness: cli.line_thickness,
     };
-
+    // with --follow, stdin is read as it arrives; everything else is read now
     let mut stdin_cache = None;
-    let mut column_names = Vec::new();
-    let mut plot = Plot::new()
-        .background(series::parse_color(&cli.bg)?)
-        .grid(!cli.no_grid)
-        .legend(legend_shown(&cli, specs.len()));
-    if let Some(loc) = cli.legend_loc {
-        plot = plot.legend_location(loc.into());
-    }
     let mut loaded = Vec::new();
-    let mut name_sources = Vec::new();
     for (index, spec) in specs.iter().enumerate() {
-        let (points, columns, y_column) = load_points(spec, &mut stdin_cache)?;
-        let series = series::build_series(&points, &spec.style.or(&defaults), index)?;
-        name_sources.push(NameSource {
-            label: spec.label.clone(),
-            path: match &spec.source {
-                Source::File(path) => Some(path.clone()),
-                Source::Inline(_) => None,
-            },
-            header: columns.y.clone(),
-            column: y_column,
-        });
-        column_names.push(columns);
-        loaded.push((series, points.len()));
-    }
-    let series_names = names::series_names(&name_sources);
-    for (index, ((series, count), name)) in loaded.into_iter().zip(series_names).enumerate() {
-        let series = match &name {
-            Some(name) => series.with_label(name.clone()),
-            None => series,
-        };
-        if cli.verbose {
-            let label = name.map_or_else(|| "none".to_string(), |name| format!("{name:?}"));
-            eprintln!(
-                "[verbose] series {index}: {count} points from {}, label={label}, marker={:?}, \
-                 line={:?}",
-                specs[index].source.describe(),
-                series.marker_style(),
-                series.line_style()
-            );
-        }
-        plot = plot.series(series);
-    }
-    if cli.verbose {
-        if legend_shown(&cli, specs.len()) {
-            let loc = cli.legend_loc.unwrap_or(LegendLoc::Best);
-            let name = loc.to_possible_value().expect("no variant is skipped");
-            eprintln!("[verbose] legend: on, {}", name.get_name());
+        let (points, columns, y_column) = if cli.follow && spec.source.is_stdin() {
+            (Vec::new(), ColumnNames::default(), 0)
         } else {
-            eprintln!("[verbose] legend: off");
-        }
+            load_points(spec, &mut stdin_cache)?
+        };
+        let series = series::build_series(&points, &spec.style.or(&defaults), index)?;
+        loaded.push(Loaded {
+            series,
+            columns,
+            y_column,
+        });
     }
-    // explicit names win; an empty one removes a name taken from the headers
-    let names = data::axis_names(&column_names);
-    if let Some(text) = cli.title.clone() {
-        plot = plot.title(text);
+    if cli.follow {
+        return follow(&cli, &specs, loaded, font);
     }
-    if let Some(text) = cli.xlabel.clone().or(names.x) {
-        plot = plot.x_label(text);
-    }
-    if let Some(text) = cli.ylabel.clone().or(names.y) {
-        plot = plot.y_label(text);
-    }
-    if let Some((min, max)) = cli.xlim {
-        plot = plot.x_limits(min, max);
-    }
-    if let Some((min, max)) = cli.ylim {
-        plot = plot.y_limits(min, max);
-    }
+    let plot = build_plot(&cli, &specs, loaded)?;
 
     // an image file needs no terminal; displaying one needs a terminal to size it and draw on
     let terminal = match &cli.output {
         Some(_) => None,
-        None => {
-            Some(Terminal::connect_with_log(cli.verbose, &mut io::stderr()).map_err(with_hint)?)
-        }
+        None => Some(connect(&cli)?),
     };
-
-    let default_size = terminal
-        .as_ref()
-        .map_or(DEFAULT_PNG_SIZE, Terminal::default_plot_size);
-    let (width, height) = (
-        cli.width.unwrap_or(default_size.0),
-        cli.height.unwrap_or(default_size.1),
-    );
-    let (font_size, font_size_source) = match (cli.font_size, &terminal) {
-        (Some(px), _) => (px, "--font-size".to_string()),
-        (None, Some(terminal)) => (
-            terminal.text_size(),
-            format!("terminal rows are {} px", terminal.window().pix_per_row),
-        ),
-        (None, None) => (DEFAULT_FONT_SIZE, "default for --output".to_string()),
-    };
-    let mut plot = plot.size(width, height).font_size(font_size);
-    if let Some(font) = font {
-        plot = plot.font(font);
-    }
-    if cli.verbose {
-        let font_name = cli
-            .font
-            .as_ref()
-            .map_or_else(|| "Go (built in)".to_string(), |p| p.display().to_string());
-        eprintln!("[verbose] text: {font_size} px ({font_size_source}), font: {font_name}");
-    }
-
-    if cli.verbose {
-        eprintln!("[verbose] canvas: {width}x{height} pixels");
-        match plot.canvas(width, height).get_drawable_limits() {
-            Ok(area) => {
-                let (w, h) = area.span();
-                eprintln!(
-                    "[verbose] plot area: {w}x{h} pixels at ({}, {})",
-                    area.min().x,
-                    area.min().y
-                );
-            }
-            Err(e) => eprintln!("[verbose] plot area unavailable: {e}"),
-        }
-    }
+    let (plot, (width, height)) = fit(&cli, plot, terminal.as_ref(), font);
 
     match (&cli.output, terminal) {
         (Some(path), _) => {
@@ -221,14 +138,247 @@ fn run(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-/// Adds the --output alternative to errors that mean the terminal can't show images.
-fn with_hint(e: termplt::Error) -> Box<dyn Error> {
+/// A series with its points and the column names it can be named after.
+struct Loaded {
+    series: Series,
+    columns: ColumnNames,
+    /// The y column's 1-based index.
+    y_column: usize,
+}
+
+/// Builds the plot from the series, in the order of `specs`: the series named for the legend,
+/// the legend, the axis names and the limits.
+fn build_plot(cli: &Cli, specs: &[SeriesSpec], loaded: Vec<Loaded>) -> Result<Plot> {
+    let mut plot = Plot::new()
+        .background(series::parse_color(&cli.bg)?)
+        .grid(!cli.no_grid)
+        .legend(legend_shown(cli, specs.len()));
+    if let Some(loc) = cli.legend_loc {
+        plot = plot.legend_location(loc.into());
+    }
+    let name_sources: Vec<NameSource> = (specs.iter().zip(&loaded))
+        .map(|(spec, loaded)| NameSource {
+            label: spec.label.clone(),
+            path: match &spec.source {
+                Source::File(path) => Some(path.clone()),
+                Source::Inline(_) => None,
+            },
+            header: loaded.columns.y.clone(),
+            column: loaded.y_column,
+        })
+        .collect();
+    let series_names = names::series_names(&name_sources);
+    let mut column_names = Vec::new();
+    for (index, (loaded, name)) in loaded.into_iter().zip(series_names).enumerate() {
+        let series = match &name {
+            Some(name) => loaded.series.with_label(name.clone()),
+            None => loaded.series,
+        };
+        if cli.verbose {
+            let label = name.map_or_else(|| "none".to_string(), |name| format!("{name:?}"));
+            eprintln!(
+                "[verbose] series {index}: {} points from {}, label={label}, marker={:?}, \
+                 line={:?}",
+                series.data().len(),
+                specs[index].source.describe(),
+                series.marker_style(),
+                series.line_style()
+            );
+        }
+        column_names.push(loaded.columns);
+        plot = plot.series(series);
+    }
+    if cli.verbose {
+        if legend_shown(cli, specs.len()) {
+            let loc = cli.legend_loc.unwrap_or(LegendLoc::Best);
+            let name = loc.to_possible_value().expect("no variant is skipped");
+            eprintln!("[verbose] legend: on, {}", name.get_name());
+        } else {
+            eprintln!("[verbose] legend: off");
+        }
+    }
+    // explicit names win; an empty one removes a name taken from the headers
+    let names = data::axis_names(&column_names);
+    if let Some(text) = cli.title.clone() {
+        plot = plot.title(text);
+    }
+    if let Some(text) = cli.xlabel.clone().or(names.x) {
+        plot = plot.x_label(text);
+    }
+    if let Some(text) = cli.ylabel.clone().or(names.y) {
+        plot = plot.y_label(text);
+    }
+    if let Some((min, max)) = cli.xlim {
+        plot = plot.x_limits(min, max);
+    }
+    if let Some((min, max)) = cli.ylim {
+        plot = plot.y_limits(min, max);
+    }
+    Ok(plot)
+}
+
+/// Connects to the terminal, with hints for the errors that mean it can't show images.
+fn connect(cli: &Cli) -> Result<Terminal> {
+    Terminal::connect_with_log(cli.verbose, &mut io::stderr()).map_err(|e| with_hint(e, cli))
+}
+
+/// Sets the plot's size and text size (from the flags, else the terminal's, else the defaults
+/// for --output) and its font, and returns it with its size.
+fn fit(
+    cli: &Cli,
+    plot: Plot,
+    terminal: Option<&Terminal>,
+    font: Option<Font>,
+) -> (Plot, (u32, u32)) {
+    let default_size = terminal.map_or(DEFAULT_PNG_SIZE, Terminal::default_plot_size);
+    let (width, height) = (
+        cli.width.unwrap_or(default_size.0),
+        cli.height.unwrap_or(default_size.1),
+    );
+    let (font_size, font_size_source) = match (cli.font_size, terminal) {
+        (Some(px), _) => (px, "--font-size".to_string()),
+        (None, Some(terminal)) => (
+            terminal.text_size(),
+            format!("terminal rows are {} px", terminal.window().pix_per_row),
+        ),
+        (None, None) => (DEFAULT_FONT_SIZE, "default for --output".to_string()),
+    };
+    let mut plot = plot.size(width, height).font_size(font_size);
+    if let Some(font) = font {
+        plot = plot.font(font);
+    }
+    if cli.verbose {
+        let font_name = cli
+            .font
+            .as_ref()
+            .map_or_else(|| "Go (built in)".to_string(), |p| p.display().to_string());
+        eprintln!("[verbose] text: {font_size} px ({font_size_source}), font: {font_name}");
+        eprintln!("[verbose] canvas: {width}x{height} pixels");
+        match plot.canvas(width, height).get_drawable_limits() {
+            Ok(area) => {
+                let (w, h) = area.span();
+                eprintln!(
+                    "[verbose] plot area: {w}x{h} pixels at ({}, {})",
+                    area.min().x,
+                    area.min().y
+                );
+            }
+            Err(e) => eprintln!("[verbose] plot area unavailable: {e}"),
+        }
+    }
+    (plot, (width, height))
+}
+
+/// `--follow`: draws the plot in place once the first point arrives on stdin, and again as
+/// more arrive, at most once per `--interval`, until stdin ends. Other output would move the
+/// plot, so warnings about skipped rows wait for the end, and `--verbose` reports only up to
+/// the first frame.
+fn follow(
+    cli: &Cli,
+    specs: &[SeriesSpec],
+    mut loaded: Vec<Loaded>,
+    mut font: Option<Font>,
+) -> Result<()> {
+    let terminal = connect(cli)?;
+    let interval = cli
+        .interval
+        .map_or(follow::DEFAULT_INTERVAL, Duration::from_millis);
+    let window = cli.window.map(|n| usize::try_from(n).unwrap_or(usize::MAX));
+    if cli.verbose {
+        let window = window.map_or_else(|| "all".to_string(), |n| n.to_string());
+        eprintln!(
+            "[verbose] follow: interval {} ms, window {window}",
+            interval.as_millis()
+        );
+    }
+
+    let mut stream = Stream::new(
+        (specs.iter().enumerate())
+            .filter(|(_, spec)| spec.source.is_stdin())
+            .map(|(index, spec)| (index, spec.x.clone(), spec.y.clone())),
+    );
+    let lines = follow::read_lines();
+    let mut schedule = Schedule::new(interval);
+    // the plot and its handle, from the first frame on
+    let mut live: Option<(Plot, LivePlot)> = None;
+    loop {
+        let line = match schedule.wait(Instant::now()) {
+            None => match lines.recv() {
+                Ok(line) => Some(line),
+                Err(_) => break,
+            },
+            Some(timeout) => match lines.recv_timeout(timeout) {
+                Ok(line) => Some(line),
+                Err(RecvTimeoutError::Timeout) => None,
+                Err(RecvTimeoutError::Disconnected) => break,
+            },
+        };
+        if let Some(line) = line {
+            let line = line.map_err(|e| format!("cannot read stdin: {e}"))?;
+            for (index, point) in stream.push_line(&line)? {
+                let series = match &mut live {
+                    Some((plot, _)) => &mut plot.series_mut()[index],
+                    None => &mut loaded[index].series,
+                };
+                series.push(point.x, point.y);
+                if let Some(n) = window {
+                    series.keep_last(n);
+                }
+                schedule.points_arrived();
+            }
+        }
+        if !schedule.due(Instant::now()) {
+            continue;
+        }
+        match &mut live {
+            Some((plot, handle)) => handle.update(plot)?,
+            None => {
+                // the stream's columns are known by its first point, and with them the names
+                for (index, loaded) in loaded.iter_mut().enumerate() {
+                    if let Some(columns) = stream.columns(index) {
+                        loaded.columns = columns.names.clone();
+                        loaded.y_column = columns.y_column;
+                    }
+                }
+                let plot = build_plot(cli, specs, std::mem::take(&mut loaded))?;
+                let (plot, _) = fit(cli, plot, Some(&terminal), font.take());
+                let handle = plot.show_live_in(&terminal)?;
+                live = Some((plot, handle));
+            }
+        }
+        schedule.drawn(Instant::now());
+    }
+
+    // the end of stdin: the points that arrived since the last frame, then the warnings
+    if schedule.pending()
+        && let Some((plot, handle)) = &mut live
+    {
+        handle.update(plot)?;
+    }
+    stream.finish()?;
+    if let Some(warning) = stream.skipped() {
+        eprintln!("{warning}");
+    }
+    if live.is_none() {
+        return Err("no data points found in stdin".into());
+    }
+    Ok(())
+}
+
+/// Adds the --output alternative to errors that mean the terminal can't show images (except
+/// with --follow, which only draws in the terminal).
+fn with_hint(e: termplt::Error, cli: &Cli) -> Box<dyn Error> {
     match e {
         termplt::Error::NotATerminal
         | termplt::Error::GraphicsUnsupported
         | termplt::Error::GraphicsRejected(_)
-        | termplt::Error::TmuxPassthroughDisabled => {
+        | termplt::Error::TmuxPassthroughDisabled
+            if !cli.follow =>
+        {
             format!("{e}. Use --output plot.png to write an image file instead.").into()
+        }
+        termplt::Error::WindowSize(_) | termplt::Error::InvalidWindowSize { .. } if cli.follow => {
+            format!("{e}. Set --width and --height.").into()
         }
         termplt::Error::WindowSize(_) | termplt::Error::InvalidWindowSize { .. } => format!(
             "{e}. Set --width and --height, or use --output plot.png to write an image file \
@@ -259,7 +409,8 @@ fn check_output_path(path: &Path) -> Result<()> {
 }
 
 /// Collects the series to plot, in order: FILE arguments (one series per y column), --data,
-/// then --series. Stdin is used when it is piped and no other data is given.
+/// then --series. Stdin is used when it is piped and no other data is given, and always with
+/// --follow.
 fn collect_specs(cli: &Cli, stdin_is_piped: bool) -> Result<Vec<SeriesSpec>> {
     let x = cli.x_col.as_deref().map(Column::parse).transpose()?;
     let y_cols = cli
@@ -268,9 +419,18 @@ fn collect_specs(cli: &Cli, stdin_is_piped: bool) -> Result<Vec<SeriesSpec>> {
         .map(|c| Column::parse(c))
         .collect::<Result<Vec<_>>>()?;
 
+    let series_specs = (cli.series.iter())
+        .map(|spec| series::parse_spec(spec))
+        .collect::<Result<Vec<_>>>()?;
+
     let mut files: Vec<&String> = cli.files.iter().chain(&cli.data_file).collect();
     let stdin = "-".to_string();
-    if files.is_empty() && cli.data.is_empty() && cli.series.is_empty() && stdin_is_piped {
+    let only_stdin =
+        files.is_empty() && cli.data.is_empty() && cli.series.is_empty() && stdin_is_piped;
+    // --follow always reads stdin, as a FILE unless it is one already
+    let reads_stdin = files.iter().any(|file| *file == "-")
+        || series_specs.iter().any(|spec| spec.source.is_stdin());
+    if only_stdin || (cli.follow && !reads_stdin) {
         files.push(&stdin);
     }
 
@@ -292,8 +452,7 @@ fn collect_specs(cli: &Cli, stdin_is_piped: bool) -> Result<Vec<SeriesSpec>> {
     for data in &cli.data {
         specs.push(SeriesSpec::new(Source::Inline(data.clone())));
     }
-    for spec in &cli.series {
-        let mut spec = series::parse_spec(spec)?;
+    for mut spec in series_specs {
         // file series default to the global column choices
         if matches!(spec.source, Source::File(_)) {
             spec.x = spec.x.or_else(|| x.clone());
@@ -452,6 +611,46 @@ mod tests {
         let specs = collect_specs(&cli(&["a.csv"]), true).unwrap();
         assert_eq!(specs.len(), 1);
         assert_eq!(specs[0].source, Source::File("a.csv".into()));
+    }
+
+    #[test]
+    fn follow_always_reads_stdin() {
+        let sources = |args: &[&str]| -> Vec<Source> {
+            let specs = collect_specs(&cli(args), true).unwrap();
+            specs.into_iter().map(|s| s.source).collect()
+        };
+        let stdin = Source::File("-".into());
+        assert_eq!(sources(&["-f"]), std::slice::from_ref(&stdin));
+        // after the FILE arguments, before --data and --series
+        assert_eq!(
+            sources(&["-f", "a.csv", "-d", "(1,2)"]),
+            [
+                Source::File("a.csv".into()),
+                stdin.clone(),
+                Source::Inline("(1,2)".into())
+            ]
+        );
+        // an explicit '-' is the same source, as a FILE or in a --series
+        assert_eq!(
+            sources(&["-f", "-", "a.csv"]),
+            [stdin.clone(), Source::File("a.csv".into())]
+        );
+        assert_eq!(
+            sources(&["-f", "-s", "file=-,color=red"]),
+            std::slice::from_ref(&stdin)
+        );
+        // one series per y column, as for any file
+        let specs = collect_specs(&cli(&["-f", "-x", "time", "-y", "t,h"]), true).unwrap();
+        assert_eq!(specs.len(), 2);
+        assert!(specs.iter().all(|s| s.source == stdin));
+        assert_eq!(specs[1].y, Some(Column::Name("h".into())));
+    }
+
+    #[test]
+    fn follow_needs_no_help_text_without_other_data() {
+        // stdin is always a source, so there is always something to plot
+        assert_eq!(collect_specs(&cli(&["--follow"]), true).unwrap().len(), 1);
+        assert_eq!(collect_specs(&cli(&[]), true).unwrap().len(), 1);
     }
 
     #[test]

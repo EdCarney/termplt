@@ -23,6 +23,11 @@ All notable changes to this project are documented here. The format is based on
   Kitty protocol, so it works in Kitty, Ghostty, WezTerm and Konsole, and through tmux.
 - `Error::ImageTooTall` (a placed image must fit in the window with a line to spare for the
   cursor) and `Error::PlacementSize` (a replacement of another size).
+- CLI follow mode: `--follow` (`-f`) reads stdin as lines arrive and redraws the plot in place
+  (`tail -f data.csv | termplt --follow`); files and `--data` are drawn on every frame.
+  `--interval MS` redraws at most every MS milliseconds (default 100; `0` for every line with a
+  point) and `--window N` keeps the last N points of each series read from stdin. Rows skipped
+  for missing or non-finite values are reported below the plot when stdin ends.
 
 ## [0.3.0] - 2026-09-26
 

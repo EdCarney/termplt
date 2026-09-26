@@ -20,6 +20,7 @@ Examples:
   termplt data.csv --xlim 0,10 --ylim -1,1 -o plot.png
   termplt data.csv --title \"Temperatures\" --ylabel \"°C\"
   termplt a.csv b.csv --legend-loc upper-left
+  tail -f sensors.csv | termplt --follow -x time -y temp,humidity --window 500
 
 Series specs (-s/--series) are comma-separated key=value pairs:
   file=PATH | data=POINTS   the data for the series ('-' reads stdin); exactly one is required
@@ -244,6 +245,25 @@ pub struct Cli {
     #[arg(long)]
     pub list_markers: bool,
 
+    /// Keep reading stdin as lines arrive and update the plot in place, like `tail -f`. Stdin is
+    /// always read ('-' need not be given); files and inline data are drawn on every frame
+    #[arg(short, long, conflicts_with = "output", help_heading = "Live")]
+    pub follow: bool,
+
+    /// Redraw at most every MS milliseconds; 0 redraws whenever new points arrive [default: 100]
+    #[arg(long, value_name = "MS", requires = "follow", help_heading = "Live")]
+    pub interval: Option<u64>,
+
+    /// Keep only the last N points of each series read from stdin [default: all]
+    #[arg(
+        long,
+        value_name = "N",
+        value_parser = clap::value_parser!(u64).range(1..),
+        requires = "follow",
+        help_heading = "Live"
+    )]
+    pub window: Option<u64>,
+
     /// Print debug information (terminal size, canvas, plot area) to stderr
     #[arg(short, long)]
     pub verbose: bool,
@@ -387,6 +407,43 @@ mod tests {
         assert!(!cli.legend && cli.no_legend);
         let cli = parse(&["--no-legend", "--legend"]).unwrap();
         assert!(cli.legend && !cli.no_legend);
+    }
+
+    #[test]
+    fn follow_flags_parse() {
+        let cli = parse(&["-f"]).unwrap();
+        assert!(cli.follow);
+        assert_eq!((cli.interval, cli.window), (None, None));
+        let cli = parse(&["--follow", "--interval", "0", "--window", "500"]).unwrap();
+        assert!(cli.follow);
+        assert_eq!((cli.interval, cli.window), (Some(0), Some(500)));
+    }
+
+    #[test]
+    fn interval_and_window_need_follow() {
+        for args in [&["--interval", "50"][..], &["--window", "10"]] {
+            let err = parse(args).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument, "{args:?}");
+            assert!(err.to_string().contains("--follow"), "{err}");
+        }
+    }
+
+    #[test]
+    fn the_window_keeps_at_least_one_point() {
+        let err = parse(&["-f", "--window", "0"]).unwrap_err().to_string();
+        assert!(err.contains("invalid value '0' for '--window"), "{err}");
+        assert!(parse(&["-f", "--interval", "-1"]).is_err());
+    }
+
+    #[test]
+    fn follow_cannot_write_a_file() {
+        let err = parse(&["--follow", "--output", "plot.png"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+        let err = err.to_string();
+        assert!(
+            err.contains("--follow") && err.contains("--output"),
+            "{err}"
+        );
     }
 
     #[test]
