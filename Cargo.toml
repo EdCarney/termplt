@@ -2,12 +2,14 @@
 name = "termplt"
 version = "0.2.0"
 edition = "2024"
+# let-chains need 1.88; checked by the MSRV job in CI
+rust-version = "1.88"
 description = "A Rust library for rendering 2D plots directly in Kitty-compatible terminals"
 license = "MIT"
 repository = "https://github.com/EdCarney/termplt"
 keywords = ["terminal", "plotting", "kitty", "graphs", "cli"]
 categories = ["command-line-utilities", "visualization"]
-exclude = ["test_data/", "scripts/", ".claude/", "CLAUDE.md"]
+exclude = ["test_data/", "scripts/", ".claude/", ".github/", "CLAUDE.md", "IMPROVEMENTS.md"]
 
 [[bin]]
 name = "termplt"
@@ -26,9 +28,19 @@ libc = "0.2"
 
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }
+tempfile = "3"
 
 [features]
 default = ["cli"]
 # The command-line tool. Library users can disable it with `default-features = false` to avoid
 # compiling its dependencies.
 cli = ["dep:clap", "dep:clap_complete"]
+
+# The end-to-end tests run the CLI binary, so they need the `cli` feature.
+[[test]]
+name = "pty"
+required-features = ["cli"]
+
+[[test]]
+name = "cli"
+required-features = ["cli"]

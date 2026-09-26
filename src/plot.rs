@@ -295,14 +295,14 @@ mod tests {
 
     #[test]
     fn save_png_writes_a_readable_file() {
-        let path = std::env::temp_dir().join(format!("termplt-plot-{}.png", std::process::id()));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plot.png");
         Plot::new()
             .scatter(vec![(1, 2), (3, 4)])
             .size(320, 240)
             .save_png(&path)
             .unwrap();
         let img = image::open(&path).unwrap();
-        std::fs::remove_file(&path).unwrap();
         assert_eq!((img.width(), img.height()), (320, 240));
     }
 }
