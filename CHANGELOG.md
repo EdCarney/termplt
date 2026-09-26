@@ -4,7 +4,10 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-09-26
+
+Live plots: a plot redrawn in place as its data changes, in the library (`Plot::show_live`) and
+the CLI (`--follow`). No breaking changes.
 
 ### Added
 - In-place updates, so a plot can change without being rebuilt: `Series::push` and
@@ -198,7 +201,7 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 
 First releases (0.1.0 and 0.1.1, published the same day).
 
-[0.4.0]: https://github.com/EdCarney/termplt/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/EdCarney/termplt/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/EdCarney/termplt/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/EdCarney/termplt/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/EdCarney/termplt/compare/v0.1.2...v0.2.0
