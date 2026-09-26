@@ -1,6 +1,6 @@
 [package]
 name = "termplt"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 # let-chains need 1.88; checked by the MSRV job in CI
 rust-version = "1.88"

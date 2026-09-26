@@ -60,7 +60,7 @@ TerminalCanvas::draw()
   └── labels → get_mask → set_pixels # tick labels (bitmap font), drawn last
 ```
 
-Ticks (`ticks.rs`): values are k × step with step ∈ {1, 2, 5} × 10^k (Heckbert); `fit_ticks` picks the densest count (≤ `MAX_TICKS`) whose labels don't overlap at the actual pixel size. Labels on an axis share decimal places; scientific notation when |v| ≥ 1e6 or step < 1e-4. A label color equal to the background is replaced with black/white. `get_drawable_limits()` returns the plot area from the same layout.
+Ticks (`ticks.rs`): values are k × step with step ∈ {1, 2, 5} × 10^k (Heckbert); `fit_ticks` picks the densest count (≤ `MAX_TICKS`) whose labels don't overlap at the actual pixel size. Labels on an axis share decimal places; scientific notation when |v| ≥ 1e6 or step < 1e-4. An axis whose range shares ≥ 4 leading digits gets a matplotlib-style offset (`axis_offset`, computed from the view range so it's known before layout): its ticks are fitted, placed and labeled relative to it, which keeps them exact where f64 can't represent `offset + k × step` (e.g. near 1e15), and the offset label (`+1e15`) goes under the right end of the x axis or above the y axis. A label color equal to the background is replaced with black/white. `get_drawable_limits()` returns the plot area from the same layout.
 
 The `Drawable` trait (`fn get_mask(&self) -> Result<Vec<MaskPoints>>`) is implemented by `Series`, `Line`, `Marker`, `Label`, and `Graph`. Each returns pixel coordinates + colors; the canvas composites them.
 
@@ -85,7 +85,7 @@ In tmux it draws with `C=1` and prints the newlines itself.
 
 ### Text/Number Rendering (`text.rs`, `numbers.rs`)
 
-Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters render as a placeholder box. Supports scaling (pixel replication) and padding. `num_to_str` uses decimal when `0.1^sig_figs < |x| < 10^sig_figs`, otherwise scientific notation, with trailing zero stripping.
+Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `+`, `e`, ` `; other characters render as a placeholder box. Blank glyph rows are spaces, and the parser skips empty lines, so an editor that trims trailing whitespace breaks glyphs (a test counts the rows). Supports scaling (pixel replication) and padding. `num_to_str` uses decimal when `0.1^sig_figs < |x| < 10^sig_figs`, otherwise scientific notation, with trailing zero stripping.
 
 ### CLI (`src/bin/termplt/`)
 
@@ -108,4 +108,4 @@ Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters r
 See `IMPROVEMENTS.md` for the full prioritized list and status. Key open items:
 - Clipping to explicit limits drops points (the line breaks there) rather than clipping line segments at the boundary
 - `Limits::new` panics on inverted bounds (internal invariant); use `Limits::try_new` for untrusted input
-- Bitmap font only covers `0-9 . - e`, so there are no titles, axis names or legends yet
+- Bitmap font only covers `0-9 . - + e`, so there are no titles, axis names or legends yet

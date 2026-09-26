@@ -70,6 +70,91 @@ pub fn format_ticks(values: &[f64], step: f64) -> Vec<String> {
     }
 }
 
+/// Leading digits an offset must save before it is used (matplotlib's
+/// `axes.formatter.offset_threshold`).
+const OFFSET_THRESHOLD: i32 = 4;
+
+/// The offset to label an axis over `[min, max]` relative to, or 0 for none. This is
+/// matplotlib's `ScalarFormatter` rule: when both ends share at least [`OFFSET_THRESHOLD`]
+/// leading digits, those digits become the offset (shown as `+1e15`) and the ticks count up
+/// from it. Unlike matplotlib, which looks at the outermost visible ticks, this looks at the
+/// range itself, so the offset is known before the ticks are fitted.
+pub fn axis_offset(min: f64, max: f64) -> f64 {
+    if !min.is_finite() || !max.is_finite() || min >= max || (min <= 0.0 && 0.0 <= max) {
+        return 0.0;
+    }
+    let (abs_min, abs_max) = if min > 0.0 { (min, max) } else { (-max, -min) };
+    let oom_max = abs_max.log10().ceil() as i32;
+    // the smallest power of ten at which the ends are equal
+    let Some(differs) = first_oom(oom_max, |p| floor_div(abs_min, p) != floor_div(abs_max, p))
+    else {
+        return 0.0;
+    };
+    let mut oom = differs + 1;
+    if (abs_max - abs_min) / pow10(oom) <= 1e-2 {
+        // the range straddles a multiple of a large power of ten (relative to the span): use
+        // the smallest power of ten at which the ends are at most 1 apart
+        let Some(apart) = first_oom(oom_max, |p| {
+            floor_div(abs_max, p) - floor_div(abs_min, p) > 1.0
+        }) else {
+            return 0.0;
+        };
+        oom = apart + 1;
+    }
+    let digits = floor_div(abs_max, pow10(oom));
+    if !digits.is_finite() || digits < 10f64.powi(OFFSET_THRESHOLD - 1) {
+        return 0.0;
+    }
+    // dividing by an exact power of ten, where matplotlib multiplies by an inexact one, gives
+    // the float nearest the decimal offset, so its label has no stray digits
+    let offset = if oom < 0 {
+        digits / pow10(-oom)
+    } else {
+        digits * pow10(oom)
+    };
+    min.signum() * offset
+}
+
+fn pow10(oom: i32) -> f64 {
+    10f64.powf(oom as f64)
+}
+
+/// Counts down from 10^`oom_max` to the first power of ten `p` where `found(p)` holds.
+fn first_oom(oom_max: i32, found: impl Fn(f64) -> bool) -> Option<i32> {
+    // 1e-323 is the smallest power of ten above zero
+    (-323..=oom_max).rev().find(|&oom| found(pow10(oom)))
+}
+
+/// `a // b` as Python computes it for positive floats, which matplotlib's rule is written in.
+/// It can differ from `(a / b).floor()`: `1.0 // 0.1` is 9 because 0.1 is stored slightly
+/// above 0.1.
+fn floor_div(a: f64, b: f64) -> f64 {
+    let div = (a - a % b) / b;
+    let floor = div.floor();
+    if div - floor > 0.5 {
+        floor + 1.0
+    } else {
+        floor
+    }
+}
+
+/// The label for an axis offset in matplotlib's style (`+1e15`, `-1e15`, `+1.7e9`), or `None`
+/// for no offset. Where matplotlib rounds to 10 significant digits, this shows every digit the
+/// offset has, so the tick values it implies are exact.
+pub fn format_offset(offset: f64) -> Option<String> {
+    if offset == 0.0 || !offset.is_finite() {
+        return None;
+    }
+    // `{:e}` prints the fewest digits that identify the value, e.g. "1.7e9"
+    let label = format!("{offset:e}");
+    let label = label.strip_suffix("e0").unwrap_or(&label);
+    Some(if offset > 0.0 {
+        format!("+{label}")
+    } else {
+        label.to_string()
+    })
+}
+
 fn format_all(values: &[f64], format: impl Fn(f64) -> String) -> Vec<String> {
     values
         .iter()
@@ -240,6 +325,85 @@ mod tests {
         let labels = format_ticks(&[1.0e20, 1.00000001e20], 1e12);
         assert_eq!(labels, ["1.00000000e20", "1.00000001e20"]);
         assert_eq!(format_ticks(&[2e6, 4e6], 2e6), ["2e6", "4e6"]);
+    }
+
+    #[test]
+    fn offset_matches_matplotlib() {
+        // (min, max, offset) from matplotlib 3.11's ScalarFormatter, given min and max as ticks
+        let cases = [
+            (1e15, 1e15 + 1.6, 1e15),
+            // the view around 1e15 + 0.1 * i, which straddles the offset
+            (1e15 - 0.125, 1e15 + 1.625, 1e15),
+            (1_700_000_000.0, 1_700_000_100.0, 1_700_000_000.0),
+            (1_699_999_995.0, 1_700_000_105.0, 1_700_000_000.0),
+            (2000.0, 2024.0, 0.0),
+            (100_000.0, 100_050.0, 100_000.0),
+            (99_990.0, 100_010.0, 100_000.0),
+            (-1.0, 1.0, 0.0),
+            (0.0, 10.0, 0.0),
+            (-1e15 - 1.6, -1e15, -1e15),
+            // Python's float `//` makes 1.0 // 0.1 == 9.0, which is what gives this an offset
+            (1.0, 1.001, 1.0),
+            (1.2345, 1.2346, 1.234),
+            (5.0, 5.001, 0.0),
+            (
+                1_234_567_890_123_000.0,
+                1_234_567_890_123_100.0,
+                1_234_567_890_123_000.0,
+            ),
+            (1e17, 1e17 + 64.0, 1e17),
+            (9.5e-301, 1.05e-300, 0.0),
+        ];
+        for (min, max, offset) in cases {
+            assert_eq!(axis_offset(min, max), offset, "{min:?}..{max:?}");
+        }
+    }
+
+    #[test]
+    fn offset_labels() {
+        let label = |offset| format_offset(offset);
+        assert_eq!(label(1e15).as_deref(), Some("+1e15"));
+        assert_eq!(label(1_700_000_000.0).as_deref(), Some("+1.7e9"));
+        assert_eq!(label(100_000.0).as_deref(), Some("+1e5"));
+        assert_eq!(label(-1e15).as_deref(), Some("-1e15"));
+        assert_eq!(label(1.0).as_deref(), Some("+1"));
+        assert_eq!(label(1.234).as_deref(), Some("+1.234"));
+        assert_eq!(label(0.00125).as_deref(), Some("+1.25e-3"));
+        // matplotlib shows 10 digits ("+1.23456789e15"), which misstates every tick by 123000
+        assert_eq!(
+            label(1_234_567_890_123_000.0).as_deref(),
+            Some("+1.234567890123e15")
+        );
+        assert_eq!(label(0.0), None);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn ticks_near_a_large_offset_are_evenly_spaced(
+            base in -1e18f64..1e18,
+            // spans from about 15 representable steps of `base` up to 100 times `base`
+            span_exp in -14.5f64..2.0,
+        ) {
+            let (min, max) = (base, base + base.abs().max(1.0) * 10f64.powf(span_exp));
+            let offset = axis_offset(min, max);
+            let (lo, hi) = (min - offset, max - offset);
+            let ticks = fit_ticks(lo, hi, 1000.0, |_, spacing| spacing >= 40.0);
+            let px: Vec<f64> = (ticks.values.iter())
+                .map(|v| (v - lo) / (hi - lo) * 1000.0)
+                .collect();
+            for w in px.windows(3) {
+                let gaps = (w[1] - w[0], w[2] - w[1]);
+                proptest::prop_assert!(
+                    (gaps.0 - gaps.1).abs() < 0.5,
+                    "{min:?}..{max:?} offset {offset:?}: pixels {px:?}"
+                );
+            }
+            proptest::prop_assert!(
+                ticks.labels.windows(2).all(|l| l[0] != l[1]),
+                "{:?}",
+                ticks.labels
+            );
+        }
     }
 
     #[test]

@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
+## [0.2.1] - 2026-09-25
+
+### Fixed
+- Tick labels on axes far from zero. Near 1e15, where f64 values are 0.125 apart, labels showed
+  wrong values (`…0.2`, `…0.5`, `…0.6`) at uneven spacing, and one could appear below the axis.
+  Such axes now get an offset, as in matplotlib: the ticks are fitted and placed relative to it,
+  so they are exact and evenly spaced, and the offset is shown once (`+1e15`) under the right
+  end of the x axis or above the y axis.
+
+### Changed
+- Any axis whose values share at least 4 leading digits gets an offset (matplotlib's default
+  threshold), so timestamps like `1700000000 1700000050 1700000100` are now labeled
+  `0 50 100` with `+1.7e9`. Unlike matplotlib, the offset shows all of its digits rather than
+  rounding to 10.
+
 ## [0.2.0] - 2026-09-25
 
 A large rework of the library and CLI. The library API has **breaking changes**; see
@@ -109,6 +124,7 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 
 First releases (0.1.0 and 0.1.1, published the same day).
 
+[0.2.1]: https://github.com/EdCarney/termplt/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/EdCarney/termplt/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/EdCarney/termplt/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/EdCarney/termplt/releases/tag/v0.1.1
