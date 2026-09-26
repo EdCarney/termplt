@@ -226,7 +226,7 @@ mod sys {
     use std::{
         fs::{File, OpenOptions},
         io::{self, Read, Write},
-        os::fd::AsRawFd,
+        os::fd::{AsRawFd, RawFd},
         time::{Duration, Instant},
     };
 
@@ -258,29 +258,113 @@ mod sys {
             let deadline = Instant::now() + timeout;
             loop {
                 let remaining = deadline.saturating_duration_since(Instant::now());
-                let timeout_ms = remaining.as_millis().min(i32::MAX as u128) as libc::c_int;
-                let mut pollfd = libc::pollfd {
-                    fd: self.file.as_raw_fd(),
-                    events: libc::POLLIN,
-                    revents: 0,
-                };
-                // SAFETY: `pollfd` is a valid, initialized pollfd and the count is 1
-                let rc = unsafe { libc::poll(&mut pollfd, 1, timeout_ms) };
-                if rc < 0 {
-                    let err = io::Error::last_os_error();
-                    if err.kind() == io::ErrorKind::Interrupted {
-                        continue;
+                match wait_readable(self.file.as_raw_fd(), remaining) {
+                    Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(err) => return Err(err),
+                    Ok(false) => return Ok(None),
+                    Ok(true) => {
+                        let mut buf = [0u8; 256];
+                        let n = self.file.read(&mut buf)?;
+                        return Ok(Some(buf[..n].to_vec()));
                     }
-                    return Err(err);
                 }
-                if rc == 0 {
-                    return Ok(None);
-                }
-
-                let mut buf = [0u8; 256];
-                let n = self.file.read(&mut buf)?;
-                return Ok(Some(buf[..n].to_vec()));
             }
+        }
+    }
+
+    /// Waits at most `timeout` for `fd` to become readable; `Ok(false)` on timeout.
+    ///
+    /// macOS's `poll` does not support terminal devices: it reports `/dev/tty` as ready
+    /// (`POLLNVAL`) at once, and the read that follows blocks until the terminal sends
+    /// something, i.e. forever if it never answers. `select` works there.
+    fn wait_readable(fd: RawFd, timeout: Duration) -> io::Result<bool> {
+        if cfg!(target_os = "macos") {
+            wait_select(fd, timeout)
+        } else {
+            wait_poll(fd, timeout)
+        }
+    }
+
+    fn wait_poll(fd: RawFd, timeout: Duration) -> io::Result<bool> {
+        let timeout_ms = timeout.as_millis().min(i32::MAX as u128) as libc::c_int;
+        let mut pollfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: `pollfd` is a valid, initialized pollfd and the count is 1
+        let rc = unsafe { libc::poll(&mut pollfd, 1, timeout_ms) };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if rc == 0 {
+            return Ok(false);
+        }
+        // reading after POLLNVAL or POLLERR could block, so report those instead
+        if pollfd.revents & (libc::POLLNVAL | libc::POLLERR) != 0 {
+            return Err(io::Error::other(format!(
+                "the terminal cannot be polled (revents {:#x})",
+                pollfd.revents
+            )));
+        }
+        Ok(true)
+    }
+
+    fn wait_select(fd: RawFd, timeout: Duration) -> io::Result<bool> {
+        if fd < 0 || fd as usize >= libc::FD_SETSIZE {
+            return Err(io::Error::other(format!(
+                "file descriptor {fd} is out of range for select"
+            )));
+        }
+        // SAFETY: an all-zero fd_set is valid, and fd is within FD_SETSIZE (checked above)
+        let mut read_fds: libc::fd_set = unsafe { std::mem::zeroed() };
+        unsafe {
+            libc::FD_ZERO(&mut read_fds);
+            libc::FD_SET(fd, &mut read_fds);
+        }
+        let mut tv = libc::timeval {
+            tv_sec: timeout.as_secs().min(i32::MAX as u64) as libc::time_t,
+            tv_usec: timeout.subsec_micros() as _,
+        };
+        // SAFETY: valid fd_set and timeval; the unused sets may be null
+        let rc = unsafe {
+            libc::select(
+                fd + 1,
+                &mut read_fds,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut tv,
+            )
+        };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(rc > 0)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::{io::Write, os::unix::net::UnixStream};
+
+        #[test]
+        fn both_waits_time_out_and_see_data() {
+            for wait in [wait_poll, wait_select] {
+                let (mut tx, rx) = UnixStream::pair().unwrap();
+                let fd = rx.as_raw_fd();
+                let start = Instant::now();
+                assert!(!wait(fd, Duration::from_millis(50)).unwrap());
+                assert!(start.elapsed() >= Duration::from_millis(40));
+                tx.write_all(b"x").unwrap();
+                assert!(wait(fd, Duration::from_secs(5)).unwrap());
+            }
+        }
+
+        #[test]
+        fn polling_a_closed_descriptor_is_an_error_not_a_read() {
+            let fd = UnixStream::pair().unwrap().0.as_raw_fd();
+            // the stream above is already closed, so fd is invalid (POLLNVAL)
+            assert!(wait_poll(fd, Duration::from_millis(10)).is_err());
         }
     }
 }

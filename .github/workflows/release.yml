@@ -1,32 +1,59 @@
 name: Release
 
+# Push a tag matching the version in Cargo.toml (`git tag v0.2.0 && git push origin v0.2.0`), or
+# run the workflow by hand with that tag to create it at the commit the run is started from.
+# Either way the tag must match Cargo.toml, the tests must pass, and every binary must build
+# before anything is published.
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v0.2.0)'
+        description: 'Release tag (e.g. v0.2.0); must match the version in Cargo.toml'
         required: true
       prerelease:
         description: 'Mark as pre-release'
         required: false
-        default: 'false'
+        default: false
         type: boolean
-
-  # Uncomment to auto-publish on every merge to main.
-  # You will also want to uncomment the tag derivation step in the `release` job below.
-  # push:
-  #   branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
   BINARY_NAME: termplt
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  check:
+    name: Check version and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Tag matches Cargo.toml
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $VERSION (expected v$VERSION)"
+            exit 1
+          fi
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Package builds on its own
+        run: cargo publish --dry-run --locked
+
   build:
     name: Build (${{ matrix.target }})
+    needs: check
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -53,13 +80,17 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      # every runner builds for its own architecture, so the tests run on the released target
+      - name: Test
+        run: cargo test --locked --release --target ${{ matrix.target }}
+
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} --bin ${{ env.BINARY_NAME }}
+        run: cargo build --locked --release --target ${{ matrix.target }} --bin ${{ env.BINARY_NAME }}
 
       - name: Package binary (Unix)
         if: matrix.archive_ext == 'tar.gz'
         run: |
-          ARCHIVE="${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          ARCHIVE="${{ env.BINARY_NAME }}-${{ env.TAG }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
           tar czf "$ARCHIVE" -C "target/${{ matrix.target }}/release" ${{ env.BINARY_NAME }}
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
@@ -67,7 +98,7 @@ jobs:
         if: matrix.archive_ext == 'zip'
         shell: pwsh
         run: |
-          $ARCHIVE = "${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          $ARCHIVE = "${{ env.BINARY_NAME }}-${{ env.TAG }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
           Compress-Archive -Path "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe" -DestinationPath $ARCHIVE
           echo "ARCHIVE=$ARCHIVE" >> $env:GITHUB_ENV
 
@@ -90,18 +121,40 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      # When using the auto push trigger (see above), derive the tag from Cargo.toml:
-      # - name: Derive tag from Cargo.toml
-      #   id: version
-      #   run: |
-      #     VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-      #     echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Checksums
+        working-directory: artifacts
+        run: |
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag }}
-          # tag_name: ${{ steps.version.outputs.tag }}   # use this line instead for auto push trigger
-          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+          tag_name: ${{ env.TAG }}
+          # a tag created by a manual run points at the commit that was tested and built
+          target_commitish: ${{ github.sha }}
+          # tags like v0.3.0-rc.1 are pre-releases
+          prerelease: ${{ github.event.inputs.prerelease == 'true' || contains(env.TAG, '-') }}
           files: artifacts/*
           generate_release_notes: true
+
+  publish:
+    name: Publish to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Skipped (with a notice) until a crates.io API token with the publish-update scope is
+      # added as the CARGO_REGISTRY_TOKEN repository secret.
+      - name: Publish
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::notice::CARGO_REGISTRY_TOKEN is not set; skipping cargo publish"
+            exit 0
+          fi
+          cargo publish --locked

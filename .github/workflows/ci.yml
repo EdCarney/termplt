@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -25,13 +25,31 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose --locked
 
       - name: Run tests
         run: cargo test --verbose
 
       - name: Test library without the CLI feature
         run: cargo test --verbose --no-default-features
+
+  msrv:
+    name: MSRV (1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # keep in sync with `rust-version` in Cargo.toml
+      - uses: dtolnay/rust-toolchain@1.88
+
+      - uses: Swatinem/rust-cache@v2
+
+      # --locked: a dependency update that needs a newer compiler should fail here, not for users
+      - name: Test
+        run: cargo test --locked
+
+      - name: Test library without the CLI feature
+        run: cargo test --locked --no-default-features
 
   clippy:
     name: Clippy

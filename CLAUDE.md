@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 cargo build                          # Build
-cargo test                           # Run all tests (unit tests in modules + tests/golden.rs + tests/properties.rs)
+cargo test                           # Run all tests (unit tests in modules + tests/{golden,properties,cli,pty}.rs)
 cargo test plotting::graph          # Run tests for a specific module
 cargo test draw_into_matches_get_mask # Run a single test by name
 cargo clippy --all-targets -- -D warnings  # Lint (CI fails on any warning)
@@ -15,10 +15,14 @@ TERMPLT_UPDATE_SNAPSHOTS=1 cargo test --test golden  # Regenerate golden PNGs af
 PROPTEST_CASES=20000 cargo test --test properties    # Longer property-test run
 cargo run -- --data "(1,1),(2,4)"    # Render a plot via the CLI (needs a Kitty-protocol terminal)
 cargo run -- data.csv -o plot.png    # Write a PNG instead (no terminal needed; handy for checking output)
-cargo test --no-default-features     # Library only, without the clap-based CLI
+cargo test --no-default-features     # Library only, without the clap-based CLI (skips tests/cli.rs and tests/pty.rs)
+cargo test --test pty                # CLI in a pseudo-terminal against a scripted fake terminal (Unix only)
+cargo +1.88 test --locked            # MSRV check (rust-version in Cargo.toml; CI runs it)
 ```
 
-CI (`.github/workflows/ci.yml`): build + test on Linux and Windows (also with `--no-default-features`), clippy, `cargo doc` with `-D warnings` (the crate has `#![warn(missing_docs)]`, and README.md is the crate doc, so its Rust examples are doctests), rustfmt. One feature, `cli` (default), gates the binary and its `clap` dependency. No custom build scripts. Edition 2024 (let-chains are used, so Rust >= 1.88).
+CI (`.github/workflows/ci.yml`): build + test on Linux, macOS and Windows (also with `--no-default-features`), the same tests on the MSRV (Rust 1.88, `--locked`), clippy, `cargo doc` with `-D warnings` (the crate has `#![warn(missing_docs)]`, and README.md is the crate doc, so its Rust examples are doctests), rustfmt. One feature, `cli` (default), gates the binary and its `clap` dependency. No custom build scripts. Edition 2024 with let-chains, so `rust-version = "1.88"`; don't use newer std APIs without raising it (clippy's `incompatible_msrv` and the MSRV job catch this).
+
+Releases (`.github/workflows/release.yml`): push a `v*` tag equal to the `Cargo.toml` version. It checks the tag, tests on every target, builds the binaries, attaches them with `SHA256SUMS` to a GitHub release, and runs `cargo publish` if the `CARGO_REGISTRY_TOKEN` secret exists. Record user-visible changes in `CHANGELOG.md`.
 
 ## Architecture
 
@@ -94,6 +98,9 @@ Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters r
 - Unit tests are co-located in modules (`#[cfg(test)] mod tests`).
 - `tests/golden.rs` renders fixed scenes and compares them with `tests/snapshots/*.png` (≤0.1% of pixels may differ). After an intentional visual change, regenerate with `TERMPLT_UPDATE_SNAPSHOTS=1` and inspect the PNGs before committing; mismatches are written to `target/snapshots/`.
 - `tests/properties.rs` (proptest) checks that drawing never panics for arbitrary data/styles/sizes (including NaN/∞/extremes) and that scaled points stay within the target limits. Run in debug mode too — release builds disable integer-overflow checks.
+- `tests/cli.rs` runs the CLI binary with piped stdio: PNG output from files and stdin, the not-a-terminal error, argument and data errors.
+- `tests/pty.rs` (Unix) runs the CLI on a pty (`openpty`, made the controlling terminal so `/dev/tty` works) and plays a fake terminal on the master side: it answers the graphics query, `CSI 14t`/`18t` and DA1 as configured, and the tests decode the transmitted PNG and check its size, the control keys (`a=T`, `f=100`, `q=2`, `C=1` in tmux), what follows the image, and the error text. tmux is simulated with `$TMUX` and a fake `tmux` script on `PATH`. The terminal-setup decisions are also unit-tested with a fake `Backend` in `src/terminal.rs`, and reply parsing with a fake `ByteSource` in `responses.rs`.
+- Use `tempfile` for files in tests, never fixed names in the shared temp directory.
 
 ## Known Issues
 
