@@ -91,6 +91,12 @@ impl CtrlSeq for PixelFormat {
 pub enum Action {
     TransmitDisplay,
     Query,
+    /// Stores the image under its id without displaying it.
+    Transmit,
+    /// Displays an image stored earlier, named by its id.
+    Put,
+    /// Deletes images or their placements; the [`DeleteTarget`] says which.
+    Delete,
 }
 
 impl CtrlSeq for Action {
@@ -98,6 +104,28 @@ impl CtrlSeq for Action {
         match self {
             Action::TransmitDisplay => String::from("a=T"),
             Action::Query => String::from("a=q"),
+            Action::Transmit => String::from("a=t"),
+            Action::Put => String::from("a=p"),
+            Action::Delete => String::from("a=d"),
+        }
+    }
+}
+
+/// What an [`Action::Delete`] command removes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteTarget {
+    /// Every placement of the image with this id. With `free_data` the terminal also frees the
+    /// stored image data (the uppercase key); otherwise the image can be put again later.
+    Image { id: u32, free_data: bool },
+}
+
+impl CtrlSeq for DeleteTarget {
+    fn get_ctrl_seq(&self) -> String {
+        match self {
+            DeleteTarget::Image { id, free_data } => {
+                let key = if *free_data { 'I' } else { 'i' };
+                format!("d={key},{}", Metadata::Id(*id).get_ctrl_seq())
+            }
         }
     }
 }
@@ -136,5 +164,33 @@ impl CtrlSeq for Positioning {
                 format!("X={offset_x},Y={offset_y}")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn action_keys() {
+        assert_eq!(Action::TransmitDisplay.get_ctrl_seq(), "a=T");
+        assert_eq!(Action::Query.get_ctrl_seq(), "a=q");
+        assert_eq!(Action::Transmit.get_ctrl_seq(), "a=t");
+        assert_eq!(Action::Put.get_ctrl_seq(), "a=p");
+        assert_eq!(Action::Delete.get_ctrl_seq(), "a=d");
+    }
+
+    #[test]
+    fn deleting_an_image_frees_its_data_with_the_uppercase_key() {
+        let free = DeleteTarget::Image {
+            id: 9,
+            free_data: true,
+        };
+        assert_eq!(free.get_ctrl_seq(), "d=I,i=9");
+        let keep = DeleteTarget::Image {
+            id: 9,
+            free_data: false,
+        };
+        assert_eq!(keep.get_ctrl_seq(), "d=i,i=9");
     }
 }
