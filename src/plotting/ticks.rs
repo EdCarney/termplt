@@ -7,6 +7,10 @@
 /// Default upper bound on the number of ticks per axis.
 pub const MAX_TICKS: usize = 10;
 
+/// The minus sign in labels: U+2212, as matplotlib uses by default (`axes.unicode_minus`). It
+/// is as wide as `+` and sits at its height, unlike the shorter hyphen.
+const MINUS: &str = "\u{2212}";
+
 /// Tolerance (in units of the step) used when deciding whether an end of the range is a tick.
 const EPS: f64 = 1e-9;
 
@@ -146,7 +150,7 @@ pub fn format_offset(offset: f64) -> Option<String> {
         return None;
     }
     // `{:e}` prints the fewest digits that identify the value, e.g. "1.7e9"
-    let label = format!("{offset:e}");
+    let label = format!("{offset:e}").replace('-', MINUS);
     let label = label.strip_suffix("e0").unwrap_or(&label);
     Some(if offset > 0.0 {
         format!("+{label}")
@@ -162,7 +166,7 @@ fn format_all(values: &[f64], format: impl Fn(f64) -> String) -> Vec<String> {
             if v == 0.0 {
                 "0".to_string()
             } else {
-                normalize_negative_zero(format(v))
+                normalize_negative_zero(format(v)).replace('-', MINUS)
             }
         })
         .collect()
@@ -267,7 +271,7 @@ mod tests {
         );
         assert_eq!(
             format_ticks(&[-0.25, 0.0, 0.25], 0.25),
-            ["-0.25", "0", "0.25"]
+            ["−0.25", "0", "0.25"]
         );
         assert_eq!(format_ticks(&[10.0, 20.0], 10.0), ["10", "20"]);
     }
@@ -278,7 +282,7 @@ mod tests {
             format_ticks(&[2e6, 2.5e6, 3e6], 5e5),
             ["2.0e6", "2.5e6", "3.0e6"]
         );
-        assert_eq!(format_ticks(&[1e-5, 2e-5], 1e-5), ["1e-5", "2e-5"]);
+        assert_eq!(format_ticks(&[1e-5, 2e-5], 1e-5), ["1e−5", "2e−5"]);
     }
 
     #[test]
@@ -365,10 +369,10 @@ mod tests {
         assert_eq!(label(1e15).as_deref(), Some("+1e15"));
         assert_eq!(label(1_700_000_000.0).as_deref(), Some("+1.7e9"));
         assert_eq!(label(100_000.0).as_deref(), Some("+1e5"));
-        assert_eq!(label(-1e15).as_deref(), Some("-1e15"));
+        assert_eq!(label(-1e15).as_deref(), Some("−1e15"));
         assert_eq!(label(1.0).as_deref(), Some("+1"));
         assert_eq!(label(1.234).as_deref(), Some("+1.234"));
-        assert_eq!(label(0.00125).as_deref(), Some("+1.25e-3"));
+        assert_eq!(label(0.00125).as_deref(), Some("+1.25e−3"));
         // matplotlib shows 10 digits ("+1.23456789e15"), which misstates every tick by 123000
         assert_eq!(
             label(1_234_567_890_123_000.0).as_deref(),
