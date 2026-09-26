@@ -66,7 +66,8 @@ pub fn format_ticks(values: &[f64], step: f64) -> Vec<String> {
     // digits; beyond that the ticks can't be told apart anyway)
     let digits = (magnitude.log10().floor() - step.log10().floor()).clamp(0.0, 15.0) as usize;
     let scientific = format_all(values, |v| format!("{v:.digits$e}"));
-    let longest = |labels: &[String]| labels.iter().map(String::len).max().unwrap_or(0);
+    // in characters: the minus sign is one character but three bytes
+    let longest = |labels: &[String]| labels.iter().map(|l| l.chars().count()).max().unwrap_or(0);
     if longest(&plain) < longest(&scientific) {
         plain
     } else {
@@ -283,6 +284,16 @@ mod tests {
             ["2.0e6", "2.5e6", "3.0e6"]
         );
         assert_eq!(format_ticks(&[1e-5, 2e-5], 1e-5), ["1e−5", "2e−5"]);
+    }
+
+    #[test]
+    fn the_unicode_minus_does_not_change_which_format_wins() {
+        // "5.0e−5" is 6 characters and "0.00005" is 7, so scientific stays shorter, even though
+        // the minus sign takes 3 bytes
+        assert_eq!(
+            format_ticks(&[0.0, 5e-5, 1e-4, 1.5e-4], 5e-5),
+            ["0", "5.0e\u{2212}5", "1.0e\u{2212}4", "1.5e\u{2212}4"]
+        );
     }
 
     #[test]
