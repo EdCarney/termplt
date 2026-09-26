@@ -18,7 +18,7 @@ PROPTEST_CASES=20000 cargo test --test properties    # Longer property-test run
 cargo run -- --data "(1,1),(2,4)"    # Render a plot via the CLI (needs a Kitty-protocol terminal)
 cargo run -- data.csv -o plot.png    # Write a PNG instead (no terminal needed; handy for checking output)
 cargo run --example live             # A live plot redrawn in place (needs a Kitty-protocol terminal)
-python3 scripts/live_data.py | cargo run --release -- -f -x time -y raw,smoothed --window 200  # --follow on a live stream
+python3 scripts/live_data.py | cargo run --release -- -f -x time -y raw,smoothed --window 200  # --follow on a live stream (also live_scope.py, live_oscillator.py; shared code in live_stream.py)
 cargo test --no-default-features     # Library only, without the clap-based CLI (skips tests/cli.rs and tests/pty.rs)
 cargo test --test pty                # CLI in a pseudo-terminal against a scripted fake terminal (Unix only)
 cargo +1.88 test --locked            # MSRV check (rust-version in Cargo.toml; CI runs it)

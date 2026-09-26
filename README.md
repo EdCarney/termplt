@@ -100,6 +100,18 @@ python3 scripts/live_data.py | termplt -f -x time -y raw,smoothed --window 200 \
 ```
 <!-- <img width="600" alt="A noisy signal and its moving average drawn live, the x axis scrolling as rows arrive" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/follow.gif" /> -->
 
+More demo streams in `scripts/` (each takes `--rate` and `--seconds`, and `--help` lists the rest):
+
+```bash
+# An oscilloscope: a sine and a square wave built from 5 odd harmonics, ringing at its edges
+python3 scripts/live_scope.py | termplt -f -x time -y sine,square --window 200 \
+    --ylim -1.5,1.5 --marker none --line-thickness 1 --title "Oscilloscope"
+
+# A mass-spring-damper pushed back and forth by a stepping force: position, velocity and acceleration
+python3 scripts/live_oscillator.py | termplt -f -x time -y position,velocity,acceleration \
+    --window 500 --marker none --line-thickness 1 --title "Mass-spring-damper"
+```
+
 The first frame is drawn when the first point arrives, sized to the terminal. After that the plot is redrawn at most every `--interval` milliseconds (default: 100; `0` redraws for every line with a point), and the axes follow the data unless `--xlim`/`--ylim` fix them. `--window N` keeps the last N points of each series read from stdin. Headers, columns and legend names work as for a file, and files or `--data` given as well are drawn on every frame. Rows skipped for missing or non-finite values are counted and reported below the plot when stdin ends; a row that can't be read stops the program with its line number. Ctrl-C leaves the last frame on screen with the cursor below it.
 
 Frames are drawn relative to the cursor, so nothing else may write to the terminal while the plot is live: redirect the stderr of the command feeding the pipe, as above.
