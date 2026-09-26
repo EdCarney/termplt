@@ -30,6 +30,9 @@ see "Changed" and "Removed".
   hide it; `Graph::with_legend_location` / `Plot::legend_location` pick one of matplotlib's ten
   locations (`plotting::legend::LegendLocation`, also in the prelude). Long names wrap onto 2
   lines, and series that don't fit are counted in a `+N more` row.
+- CLI legend: series are named from `--series ...,label=NAME`, else the y column's header, else
+  the file name (`stem: column` for a file giving several series; colliding names fall back to
+  file names). `--legend`, `--no-legend` and `--legend-loc` (matplotlib's location names).
 
 ### Changed
 - All text, tick labels included, is drawn with an embedded, trimmed copy of the Go font
@@ -44,6 +47,7 @@ see "Changed" and "Removed".
 - **Breaking:** `Label::new(text, style, pos)` with `text()`, `style()` and `pos()` replaces
   `Label::new(Text, TextPositioning)`, `txt()` and `limits()`. `Label` no longer implements
   `Drawable`.
+- CLI plots with 2 or more series show a legend; `--no-legend` restores the old look.
 
 ### Removed
 - **Breaking:** `Text`, `MAX_TEXT_SCALE` and `MAX_TEXT_PADDING` (the bitmap font).

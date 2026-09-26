@@ -73,6 +73,12 @@ termplt test_data/sine.csv test_data/cosine.csv --title "Sine and cosine" --xlab
 ```
 <img width="600" height="450" alt="Sine and cosine curves with a title and named axes" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/titles.png" />
 
+```bash
+# A legend names each series: from label=, the column header, or the file name
+termplt test_data/sine.csv test_data/damped_sine.csv -s "file=test_data/cosine.csv,label=cos(x)"
+```
+<img width="600" height="450" alt="Sine, damped sine and cosine curves with a legend in the emptiest corner" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/legend.png" />
+
 ### Options
 
 | Option | Description |
@@ -91,6 +97,8 @@ termplt test_data/sine.csv test_data/cosine.csv --title "Sine and cosine" --xlab
 | `--width <PX>` / `--height <PX>` | Image size (default: fits the terminal, or 800x600 with `--output`) |
 | `--bg <COLOR>` | Background color (default: black) |
 | `--no-grid` | Hide grid lines |
+| `--legend` / `--no-legend` | Show the legend even for one series / hide it (default: shown with 2 or more series) |
+| `--legend-loc <LOC>` | Where the legend goes: `best` (default: the location covering the least data, as in matplotlib), `upper-right`, `upper-left`, `lower-left`, `lower-right`, `right`, `center-left`, `center-right`, `lower-center`, `upper-center` or `center`; implies `--legend` |
 | `-o, --output <FILE>` | Write a PNG file (e.g. `plot.png`) instead of displaying; no terminal needed |
 | `--title <TEXT>` | Plot title; long titles wrap onto up to 3 lines |
 | `--xlabel <TEXT>` / `--ylabel <TEXT>` | Axis names (default: the column header when every series has the same one; `""` for none) |
@@ -103,9 +111,11 @@ termplt test_data/sine.csv test_data/cosine.csv --title "Sine and cosine" --xlab
 
 Style options apply to every series. Unset colors and markers cycle through a palette.
 
-A `--series` spec is a list of `key=value` pairs separated by commas: `file=PATH` or `data=POINTS` (required), `x=COL`, `y=COL`, `color`, `marker`, `marker-size`, `marker-color`, `line`, `line-color` and `line-thickness`. Keys override the options above for that series. Inline data keeps its commas, e.g. `-s "data=(1,2),(3,4),color=red"`.
+A `--series` spec is a list of `key=value` pairs separated by commas: `file=PATH` or `data=POINTS` (required), `x=COL`, `y=COL`, `label` (the series' name in the legend; `label=` for none), `color`, `marker`, `marker-size`, `marker-color`, `line`, `line-color` and `line-thickness`. Keys override the options above for that series. Inline data keeps its commas, e.g. `-s "data=(1,2),(3,4),color=red"`.
 
 Data files may have a header row (detected automatically), `#` comments and blank lines. A single-column file is plotted against the row number. Rows with missing values (empty, `NA`, `null`, ...) and NaN/infinite values are skipped with a warning. Header names become axis names when every series agrees.
+
+Series are named for the legend from `label=`, else the y column's header, else the file name (`data: 2` when a file gives several series). When names collide, file names replace them (`a`, `b`, or `run1: temp` for a file with several series). Inline data has no name.
 
 ### Shell completions
 

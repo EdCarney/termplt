@@ -8,7 +8,7 @@ Review of commit `74918e3` (v0.1.2). How the review was done:
 - Wrote throwaway library tests to probe edge cases.
 - Rendered plots to PNG and inspected them.
 
-Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42), Phase 2 (items 7, 10–12, 14, 15, 23 and 43), Phase 3 (items 16, 17 and 19–24, plus most of 18) Phase 4 (items 25–31; Unicode fallback renderer and tmux Unicode placeholders deferred) Phase 5 (items 32–41, with breaking changes for 0.2.0), Phase 6 (items 42 and 44–47) and Phase 7 (fixes from a review of Phases 1–5, below) are done. See the note under each item.
+Status (2026-09-26): Phase 1 (items 1–6, 8, 9, and part of 42), Phase 2 (items 7, 10–12, 14, 15, 23 and 43), Phase 3 (items 16, 17 and 19–24, plus most of 18), Phase 4 (items 25–31; Unicode fallback renderer and tmux Unicode placeholders deferred), Phase 5 (items 32–41, with breaking changes for 0.2.0), Phase 6 (items 42 and 44–47), Phase 7 (fixes from a review of Phases 1–5, below) and 0.3.0 (item 13: TrueType text, titles, axis names and the legend) are done. See the note under each item.
 
 Items marked **(reproduced)** were confirmed by running code. The rest come from reading the source.
 
@@ -127,9 +127,7 @@ Markers at the minimum and maximum sit on the axis lines. Add default padding of
 The mask order is axes, then grid, then series (`graph.rs` `get_mask`). Draw the grid first.
 
 ### 13. No title, axis names or legend
-◐ **Titles and axis names done (0.3.0):** TrueType text (embedded Go font, `ab_glyph`), `Plot::title`/`x_label`/`y_label`, `--title`/`--xlabel`/`--ylabel`, and names from CSV headers. The legend is next.
-
-The bitmap font covers only `0-9 . - e` and space. Add a small ASCII bitmap font (for example a public-domain 6×8 font, scaled) so titles, axis names and a legend with per-series names become possible. In the CLI that could be `--label "sin(x)"` per series and `--title`.
+✅ **Done (0.3.0).** TrueType text (embedded Go font, `ab_glyph`); titles and axis names (`Plot::title`/`x_label`/`y_label`, `--title`/`--xlabel`/`--ylabel`, names from CSV headers); and a matplotlib-style legend (`Series::with_label`, `Plot::legend`/`legend_location`, automatic CLI names, `label=`, `--legend`/`--no-legend`/`--legend-loc`).
 
 ### 14. Default text color is black
 ✅ **Done (Phase 2).** A tick-label color that equals the background is swapped for black or white.

@@ -208,3 +208,110 @@ fn font_size_must_be_at_least_one() {
         stderr(&out)
     );
 }
+
+#[test]
+fn series_are_named_for_the_legend() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.csv"), dir.path().join("b.csv"));
+    std::fs::write(&a, HEADED).unwrap();
+    std::fs::write(&b, HEADED).unwrap();
+    let png = dir.path().join("plot.png");
+    let out = termplt(
+        &[
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "-d",
+            "(0,2),(1,2)",
+            "-s",
+            "data=(0,1),(2,3),label=fit",
+            "-o",
+            png.to_str().unwrap(),
+            "-v",
+        ],
+        "",
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    let err = stderr(&out);
+    // both headers are "temp", so the files name their series; inline data has no name
+    for label in [
+        r#"label="a""#,
+        r#"label="b""#,
+        "label=none",
+        r#"label="fit""#,
+    ] {
+        assert!(err.contains(label), "{label} missing from:\n{err}");
+    }
+}
+
+/// Plots two files, one rising and one falling, with `args` into a 320x240 PNG.
+fn render_two(args: &[&str]) -> image::RgbImage {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.csv"), dir.path().join("b.csv"));
+    std::fs::write(&a, HEADED).unwrap();
+    std::fs::write(&b, "time,temp\n0,23\n1,21\n2,20\n").unwrap();
+    let png = dir.path().join("plot.png");
+    let mut all = vec![
+        a.to_str().unwrap(),
+        b.to_str().unwrap(),
+        "-o",
+        png.to_str().unwrap(),
+        "--width",
+        "320",
+        "--height",
+        "240",
+    ];
+    all.extend_from_slice(args);
+    let out = termplt(&all, "");
+    assert!(out.status.success(), "{}", stderr(&out));
+    image::open(&png).unwrap().to_rgb8()
+}
+
+#[test]
+fn two_series_get_a_legend_unless_it_is_hidden() {
+    let shown = render_two(&[]);
+    assert_ne!(shown, render_two(&["--no-legend"]));
+    assert_ne!(shown, render_two(&["--legend-loc", "center"]));
+}
+
+#[test]
+fn one_series_gets_a_legend_only_when_asked() {
+    let plain = render(HEADED, &[]);
+    assert_eq!(plain, render(HEADED, &["--no-legend"]));
+    assert_ne!(plain, render(HEADED, &["--legend"]));
+    assert_ne!(plain, render(HEADED, &["--legend-loc", "upper-left"]));
+    assert_eq!(
+        plain,
+        render(HEADED, &["--legend-loc", "upper-left", "--no-legend"])
+    );
+}
+
+#[test]
+fn a_legend_needs_a_named_series() {
+    // inline data has no name: asking for a legend draws none, and is no error
+    let inline = |extra: &[&str]| {
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("plot.png");
+        let mut args = vec!["-d", "(0,1),(1,3),(2,2)", "-o", png.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        let out = termplt(&args, "");
+        assert!(out.status.success(), "{}", stderr(&out));
+        image::open(&png).unwrap().to_rgb8()
+    };
+    assert_eq!(inline(&["--legend"]), inline(&[]));
+}
+
+#[test]
+fn verbose_reports_the_legend() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data.csv");
+    std::fs::write(&data, HEADED).unwrap();
+    let png = dir.path().join("plot.png");
+    let run = |extra: &[&str]| {
+        let mut args = vec![data.to_str().unwrap(), "-o", png.to_str().unwrap(), "-v"];
+        args.extend_from_slice(extra);
+        stderr(&termplt(&args, ""))
+    };
+    assert!(run(&[]).contains("[verbose] legend: off"));
+    assert!(run(&["--legend"]).contains("[verbose] legend: on, best"));
+    assert!(run(&["--legend-loc", "lower-left"]).contains("[verbose] legend: on, lower-left"));
+}

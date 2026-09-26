@@ -8,7 +8,7 @@ use clap::{
 use clap_complete::Shell;
 use std::ffi::OsStr;
 use std::path::PathBuf;
-use termplt::plotting::{colors, text::MAX_FONT_SIZE};
+use termplt::plotting::{colors, legend::LegendLocation, text::MAX_FONT_SIZE};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -19,10 +19,12 @@ Examples:
   termplt -s \"file=a.csv,color=red\" -s \"file=b.csv,color=#1e90ff,marker=none,line=dashed\"
   termplt data.csv --xlim 0,10 --ylim -1,1 -o plot.png
   termplt data.csv --title \"Temperatures\" --ylabel \"°C\"
+  termplt a.csv b.csv --legend-loc upper-left
 
 Series specs (-s/--series) are comma-separated key=value pairs:
   file=PATH | data=POINTS   the data for the series ('-' reads stdin); exactly one is required
   x=COL, y=COL              columns to plot (defaults to --x-col/--y-col)
+  label=TEXT                the series' name in the legend ('label=' for none)
   color, marker, marker-size, marker-color, line, line-color, line-thickness
                             style for this series (defaults to the matching options)
 
@@ -168,6 +170,19 @@ pub struct Cli {
     #[arg(long, help_heading = "Plot")]
     pub no_grid: bool,
 
+    /// Show the legend, even for a single series [default: shown for 2 or more series]
+    #[arg(long, overrides_with = "no_legend", help_heading = "Plot")]
+    pub legend: bool,
+
+    /// Hide the legend
+    #[arg(long, overrides_with = "legend", help_heading = "Plot")]
+    pub no_legend: bool,
+
+    /// Where the legend goes inside the plot; implies --legend [default: best, the location
+    /// covering the least data]
+    #[arg(long, value_name = "LOC", value_enum, help_heading = "Plot")]
+    pub legend_loc: Option<LegendLoc>,
+
     /// Write the plot to a PNG file (e.g. plot.png) instead of displaying it; no terminal is
     /// needed
     #[arg(short, long, value_name = "FILE", value_hint = ValueHint::FilePath, help_heading = "Plot")]
@@ -240,6 +255,40 @@ pub struct Cli {
     /// Print a shell completion script and exit, e.g. `termplt --completions zsh > _termplt`
     #[arg(long, value_name = "SHELL")]
     pub completions: Option<Shell>,
+}
+
+/// `--legend-loc` values: matplotlib's `loc` names, with hyphens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum LegendLoc {
+    Best,
+    UpperRight,
+    UpperLeft,
+    LowerLeft,
+    LowerRight,
+    Right,
+    CenterLeft,
+    CenterRight,
+    LowerCenter,
+    UpperCenter,
+    Center,
+}
+
+impl From<LegendLoc> for LegendLocation {
+    fn from(loc: LegendLoc) -> LegendLocation {
+        match loc {
+            LegendLoc::Best => LegendLocation::Best,
+            LegendLoc::UpperRight => LegendLocation::UpperRight,
+            LegendLoc::UpperLeft => LegendLocation::UpperLeft,
+            LegendLoc::LowerLeft => LegendLocation::LowerLeft,
+            LegendLoc::LowerRight => LegendLocation::LowerRight,
+            LegendLoc::Right => LegendLocation::Right,
+            LegendLoc::CenterLeft => LegendLocation::CenterLeft,
+            LegendLoc::CenterRight => LegendLocation::CenterRight,
+            LegendLoc::LowerCenter => LegendLocation::LowerCenter,
+            LegendLoc::UpperCenter => LegendLocation::UpperCenter,
+            LegendLoc::Center => LegendLocation::Center,
+        }
+    }
 }
 
 /// Accepts color names (ignoring case and separators) and hex colors. The color names are
@@ -325,6 +374,30 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
         Cli::try_parse_from(std::iter::once("termplt").chain(args.iter().copied()))
+    }
+
+    #[test]
+    fn legend_flags_parse() {
+        let cli = parse(&["--legend-loc", "lower-center"]).unwrap();
+        assert_eq!(cli.legend_loc, Some(LegendLoc::LowerCenter));
+        let err = parse(&["--legend-loc", "top"]).unwrap_err().to_string();
+        assert!(err.contains("upper-right"), "{err}");
+        // the last of --legend and --no-legend wins
+        let cli = parse(&["--legend", "--no-legend"]).unwrap();
+        assert!(!cli.legend && cli.no_legend);
+        let cli = parse(&["--no-legend", "--legend"]).unwrap();
+        assert!(cli.legend && !cli.no_legend);
+    }
+
+    #[test]
+    fn legend_locations_map_one_to_one() {
+        use clap::ValueEnum;
+        for loc in LegendLoc::value_variants() {
+            assert_eq!(
+                format!("{:?}", LegendLocation::from(*loc)),
+                format!("{loc:?}")
+            );
+        }
     }
 
     #[test]

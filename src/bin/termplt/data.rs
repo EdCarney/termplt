@@ -36,6 +36,8 @@ pub struct Parsed {
     pub points: Vec<Point<f64>>,
     pub skipped_missing: usize,
     pub names: ColumnNames,
+    /// The y column's 1-based index.
+    pub y_column: usize,
 }
 
 /// The header names of the columns a series was read from; `None` where a column has none.
@@ -241,12 +243,17 @@ impl Table {
         if y == Column::RowNumber {
             return Err("the y column cannot be 'index'".into());
         }
+        let Column::Index(y_index) = &y else {
+            unreachable!("names are resolved to indices")
+        };
+        let y_column = y_index + 1;
 
         let mut parsed = Parsed {
             names: ColumnNames {
                 x: self.header_name(&x),
                 y: self.header_name(&y),
             },
+            y_column,
             ..Parsed::default()
         };
         for (row_number, (line, fields)) in self.rows.iter().enumerate() {
@@ -312,6 +319,21 @@ fn split_fields(line: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn points_report_the_y_column() {
+        let table = Table::parse("a,b,c\n1,2,3\n");
+        assert_eq!(table.points(None, None, "t").unwrap().y_column, 2);
+        let c = Column::Name("c".into());
+        assert_eq!(table.points(None, Some(&c), "t").unwrap().y_column, 3);
+        assert_eq!(
+            Table::parse("5\n6\n")
+                .points(None, None, "t")
+                .unwrap()
+                .y_column,
+            1
+        );
+    }
 
     fn pts(v: &[(f64, f64)]) -> Vec<Point<f64>> {
         v.iter().map(|&(x, y)| Point::new(x, y)).collect()
