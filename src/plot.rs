@@ -16,7 +16,7 @@ use crate::{
         series::Series,
         text::{DEFAULT_FONT_SIZE, TextStyle},
     },
-    terminal::Terminal,
+    terminal::{Image, Placement, Terminal},
 };
 use rgb::RGB8;
 use std::path::Path;
@@ -318,6 +318,91 @@ impl Plot {
             .into_bytes();
         terminal.show_rgb(&rgb, width, height)
     }
+
+    /// Draws the plot in the terminal like [`Plot::show`] and returns a handle that redraws it
+    /// in place with [`LivePlot::update`], for data that changes over time.
+    ///
+    /// The plot starts at the beginning of the cursor's line, and the cursor is left below it.
+    /// Nothing else may be written to the terminal while the plot is live. Fails with
+    /// [`Error::ImageTooTall`](crate::Error::ImageTooTall) when the plot and a line for the
+    /// cursor don't fit in the window.
+    pub fn show_live(&self) -> Result<LivePlot> {
+        let terminal = Terminal::connect()?;
+        self.show_live_in(&terminal)
+    }
+
+    /// Like [`Plot::show_live`], with a [`Terminal`] that was already connected.
+    pub fn show_live_in(&self, terminal: &Terminal) -> Result<LivePlot> {
+        self.show_live_with(terminal, Terminal::place)
+    }
+
+    /// Draws the first frame and places it with `place`.
+    fn show_live_with(
+        &self,
+        terminal: &Terminal,
+        place: impl FnOnce(&Terminal, &Image) -> Result<Placement>,
+    ) -> Result<LivePlot> {
+        let (width, height) = self.size.unwrap_or_else(|| terminal.default_plot_size());
+        let font_size = self.font_size_in(terminal);
+        let rgb = self
+            .canvas_with_font_size(width, height, font_size)
+            .draw()?
+            .into_bytes();
+        let placement = place(terminal, &Image::png_from_rgb(&rgb, width, height)?)?;
+        Ok(LivePlot {
+            placement,
+            font_size,
+        })
+    }
+}
+
+/// A plot shown in the terminal by [`Plot::show_live`] that can be redrawn in place.
+///
+/// Change the plot between frames, then pass it to [`LivePlot::update`]. The data changes in
+/// place through [`Plot::series_mut`]; anything else, such as the limits or the title, goes
+/// through the builders (`plot = plot.x_limits(0.0, 10.0)`), since the handle doesn't borrow
+/// the plot. The axes follow the data on every frame unless limits are set, and nothing waits
+/// between frames: pacing is up to the caller.
+///
+/// ```no_run
+/// use std::{thread, time::Duration};
+/// use termplt::prelude::*;
+///
+/// let mut plot = Plot::new().line(Series::from(vec![(0.0, 0.0)]).with_label("sin"));
+/// let mut live = plot.show_live()?; // the first frame, sized to the terminal
+/// for i in 1..=200 {
+///     let t = f64::from(i) * 0.05;
+///     let sin = &mut plot.series_mut()[0];
+///     sin.push(t, t.sin());
+///     sin.keep_last(100); // a sliding window
+///     live.update(&plot)?;
+///     thread::sleep(Duration::from_millis(50));
+/// }
+/// // the last frame stays on screen, with the cursor below it
+/// # Ok::<(), termplt::Error>(())
+/// ```
+#[derive(Debug)]
+pub struct LivePlot {
+    placement: Placement,
+    font_size: u32,
+}
+
+impl LivePlot {
+    /// Draws `plot` over the previous frame, at the size and text size of the first frame
+    /// (a size or text size set on `plot` since then is ignored).
+    pub fn update(&mut self, plot: &Plot) -> Result<()> {
+        let (width, height) = self.placement.size();
+        let rgb = plot
+            .canvas_with_font_size(width, height, self.font_size)
+            .draw()?
+            .into_bytes();
+        self.placement.replace_rgb(&rgb, width, height)
+    }
+
+    /// The frame size in pixels, as (width, height).
+    pub fn size(&self) -> (u32, u32) {
+        self.placement.size()
+    }
 }
 
 #[cfg(test)]
@@ -427,6 +512,104 @@ mod tests {
         });
         assert_eq!(Plot::new().font_size_in(&terminal), 28);
         assert_eq!(Plot::new().font_size(20).font_size_in(&terminal), 20);
+    }
+
+    fn live_terminal() -> Terminal {
+        Terminal::with_window(crate::terminal::WindowSize {
+            rows: 50,
+            cols: 160,
+            x_pix: 1600,
+            y_pix: 1000,
+            pix_per_row: 20,
+            pix_per_col: 10,
+        })
+    }
+
+    fn count(haystack: &[u8], needle: &[u8]) -> usize {
+        haystack
+            .windows(needle.len())
+            .filter(|w| w == &needle)
+            .count()
+    }
+
+    #[test]
+    fn a_live_plot_is_redrawn_in_place_at_its_first_size() {
+        let terminal = live_terminal();
+        let mut plot = Plot::new().line(Series::from(vec![(0, 0), (1, 1)]).with_label("v"));
+        let mut live = plot
+            .show_live_with(&terminal, Terminal::place_in_buffer)
+            .unwrap();
+        // the terminal's default size and text size, as with `show_in`
+        assert_eq!(live.size(), terminal.default_plot_size());
+        assert_eq!(live.font_size, terminal.text_size());
+        assert_eq!(count(live.placement.written(), b"a=t,"), 1);
+        assert_eq!(count(live.placement.written(), b"a=d,"), 0);
+
+        // a point outside the axes rescales them; the caller does nothing different
+        plot.series_mut()[0].push(10, -5);
+        live.update(&plot).unwrap();
+        assert_eq!(count(live.placement.written(), b"a=t,"), 2);
+        assert_eq!(count(live.placement.written(), b"a=d,"), 1);
+
+        // a size or text size set later is ignored: every frame has the first frame's size
+        let plot = plot.size(300, 200).font_size(30);
+        live.update(&plot).unwrap();
+        assert_eq!(live.size(), terminal.default_plot_size());
+        assert_eq!(count(live.placement.written(), b"a=t,"), 3);
+        assert_eq!(count(live.placement.written(), b"a=d,"), 2);
+    }
+
+    #[test]
+    fn a_live_plot_takes_the_size_and_text_size_set_on_the_plot() {
+        let plot = Plot::new()
+            .line(vec![(0, 0), (1, 1)])
+            .size(320, 240)
+            .font_size(11);
+        let live = plot
+            .show_live_with(&live_terminal(), Terminal::place_in_buffer)
+            .unwrap();
+        assert_eq!(live.size(), (320, 240));
+        assert_eq!(live.font_size, 11);
+    }
+
+    #[test]
+    fn a_frame_that_cannot_be_drawn_sends_nothing() {
+        let terminal = live_terminal();
+        assert!(matches!(
+            Plot::new().show_live_with(&terminal, Terminal::place_in_buffer),
+            Err(crate::Error::NoData)
+        ));
+
+        let mut plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let mut live = plot
+            .show_live_with(&terminal, Terminal::place_in_buffer)
+            .unwrap();
+        let written = live.placement.written().len();
+        plot.series_mut()[0].clear();
+        assert!(matches!(live.update(&plot), Err(crate::Error::NoData)));
+        assert_eq!(live.placement.written().len(), written);
+        // the next frame with data replaces the first one
+        plot.series_mut()[0].push(2, 2);
+        live.update(&plot).unwrap();
+        assert_eq!(count(live.placement.written(), b"a=d,"), 1);
+    }
+
+    #[test]
+    fn a_plot_taller_than_the_window_cannot_be_live() {
+        let plot = Plot::new().line(vec![(0, 0), (1, 1)]).size(400, 1000);
+        assert!(matches!(
+            plot.show_live_with(&live_terminal(), Terminal::place_in_buffer),
+            Err(crate::Error::ImageTooTall {
+                rows: 50,
+                screen_rows: 50
+            })
+        ));
+    }
+
+    #[test]
+    fn live_plots_are_send_and_sync() {
+        fn check<T: Send + Sync + 'static>() {}
+        check::<LivePlot>();
     }
 
     #[test]

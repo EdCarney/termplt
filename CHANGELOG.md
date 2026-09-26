@@ -13,6 +13,16 @@ All notable changes to this project are documented here. The format is based on
   only the newest `n` (a sliding window), and `Series::data_mut` gives the points for anything
   else. `Graph::data_mut` and `Plot::series_mut` give the series, in order, to change their
   data or styles; series are still added with the builders.
+- Live plots: `Plot::show_live` (and `show_live_in`, with a connected `Terminal`) draws the plot
+  and returns a `LivePlot`, whose `update(&plot)` redraws it in place, at the size and text
+  size of the first frame, without flicker. The axes follow the data on every frame unless
+  limits are set. `examples/live.rs` shows a sliding window (`cargo run --example live`).
+- `Terminal::place` shows an image and returns a `Placement`, whose `replace` and
+  `replace_rgb` swap in a new image of the same size. A frame is one write: the new image is
+  sent under a new id, drawn over the old one, and the old one deleted, using only the base
+  Kitty protocol, so it works in Kitty, Ghostty, WezTerm and Konsole, and through tmux.
+- `Error::ImageTooTall` (a placed image must fit in the window with a line to spare for the
+  cursor) and `Error::PlacementSize` (a replacement of another size).
 
 ## [0.3.0] - 2026-09-26
 

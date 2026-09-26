@@ -54,6 +54,22 @@ pub enum Error {
     },
     /// An image position lies outside the terminal window.
     PositionOutsideWindow,
+    /// An image placed with [`Terminal::place`](crate::terminal::Terminal::place) covers more
+    /// lines than the window has, less one for the cursor.
+    ImageTooTall {
+        /// Lines the image covers.
+        rows: u32,
+        /// Lines in the window.
+        screen_rows: u32,
+    },
+    /// An image replacing a [`Placement`](crate::terminal::Placement)'s image does not have its
+    /// size.
+    PlacementSize {
+        /// The placement's size in pixels, as (width, height).
+        expected: (u32, u32),
+        /// The new image's size in pixels.
+        got: (u32, u32),
+    },
     /// The pixel format cannot be combined with the transmission medium.
     UnsupportedTransmission,
     /// A file path that cannot be sent to the terminal (it must be valid UTF-8).
@@ -127,6 +143,19 @@ impl fmt::Display for Error {
             Error::PositionOutsideWindow => {
                 write!(f, "the image position lies outside the terminal window")
             }
+            Error::ImageTooTall { rows, screen_rows } => write!(
+                f,
+                "the image is {rows} lines tall, but the terminal has {screen_rows} lines and \
+                 needs one of them for the cursor; use a smaller image or a taller window"
+            ),
+            Error::PlacementSize {
+                expected: (expected_w, expected_h),
+                got: (got_w, got_h),
+            } => write!(
+                f,
+                "the new image is {got_w}x{got_h} pixels, but the image it replaces is \
+                 {expected_w}x{expected_h}; every frame must have the same size"
+            ),
             Error::UnsupportedTransmission => write!(
                 f,
                 "unsupported combination of pixel format and transmission medium"

@@ -12,4 +12,4 @@ mod terminal_commands;
 mod window_ctrl;
 
 pub use error::{Error, Result};
-pub use plot::{DEFAULT_PNG_SIZE, Plot};
+pub use plot::{DEFAULT_PNG_SIZE, LivePlot, Plot};

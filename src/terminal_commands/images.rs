@@ -120,8 +120,6 @@ impl Image {
 
     /// The command that stores the image under `id` without displaying it (`a=t`), for
     /// [`Image::put_command`] to display later.
-    // used by live plots (#51)
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn transmit_command(&self, id: u32, passthrough: Passthrough) -> KittyCommand {
         let attributes = [
             Action::Transmit.get_ctrl_seq(),
@@ -136,8 +134,6 @@ impl Image {
 
     /// The command that displays the image stored under `id` at the cursor (`a=p`), leaving the
     /// cursor where it is.
-    // used by live plots (#51)
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn put_command(&self, id: u32, passthrough: Passthrough) -> KittyCommand {
         let mut ctrl = vec![Action::Put.get_ctrl_seq(), Metadata::Id(id).get_ctrl_seq()];
         // the cell bounds are display keys, which the transmit command doesn't keep
@@ -231,8 +227,6 @@ impl Image {
 
 /// The command that deletes every placement of the image stored under `id` (`a=d`), and with
 /// `free_data` also the stored image data.
-// used by live plots (#51)
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn delete_image_command(
     id: u32,
     free_data: bool,

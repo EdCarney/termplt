@@ -17,6 +17,7 @@ scripts/subset_font.sh               # Rebuild the embedded font from the pinned
 PROPTEST_CASES=20000 cargo test --test properties    # Longer property-test run
 cargo run -- --data "(1,1),(2,4)"    # Render a plot via the CLI (needs a Kitty-protocol terminal)
 cargo run -- data.csv -o plot.png    # Write a PNG instead (no terminal needed; handy for checking output)
+cargo run --example live             # A live plot redrawn in place (needs a Kitty-protocol terminal)
 cargo test --no-default-features     # Library only, without the clap-based CLI (skips tests/cli.rs and tests/pty.rs)
 cargo test --test pty                # CLI in a pseudo-terminal against a scripted fake terminal (Unix only)
 cargo +1.88 test --locked            # MSRV check (rust-version in Cargo.toml; CI runs it)
@@ -31,9 +32,9 @@ Releases (`.github/workflows/release.yml`): push a `v*` tag equal to the `Cargo.
 **termplt** is a Rust library for rendering 2D plots directly in Kitty-compatible terminals using the Kitty graphics protocol. User data of any numeric type is stored as `f64`, scaled to pixel coordinates, rendered to an in-memory RGB canvas, then PNG-encoded and transmitted via Kitty APC escape sequences.
 
 Public API layers, top-down:
-- `Plot` (`plot.rs`): one-call builder (`line`/`scatter`/`line_points`/`series`, limits, size, background, grid, `title`/`x_label`/`y_label`, `font`/`font_size` (terminal-matched in `show()`), `legend`/`legend_location`; `show`, `save_png`, `render`). The CLI uses it too.
+- `Plot` (`plot.rs`): one-call builder (`line`/`scatter`/`line_points`/`series`, limits, size, background, grid, `title`/`x_label`/`y_label`, `font`/`font_size` (terminal-matched in `show()`), `legend`/`legend_location`; `show`, `save_png`, `render`). The CLI uses it too. `series_mut` gives the series for in-place changes (`Series::push`/`extend`/`clear`/`keep_last`/`data_mut`), and `show_live` returns a `LivePlot` whose `update(&plot)` redraws in place at the first frame's size and text size (the same canvas as `show_in`).
 - `plotting::{series::Series, graph::Graph, canvas::TerminalCanvas}` and the style types; `prelude` re-exports the common ones.
-- `terminal`: `Terminal` (support check, size, tmux handling, display) plus re-exported `WindowSize`, `get_window_size`, `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
+- `terminal`: `Terminal` (support check, size, tmux handling, display, `place` returning a `Placement` whose image can be replaced) plus re-exported `WindowSize`, `get_window_size`, `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
 - `Error`/`Result` (`error.rs`): one `#[non_exhaustive]` enum for the whole crate.
 
 `kitty_graphics`, `terminal_commands` and `plotting::{common, srgb, ticks}` are private; re-export what users need rather than making them public.
@@ -81,6 +82,8 @@ After rendering, the canvas bytes are PNG-encoded (`Image::png_from_rgb`, `f=100
 - gets the window size, falling back to an estimate from the cell count.
 
 In tmux it draws with `C=1` and prints the newlines itself.
+
+**Placements** (`Terminal::place`, `Placement::replace`; `frame_bytes` in `terminal.rs` is pure and tested byte for byte). Each frame is one buffer written with one `write_all` and a flush, through a private `Sink` (stdout; a buffer in tests), so the cursor is below the image between frames. `n` = `rows_covered(height)`; placing fails with `Error::ImageTooTall` unless `n <= rows - 1`. The first frame writes `\r`, `\n` × n, `CSI n A`, a transmit (`a=t,i=ID,q=2`, chunked) and a put (`a=p,i=ID,C=1,q=2`), then `CSI n B`. A replacement transmits the new id first (the old frame stays visible), then `CSI n A`, the put, a delete of the old id with its data (`a=d,d=I`), and `CSI n B`. Only the APC commands are wrapped for tmux. Ids: a process-wide counter seeded with the pid gives each placement a block `1 + count % 255`; frame k has id `block << 16 | k % 65536` (non-zero, below 2^24, rising). Retransmitting under the same id would blink (the old image is deleted before the new data arrives), and the animation extension (`a=f`) is Kitty-only.
 
 ### Line Drawing (`line.rs`)
 

@@ -122,8 +122,6 @@ impl KittyCommand {
     }
 
     /// The bytes of the command, e.g. to send several commands in one write.
-    // used by live plots (#51)
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn into_bytes(self) -> Vec<u8> {
         self.cmd
     }
