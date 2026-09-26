@@ -72,7 +72,7 @@ _The screenshots above are from an earlier version; axes now use round tick valu
 
 | Option | Description |
 |---|---|
-| `FILE...` | Data files (CSV, TSV or whitespace-delimited); `-` reads stdin. Piped stdin is read automatically when no other data is given |
+| `FILE...` | Data files (comma-, semicolon-, tab- or whitespace-delimited); `-` reads stdin. Piped stdin is read automatically when no other data is given |
 | `-d, --data <POINTS>` | Inline points: `"(1,2),(3,4)"`, `"1,2 3,4"` or `"1,2;3,4"` |
 | `-s, --series <SPEC>` | A series with its own data, columns and style (see below) |
 | `-x, --x-col <COL>` | Column for x: header name, 1-based index, or `index` for the row number (default: 1) |
@@ -82,7 +82,7 @@ _The screenshots above are from an earlier version; axes now use round tick valu
 | `--marker-size <PX>` / `--marker-color <COLOR>` | Marker radius (default: 2) and color |
 | `--line <STYLE>` | `solid` (default), `dashed`, or `none` (scatter plot) |
 | `--line-thickness <PX>` / `--line-color <COLOR>` | Line thickness (default: 0) and color |
-| `--xlim <MIN,MAX>` / `--ylim <MIN,MAX>` | Axis limits; points outside are not drawn |
+| `--xlim <MIN,MAX>` / `--ylim <MIN,MAX>` | Axis limits; points outside are not drawn (lines break there) |
 | `--width <PX>` / `--height <PX>` | Image size (default: fits the terminal, or 800x600 with `--output`) |
 | `--bg <COLOR>` | Background color (default: black) |
 | `--no-grid` | Hide grid lines |
@@ -148,7 +148,7 @@ echo 'set -g allow-passthrough on' >> ~/.tmux.conf   # permanently
 
 The CLI stops with that hint when passthrough is off. tmux doesn't track the image itself, so it disappears when tmux redraws the pane (switching windows, resizing, scrolling in copy mode); run the command again to redraw it.
 
-**Windows.** Rendering works in terminals that implement the protocol on Windows, such as WezTerm. Terminal queries are read from the console (`CONIN$`) with VT input; this path is compiled and unit-tested in CI but has not been verified interactively yet. Windows Terminal does not implement the Kitty protocol, so use `--output` there. If you try it, please report what works:
+**Windows.** Rendering works in terminals that implement the protocol on Windows, such as WezTerm. Terminal queries are read from the console (`CONIN$`) with VT input enabled while the query runs. This path compiles and is linted in CI, and its reply parsing is unit-tested, but the console handling itself has not been run on Windows yet. One known limitation for library users: after the first query, a background thread keeps reading the console, so a long-running interactive program that calls `Plot::show()` loses the next line typed at the console (the CLI exits after drawing and is unaffected). Windows Terminal does not implement the Kitty protocol, so use `--output` there. If you try it, please report what works:
 
 1. `termplt --data "(1,1),(2,4)" -v` shows a plot and prints the detected terminal size.
 2. `Get-Content data.csv | termplt -v` (PowerShell) works with piped input (queries still reach the console).

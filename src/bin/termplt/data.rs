@@ -119,10 +119,13 @@ pub struct Table {
 }
 
 impl Table {
-    /// Parses CSV, TSV or whitespace-delimited text. Blank lines and lines starting with '#'
-    /// are ignored. The first row is a header if any of its fields is neither a number nor a
-    /// missing value.
+    /// Parses comma-, semicolon-, tab- or whitespace-delimited text. A UTF-8 byte order mark
+    /// is skipped, and blank lines and lines starting with '#' are ignored. The first row is a
+    /// header if any of its fields is neither a number nor a missing value.
     pub fn parse(content: &str) -> Table {
+        // spreadsheet exports often start with a BOM, which would make the first row look
+        // like a header
+        let content = content.strip_prefix('\u{feff}').unwrap_or(content);
         let mut rows: Vec<(usize, Vec<String>)> = content
             .lines()
             .enumerate()
@@ -187,13 +190,14 @@ impl Table {
         }
     }
 
-    /// Extracts (x, y) points. With no columns given, a single-column table is plotted
-    /// against the row number and wider tables use columns 1 and 2.
+    /// Extracts (x, y) points. Without an x column, a single-column table is plotted against
+    /// the row number and wider tables use column 1 for x (and column 2 for y by default).
     pub fn points(&self, x: Option<&Column>, y: Option<&Column>, source: &str) -> Result<Parsed> {
         let single_column = self.width() == 1;
         let x = match x {
             Some(x) => self.resolve(x, source)?,
-            None if single_column && y.is_none() => Column::RowNumber,
+            // the only column is y, whether chosen or not
+            None if single_column => Column::RowNumber,
             None => Column::Index(0),
         };
         let y = match y {
@@ -247,6 +251,8 @@ fn split_fields(line: &str) -> Vec<String> {
     let line = line.trim();
     let fields: Vec<&str> = if line.contains(',') {
         line.split(',').collect()
+    } else if line.contains(';') {
+        line.split(';').collect()
     } else if line.contains('\t') {
         line.split('\t').collect()
     } else {
@@ -413,5 +419,33 @@ mod tests {
     #[test]
     fn y_cannot_be_the_row_number() {
         assert!(table_points("1,2\n", None, Some("index")).is_err());
+    }
+
+    #[test]
+    fn byte_order_mark_is_skipped() {
+        let table = Table::parse("\u{feff}1,2\n3,4\n5,6\n");
+        assert!(table.header.is_none());
+        assert_eq!(table.rows.len(), 3);
+        let table = Table::parse("\u{feff}time,temp\n0,20\n");
+        assert_eq!(
+            table.header.as_deref(),
+            Some(&["time".to_string(), "temp".into()][..])
+        );
+    }
+
+    #[test]
+    fn semicolon_separated() {
+        let parsed = Table::parse("x;y\n1;2\n3;4\n")
+            .points(None, None, "t.csv")
+            .unwrap();
+        assert_eq!(parsed.points, pts(&[(1.0, 2.0), (3.0, 4.0)]));
+    }
+
+    #[test]
+    fn single_column_with_explicit_y_uses_the_row_number() {
+        let parsed = Table::parse("5\n7\n9\n")
+            .points(None, Some(&Column::Index(0)), "t.csv")
+            .unwrap();
+        assert_eq!(parsed.points, pts(&[(0.0, 5.0), (1.0, 7.0), (2.0, 9.0)]));
     }
 }

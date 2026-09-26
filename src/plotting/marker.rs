@@ -14,7 +14,7 @@ use crate::{
 use rgb::RGB8;
 
 /// The marker drawn at each data point. `size` is the radius in pixels (0 is a single pixel).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkerStyle {
     /// No marker is drawn (e.g. for a line-only series).
     None,

@@ -31,7 +31,7 @@ Releases (`.github/workflows/release.yml`): push a `v*` tag equal to the `Cargo.
 Public API layers, top-down:
 - `Plot` (`plot.rs`): one-call builder (`line`/`scatter`/`line_points`/`series`, limits, size, background, grid; `show`, `save_png`, `render`). The CLI uses it too.
 - `plotting::{series::Series, graph::Graph, canvas::TerminalCanvas}` and the style types; `prelude` re-exports the common ones.
-- `terminal`: `Terminal` (support check, size, tmux handling, display) plus re-exported `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
+- `terminal`: `Terminal` (support check, size, tmux handling, display) plus re-exported `WindowSize`, `get_window_size`, `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
 - `Error`/`Result` (`error.rs`): one `#[non_exhaustive]` enum for the whole crate.
 
 `kitty_graphics`, `terminal_commands` and `plotting::{common, numbers, ticks}` are private; re-export what users need rather than making them public.
@@ -55,7 +55,7 @@ TerminalCanvas::draw()
   ├── grid_lines.get_mask_at(..)     # grid at tick positions (drawn first)
   ├── axes.get_mask(plot)            # axis lines just outside the plot area
   ├── series.draw_into(canvas)       # markers, then lines, straight into the canvas
-  ├── Canvas::set_pixels()           # write RGB8 into 2D pixel buffer
+  ├── Canvas::set_pixels()           # write RGB8 into the flat pixel buffer
   └── labels → get_mask → set_pixels # tick labels (bitmap font), drawn last
 ```
 
@@ -65,7 +65,7 @@ The `Drawable` trait (`fn get_mask(&self) -> Result<Vec<MaskPoints>>`) is implem
 
 ### Limits and performance
 
-`Graph` keeps explicit limits as `x_limits`/`y_limits: Option<(f64, f64)>`; `Graph::limits()` merges them with the data extent, and explicit limits also clip points. `Series::draw_into` is the fast path used by the canvas (flat RGB buffer, marker offsets stamped once per style, line discs stamped incrementally, repeated pixels skipped); it must produce exactly the pixels of `Drawable::get_mask` (a test checks every style), so change both together.
+`Graph` keeps explicit limits as `x_limits`/`y_limits: Option<(f64, f64)>`; `Graph::limits()` merges them with the data extent, and explicit limits also clip points. `Graph::visible()` leaves one NaN gap point where points were removed (outside the limits, or non-finite), and both drawing paths skip non-finite points and the segments touching them, so lines break instead of bridging. `Series::draw_into` is the fast path used by the canvas (flat RGB buffer, marker offsets stamped once per style, line discs stamped incrementally, repeated pixels skipped); it must produce exactly the pixels of `Drawable::get_mask` (a test checks every style), so change both together.
 
 ### Kitty Protocol (`kitty_graphics/`)
 
@@ -105,6 +105,6 @@ Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `e`, ` `; other characters r
 ## Known Issues
 
 See `IMPROVEMENTS.md` for the full prioritized list and status. Key open items:
-- Clipping to explicit limits drops points rather than clipping line segments
+- Clipping to explicit limits drops points (the line breaks there) rather than clipping line segments at the boundary
 - `Limits::new` panics on inverted bounds (internal invariant); use `Limits::try_new` for untrusted input
 - Bitmap font only covers `0-9 . - e`, so there are no titles, axis names or legends yet

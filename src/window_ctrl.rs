@@ -31,8 +31,13 @@ pub fn get_window_size() -> Result<WindowSize> {
         csi_cmds::get_text_area_size_pixels,
     )
     .map_err(|e| Error::WindowSize(Box::new(e)))?;
+    window_size_from(rows, cols, x_pix, y_pix)
+}
 
-    if rows == 0 || cols == 0 || x_pix == 0 || y_pix == 0 {
+/// Checks a reported size: every part must be non-zero, and a cell at least one pixel in each
+/// direction (anything else is a bogus report, and would divide by zero later).
+fn window_size_from(rows: u32, cols: u32, x_pix: u32, y_pix: u32) -> Result<WindowSize> {
+    if rows == 0 || cols == 0 || x_pix < cols || y_pix < rows {
         return Err(Error::InvalidWindowSize { rows, cols });
     }
 
@@ -98,6 +103,19 @@ mod tests {
 
     fn unreachable_query() -> Result<(u32, u32)> {
         panic!("the terminal should not be queried")
+    }
+
+    #[test]
+    fn cells_smaller_than_a_pixel_are_invalid() {
+        let ws = window_size_from(50, 160, 1600, 1000).unwrap();
+        assert_eq!((ws.pix_per_col, ws.pix_per_row), (10, 20));
+        for (rows, cols, x_pix, y_pix) in [(50, 160, 100, 1000), (50, 160, 1600, 10), (0, 1, 1, 1)]
+        {
+            assert!(matches!(
+                window_size_from(rows, cols, x_pix, y_pix),
+                Err(Error::InvalidWindowSize { .. })
+            ));
+        }
     }
 
     #[test]

@@ -52,6 +52,24 @@ A large rework of the library and CLI. The library API has **breaking changes**;
   pixels.
 - CLI flags use kebab-case (`--marker-size`); the old snake_case spellings still work.
 - `image` is built with only PNG support; `--output` accepts only `.png`.
+- `WindowSize` and `get_window_size` moved from the crate root to `termplt::terminal`.
+- Lines break where points were dropped (outside explicit limits, or NaN/±∞) instead of joining
+  the neighbouring points.
+- Hex colors need their `#` (`colors::parse`, `--color`): words such as `bad` or `facade` are
+  no longer taken for hex.
+- `--marker-size`, `--line-thickness` and the matching `--series` keys accept 0 to 100;
+  `TextStyle::new` clamps the scale to 32 and the padding to 64.
+- A terminal that reports no size at all is assumed to be 80x24 cells (with a warning) instead
+  of being an error.
+- `GridLines::XOnly`/`YOnly` are documented as what they always drew: lines parallel to the
+  named axis (horizontal for `XOnly`).
+- `Error::source` returns the wrapped error's source, since the wrapped message is already part
+  of the message; error reporters no longer print it twice.
+- `Text::from_number` rounds to the requested significant figures instead of truncating.
+- `PartialEq` for `Plot`, `Graph`, `Series`, `Axes`, `Image` and the style types; `Copy` for
+  `TextStyle`, `TextPositioning`, `AxesPositioning` and `GridLines`; `Eq` where possible.
+  `TerminalCommandError` is `#[non_exhaustive]`. `Transmission`'s `Debug` shows the size of
+  inline data instead of every byte.
 
 ### Removed
 - The `kitty_graphics` and `terminal_commands` modules and `plotting::{common, numbers, ticks}`
@@ -67,6 +85,19 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 - CSV error line numbers were off by one after a header row.
 - Running with stdout redirected no longer writes escape codes into the pipe; it reports that
   stdout is not a terminal and suggests `--output`.
+- Tick labels for data with a large offset (e.g. timestamps) were all identical
+  (`1.700000e9`), and end labels could run into their neighbours.
+- Overflow panics in the layout with huge marker sizes, line or axis thicknesses or buffers,
+  and in `Label` near `u32::MAX`; a division by zero for terminals reporting fewer pixels than
+  cells.
+- On macOS the CLI hung forever when the terminal answered no query: `poll()` doesn't support
+  `/dev/tty` there, so the 2 s timeout never fired. Queries now wait with `select()` on macOS.
+- On Windows, VT input is enabled on the console while a query runs, so replies can arrive.
+- Query timeouts no longer claim a Kitty terminal is required when the query was for the size.
+- CSV: a UTF-8 byte order mark no longer makes the first row a header; semicolon-separated
+  files parse; a single column with `-y 1` is plotted against the row number.
+- `Series` converts from arrays of `(x, y)` tuples, `&Vec<(x, y)>`, pairs of arrays and
+  `&[Point<T>]`, as the docs suggested.
 
 ## [0.1.2] - 2026-02-16
 

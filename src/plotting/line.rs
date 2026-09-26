@@ -10,7 +10,7 @@ use rgb::RGB8;
 
 /// How a line is drawn. A thickness of 0 is one pixel wide; each step adds a pixel on both
 /// sides.
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum LineStyle {
     /// A continuous line.
     Solid {

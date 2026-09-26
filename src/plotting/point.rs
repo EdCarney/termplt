@@ -5,7 +5,7 @@ use super::{
 use std::ops::{Add, Div, Mul, Sub};
 
 /// A 2D point.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Point<T: Graphable> {
     /// The x coordinate.
     pub x: T,

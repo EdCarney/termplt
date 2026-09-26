@@ -36,7 +36,9 @@ const PLOT_SIZE: (u32, u32) = (1200, 600);
 
 #[derive(Clone, Copy)]
 struct FakeTerminal {
-    /// Whether the pty reports its size in pixels (`TIOCGWINSZ`); cells are always reported.
+    /// Whether the pty reports its size in cells (`TIOCGWINSZ`).
+    cells_in_winsize: bool,
+    /// Whether the pty reports its size in pixels.
     pixels_in_winsize: bool,
     /// Answers the Kitty graphics query with `OK`.
     graphics: bool,
@@ -49,6 +51,7 @@ struct FakeTerminal {
 impl FakeTerminal {
     /// Kitty-like: supports graphics and reports everything.
     const KITTY: FakeTerminal = FakeTerminal {
+        cells_in_winsize: true,
         pixels_in_winsize: true,
         graphics: true,
         size_replies: true,
@@ -111,7 +114,7 @@ impl Run {
 /// Runs the CLI with its stdin, stdout and stderr on a new pty (which becomes its controlling
 /// terminal, so `/dev/tty` works) and plays `term` on the other end.
 fn run(term: FakeTerminal, args: &[&str], env: &[(&str, &str)]) -> Run {
-    let (master, slave) = open_pty(term.pixels_in_winsize);
+    let (master, slave) = open_pty(term);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_termplt"));
     cmd.args(args)
         .env_remove("TMUX")
@@ -171,12 +174,14 @@ fn run(term: FakeTerminal, args: &[&str], env: &[(&str, &str)]) -> Run {
     }
 }
 
-fn open_pty(pixels_in_winsize: bool) -> (OwnedFd, OwnedFd) {
+fn open_pty(term: FakeTerminal) -> (OwnedFd, OwnedFd) {
+    let cells = |n| if term.cells_in_winsize { n } else { 0 };
+    let pixels = |n| if term.pixels_in_winsize { n } else { 0 };
     let mut winsize = libc::winsize {
-        ws_row: ROWS,
-        ws_col: COLS,
-        ws_xpixel: if pixels_in_winsize { X_PIX } else { 0 },
-        ws_ypixel: if pixels_in_winsize { Y_PIX } else { 0 },
+        ws_row: cells(ROWS),
+        ws_col: cells(COLS),
+        ws_xpixel: pixels(X_PIX),
+        ws_ypixel: pixels(Y_PIX),
     };
     let (mut master, mut slave) = (-1, -1);
     // SAFETY: valid out-pointers; a null name and termios are allowed
@@ -441,6 +446,31 @@ fn draws_anyway_when_the_terminal_answers_nothing() {
             .contains("did not answer a graphics support query")
     );
     assert_eq!(sent_image(&run.output), PLOT_SIZE);
+}
+
+#[test]
+fn assumes_a_standard_window_when_nothing_reports_a_size() {
+    let term = FakeTerminal {
+        cells_in_winsize: false,
+        pixels_in_winsize: false,
+        graphics: false,
+        size_replies: false,
+        da1: false,
+    };
+    let run = run(
+        term,
+        &[DATA[0], DATA[1], "--width", "400", "--height", "300"],
+        &[],
+    );
+    assert!(run.status.success(), "{}", run.text());
+    let text = run.text();
+    assert!(
+        text.contains("did not report its size; assuming 80x24 cells"),
+        "{text}"
+    );
+    // no message may claim a query was for graphics when it was for the size
+    assert!(!text.contains("is required"), "{text}");
+    assert_eq!(sent_image(&run.output), (400, 300));
 }
 
 #[test]

@@ -162,6 +162,11 @@ fn with_hint(e: termplt::Error) -> Box<dyn Error> {
         | termplt::Error::TmuxPassthroughDisabled => {
             format!("{e}. Use --output plot.png to write an image file instead.").into()
         }
+        termplt::Error::WindowSize(_) | termplt::Error::InvalidWindowSize { .. } => format!(
+            "{e}. Set --width and --height, or use --output plot.png to write an image file \
+             instead."
+        )
+        .into(),
         e => e.into(),
     }
 }

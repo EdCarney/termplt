@@ -8,7 +8,7 @@ Review of commit `74918e3` (v0.1.2). How the review was done:
 - Wrote throwaway library tests to probe edge cases.
 - Rendered plots to PNG and inspected them.
 
-Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42), Phase 2 (items 7, 10–12, 14, 15, 23 and 43), Phase 3 (items 16, 17 and 19–24, plus most of 18) Phase 4 (items 25–31; Unicode fallback renderer and tmux Unicode placeholders deferred) Phase 5 (items 32–41, with breaking changes for 0.2.0) and Phase 6 (items 42 and 44–47) are done. See the note under each item.
+Status (2026-09-24): Phase 1 (items 1–6, 8, 9, and part of 42), Phase 2 (items 7, 10–12, 14, 15, 23 and 43), Phase 3 (items 16, 17 and 19–24, plus most of 18) Phase 4 (items 25–31; Unicode fallback renderer and tmux Unicode placeholders deferred) Phase 5 (items 32–41, with breaking changes for 0.2.0), Phase 6 (items 42 and 44–47) and Phase 7 (fixes from a review of Phases 1–5, below) are done. See the note under each item.
 
 Items marked **(reproduced)** were confirmed by running code. The rest come from reading the source.
 
@@ -37,7 +37,7 @@ Priority: **P0** hang, crash or wrong output · **P1** big usability or quality 
 `csi_cmds.rs:48-57, 80-87, 98-105` use `expect`/`assert_eq!` to parse replies. A malformed or interleaved reply (for example, the user presses a key during the query) panics while raw mode may still be on. Return `Err` instead.
 
 ### 3. Non-TTY use gives a cryptic error and writes escape bytes into the pipe (reproduced)
-✅ **Done (Phase 1).** Queries now go to `/dev/tty`, and the CLI checks `IsTerminal` on stdout up front. `--output png` is still Phase 3.
+✅ **Done (Phase 1).** Queries now go to `/dev/tty`, and the CLI checks `IsTerminal` on stdout up front; `--output` followed in Phase 3.
 
 `termplt --data ... </dev/null` prints `\x1b[14t` to stdout, then `Error: No such device or address (os error 6)`. Check `std::io::IsTerminal` up front and print an actionable message, for example "stdout is not a terminal; use `--output plot.png`" (item 18).
 
@@ -377,6 +377,30 @@ Consider `cargo-dist` or `cargo-release`.
 
 ---
 
+## Phase 7: review of Phases 1–5
+
+A review of `3f59d09` (after Phase 5) re-ran every check, probed edge cases with the CLI and a scratch crate, and found no regressions but 15 issues. All are fixed except where noted.
+
+- **R1 Tick labels with a large offset (reproduced).** Timestamps got six `1.700000e9` labels, and the right end label overlapped its neighbour. Plain decimals are used when shorter than scientific, the mantissa may use 15 digits, `fit_ticks` rejects repeated labels, and the fit checks use the clamped label positions. *Left:* near 1e15 labels are distinct but unevenly spaced, because f64 can't represent the steps; an offset label (`+1e15`) needs letters in the font (item 13).
+- **R2 Lines bridged removed points (reproduced).** `--ylim 0,10` on a peak drew a line along the bottom. `Graph::visible` leaves a NaN gap where points were removed, and drawing skips it.
+- **R3 `GridLines::XOnly`/`YOnly` docs were backwards.** Docs now match the (unchanged) behaviour; a test pins it.
+- **R4 Layout overflow (reproduced).** Saturating arithmetic, CLI limits of 0..=100 px, `TextStyle` scale/padding clamps, and property tests that reach `u32::MAX`.
+- **R5 Windows console.** VT input is enabled while a query runs. *Left:* the reader thread keeps reading the console after a query, which can swallow a typed line in a long-running interactive program; documented. Compiled and linted for Windows, not run there.
+- **R6 Misleading timeout text and size errors.** Neutral messages; a terminal with no size at all is assumed to be 80x24 cells; size errors get a `--width/--height` hint.
+- **R7 CSV header detection.** A BOM is skipped and `;` is a delimiter. *Skipped:* warning about numeric-looking headers.
+- **R8 Single column with `-y 1`** is plotted against the row number.
+- **R9 Error messages repeated by reporters.** `source()` forwards the wrapped error's source.
+- **R10 Division by zero** for terminals reporting fewer pixels than cells: rejected as `InvalidWindowSize`.
+- **R11 `Label` overflow near `u32::MAX`, and `Text::from_number(-0.5, 1)` giving `-0`.** Saturating placement; `num_to_str` rewritten to round.
+- **R12 Stale docs** in `TextStyle::with_color`, CLAUDE.md and this file.
+- **R13 Input shapes** `[(x, y); N]`, `&[(x, y); N]`, `&Vec<(x, y)>`, `([x; N], [y; M])`, `(&[x; N], &[y; M])` and `&[Point<T>]` now convert into `Series`.
+- **R14 Hex colors without `#`** (`bad`, `facade`) are rejected.
+- **R15 Traits and placement.** `PartialEq`/`Eq`/`Copy` where possible, `#[non_exhaustive]` on `TerminalCommandError`, compact `Debug` for inline image data, and `WindowSize`/`get_window_size` moved to `termplt::terminal`.
+
+Also added: a randomized check (300 cases) that `Series::draw_into` matches `Drawable::get_mask`.
+
+---
+
 ## Suggested order
 
 | Phase | Items | Goal |
@@ -387,6 +411,7 @@ Consider `cargo-dist` or `cargo-release`.
 | 4 | 25–31 | Works over SSH and tmux, fails gracefully elsewhere |
 | 5 | 32–41 | Library API that's small and hard to misuse |
 | 6 | 42–47 | Keep it that way |
+| 7 | R1–R15 | Fix what a review of Phases 1–5 found |
 
 ## References
 1. Kitty graphics protocol: querying support (`a=q` + DA1), compression (`o=z`), PNG format (`f=100`), `q` flag, Unicode placeholders. https://sw.kovidgoyal.net/kitty/graphics-protocol/

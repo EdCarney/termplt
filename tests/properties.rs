@@ -39,8 +39,18 @@ fn points(coord: impl Strategy<Value = f64> + Clone) -> impl Strategy<Value = Ve
     )
 }
 
+/// A small value below `typical` most of the time, sometimes anything up to `u32::MAX`, so
+/// layout arithmetic is exercised at its limits.
+fn size(typical: u32) -> impl Strategy<Value = u32> + Clone {
+    prop_oneof![
+        8 => 0..typical,
+        1 => any::<u32>(),
+        1 => Just(u32::MAX),
+    ]
+}
+
 fn marker() -> impl Strategy<Value = MarkerStyle> {
-    (0u32..6).prop_flat_map(|size| {
+    size(6).prop_flat_map(|size| {
         prop_oneof![
             Just(MarkerStyle::None),
             Just(MarkerStyle::FilledSquare {
@@ -64,7 +74,7 @@ fn marker() -> impl Strategy<Value = MarkerStyle> {
 }
 
 fn line() -> impl Strategy<Value = Option<LineStyle>> {
-    prop::option::of((0u32..4, any::<bool>()).prop_map(|(thickness, dashed)| {
+    prop::option::of((size(4), any::<bool>()).prop_map(|(thickness, dashed)| {
         if dashed {
             LineStyle::Dashed {
                 color: colors::BLUE,
@@ -77,6 +87,16 @@ fn line() -> impl Strategy<Value = Option<LineStyle>> {
             }
         }
     }))
+}
+
+fn buffer() -> impl Strategy<Value = BufferType> {
+    prop_oneof![
+        size(40).prop_map(BufferType::Uniform),
+        (size(40), size(40)).prop_map(|(t, b)| BufferType::TopBottom(t, b)),
+        (size(40), size(40)).prop_map(|(l, r)| BufferType::LeftRight(l, r)),
+        (size(40), size(40), size(40), size(40))
+            .prop_map(|(t, b, l, r)| BufferType::TopBottomLeftRight(t, b, l, r)),
+    ]
 }
 
 fn series() -> impl Strategy<Value = Series> {
@@ -97,8 +117,11 @@ proptest! {
         series in prop::collection::vec(series(), 0..4),
         width in 0u32..300,
         height in 0u32..300,
-        buffer in 0u32..40,
+        buffer in buffer(),
         with_axes in any::<bool>(),
+        axis_thickness in size(3),
+        text_scale in prop_oneof![4 => 0usize..4, 1 => any::<usize>()],
+        text_padding in prop_oneof![4 => 0usize..4, 1 => any::<usize>()],
         with_grid in any::<bool>(),
         x_limits in prop::option::of((any_coord(), any_coord())),
         y_limits in prop::option::of((any_coord(), any_coord())),
@@ -109,8 +132,8 @@ proptest! {
         }
         if with_axes {
             graph = graph.with_axes(Axes::new(
-                AxesPositioning::XY(LineStyle::solid(colors::WHITE, 1)),
-                TextStyle::default(),
+                AxesPositioning::XY(LineStyle::solid(colors::WHITE, axis_thickness)),
+                TextStyle::new(colors::WHITE, text_scale, text_padding),
             ));
         }
         if with_grid {
@@ -125,7 +148,7 @@ proptest! {
 
         // Ok or Err are both acceptable; a panic fails the test
         let _ = TerminalCanvas::new(width, height, colors::BLACK)
-            .with_buffer(BufferType::Uniform(buffer))
+            .with_buffer(buffer)
             .with_graph(graph)
             .draw();
     }

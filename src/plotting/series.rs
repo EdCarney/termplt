@@ -22,7 +22,7 @@ use std::ops::{Add, Div, Mul, Sub};
 /// let d = Series::from(vec![(1.0, 2.0), (3.0, 4.0)]);
 /// assert_eq!(c.data()[3], Point::new(3.0, 9.0));
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Series {
     data: Vec<Point<f64>>,
     marker_style: MarkerStyle,
@@ -89,7 +89,7 @@ impl Series {
     pub(crate) fn draw_into(&self, canvas: &mut Canvas) -> Result<()> {
         if let Some(color) = self.marker_style.color() {
             let stamp = marker_stamp(&self.marker_style)?;
-            for &p in &self.data {
+            for &p in self.data.iter().filter(|p| is_finite(p)) {
                 draw_marker(canvas, p.convert_to_u32(), &stamp, color);
             }
         }
@@ -98,6 +98,9 @@ impl Series {
             let stamp = LineStamp::new(line_style);
             let mut last = None;
             for pair in self.data.windows(2) {
+                if !is_finite(&pair[0]) || !is_finite(&pair[1]) {
+                    continue;
+                }
                 let segment = (pair[0].convert_to_u32(), pair[1].convert_to_u32());
                 draw_segment(canvas, segment, line_style, &stamp, &mut last);
             }
@@ -151,23 +154,73 @@ impl<X: Graphable, Y: Graphable> From<(Vec<X>, Vec<Y>)> for Series {
     }
 }
 
+impl<X: Graphable, Y: Graphable> From<&Vec<(X, Y)>> for Series {
+    fn from(data: &Vec<(X, Y)>) -> Series {
+        data.iter().copied().collect()
+    }
+}
+
+impl<X: Graphable, Y: Graphable, const N: usize> From<[(X, Y); N]> for Series {
+    fn from(data: [(X, Y); N]) -> Series {
+        data.into_iter().collect()
+    }
+}
+
+impl<X: Graphable, Y: Graphable, const N: usize> From<&[(X, Y); N]> for Series {
+    fn from(data: &[(X, Y); N]) -> Series {
+        data.iter().copied().collect()
+    }
+}
+
+impl<X: Graphable, Y: Graphable, const N: usize, const M: usize> From<([X; N], [Y; M])> for Series {
+    /// Pairs up x and y values like [`Series::from_xy`].
+    fn from((xs, ys): ([X; N], [Y; M])) -> Series {
+        Series::from_xy(&xs, &ys)
+    }
+}
+
+impl<X: Graphable, Y: Graphable, const N: usize, const M: usize> From<(&[X; N], &[Y; M])>
+    for Series
+{
+    /// Pairs up x and y values like [`Series::from_xy`].
+    fn from((xs, ys): (&[X; N], &[Y; M])) -> Series {
+        Series::from_xy(xs, ys)
+    }
+}
+
+impl<T: Graphable> From<&[Point<T>]> for Series {
+    fn from(data: &[Point<T>]) -> Series {
+        Series::new(data)
+    }
+}
+
 impl<T: Graphable> From<Vec<Point<T>>> for Series {
     fn from(data: Vec<Point<T>>) -> Series {
         Series::new(&data)
     }
 }
 
+/// Non-finite points (NaN, ±∞) are not drawn, and neither are the line segments touching them,
+/// so they break the line.
+fn is_finite(p: &Point<f64>) -> bool {
+    p.x.is_finite() && p.y.is_finite()
+}
+
 impl Drawable for Series {
     /// Draws the series in its own coordinates, which must already be pixel coordinates.
+    /// Non-finite points are skipped and break the line.
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
         let mut mask_points = Vec::new();
-        for &p in self.data() {
+        for &p in self.data.iter().filter(|p| is_finite(p)) {
             mask_points.extend(Marker::new(p.convert_to_u32(), self.marker_style).get_mask()?);
         }
 
         // add lines if line styling is present
         if let Some(line_style) = &self.line_style {
             for pair in self.data.windows(2) {
+                if !is_finite(&pair[0]) || !is_finite(&pair[1]) {
+                    continue;
+                }
                 let (start, end) = (pair[0], pair[1]);
                 let pos = LinePositioning::BetweenPoints { start, end };
                 let line = Line::new(pos.convert_to_u32(), *line_style);
@@ -291,6 +344,74 @@ mod tests {
     }
 
     #[test]
+    fn non_finite_points_break_the_line() {
+        use crate::plotting::{canvas::Canvas, colors};
+        let series = Series::new(&[
+            Point::new(0.0, 10.0),
+            Point::new(10.0, 10.0),
+            Point::new(f64::NAN, f64::NAN),
+            Point::new(30.0, 10.0),
+            Point::new(39.0, 10.0),
+        ])
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::solid(colors::LIME, 0));
+        let mut canvas = Canvas::new(40, 20, colors::BLACK);
+        series.draw_into(&mut canvas).unwrap();
+        let bytes = canvas.get_bytes();
+        let lit = |x: usize| bytes[(9 * 40 + x) * 3..][..3] != [0, 0, 0];
+        // row 10 from the bottom is row 9 from the top
+        assert!(lit(5) && lit(35), "segments on both sides are drawn");
+        assert!(!lit(20), "nothing is drawn across the gap");
+    }
+
+    #[test]
+    fn draw_into_matches_get_mask_on_random_data() {
+        use crate::plotting::{canvas::Canvas, colors};
+        // xorshift, so failures reproduce
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = move |n: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % n
+        };
+        for case in 0..300 {
+            let points: Vec<Point<f64>> = (0..1 + next(12))
+                .map(|_| match next(15) {
+                    0 => Point::new(f64::NAN, 0.0),
+                    // on and beyond the edges of the 40x40 canvas
+                    _ => Point::new(next(60) as f64 - 10.0, next(60) as f64 - 10.0),
+                })
+                .collect();
+            let (size, color) = (next(5) as u32, colors::RED);
+            let marker = match next(5) {
+                0 => MarkerStyle::None,
+                1 => MarkerStyle::FilledSquare { size, color },
+                2 => MarkerStyle::HollowSquare { size, color },
+                3 => MarkerStyle::FilledCircle { size, color },
+                _ => MarkerStyle::HollowCircle { size, color },
+            };
+            let thickness = next(4) as u32;
+            let mut series = Series::new(&points).with_marker_style(marker);
+            match next(3) {
+                0 => {}
+                1 => series = series.with_line_style(LineStyle::solid(colors::LIME, thickness)),
+                _ => series = series.with_line_style(LineStyle::dashed(colors::LIME, thickness)),
+            }
+            let mut expected = Canvas::new(40, 40, colors::BLACK);
+            for mask in series.get_mask().unwrap() {
+                expected.set_pixels(&mask.points, &mask.color);
+            }
+            let mut actual = Canvas::new(40, 40, colors::BLACK);
+            series.draw_into(&mut actual).unwrap();
+            assert!(
+                expected.get_bytes() == actual.get_bytes(),
+                "case {case}: {series:?}"
+            );
+        }
+    }
+
+    #[test]
     fn draw_into_matches_get_mask() {
         use crate::plotting::{canvas::Canvas, colors};
         // includes points at and beyond the canvas edges, where offsets are clamped or dropped
@@ -300,6 +421,8 @@ mod tests {
             Point::new(20.4, 20.6),
             Point::new(21.0, 20.0),
             Point::new(21.0, 20.0),
+            // a gap: neither this point nor the segments touching it are drawn
+            Point::new(f64::NAN, 10.0),
             Point::new(39.0, 2.0),
             Point::new(45.0, 50.0),
             Point::new(3.0, 39.0),
