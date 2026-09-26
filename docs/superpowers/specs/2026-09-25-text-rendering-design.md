@@ -1,6 +1,6 @@
 # Text rendering: TrueType font, titles and axis names
 
-**Spec 1 of 2 for 0.3.0** · 2026-09-25 · Status: approved in brainstorming, awaiting review of this document
+**Spec 1 of 2 for 0.3.0** · 2026-09-25 · Status: approved; implemented for 0.3.0 in PRs #39 (text engine) and #42 (titles, axis names and CLI)
 
 Spec 2, the legend and series names, follows this one. 0.3.0 is released when both are done.
 

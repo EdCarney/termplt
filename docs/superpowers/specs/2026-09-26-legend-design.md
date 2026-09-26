@@ -1,6 +1,6 @@
 # Legend and series names
 
-**Spec 2 of 2 for 0.3.0** · 2026-09-26 · Status: approved in brainstorming, awaiting review of this document
+**Spec 2 of 2 for 0.3.0** · 2026-09-26 · Status: approved; implemented for 0.3.0 in PRs #43 (library) and #44 (CLI and docs)
 
 Spec 1 (`2026-09-25-text-rendering-design.md`) added TrueType text, titles, axis names and CLI names from headers. This spec adds the legend. 0.3.0 is released when both are done.
 
