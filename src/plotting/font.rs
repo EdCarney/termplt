@@ -201,6 +201,24 @@ impl Coverage {
     pub fn get(&self, x: u32, y: u32) -> u8 {
         self.data[y as usize * self.width as usize + x as usize]
     }
+
+    /// Turned 90° counter-clockwise, so a line of text reads from bottom to top.
+    pub fn rotated_ccw(&self) -> Coverage {
+        let (width, height) = (self.height, self.width);
+        let mut data = vec![0; self.data.len()];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                // (x, y) moves to column y, row (old width - 1 - x)
+                let i = (self.width - 1 - x) as usize * width as usize + y as usize;
+                data[i] = self.get(x, y);
+            }
+        }
+        Coverage {
+            width,
+            height,
+            data,
+        }
+    }
 }
 
 /// A glyph with the font it comes from and its pen position on the line.
@@ -344,6 +362,20 @@ mod tests {
         // CJK is not in the built-in font: the .notdef box must still show
         let line = Font::default().rasterize("\u{4e00}", 14);
         assert!(line.data.iter().any(|&c| c > 0));
+    }
+
+    #[test]
+    fn rotation_turns_the_bitmap_counter_clockwise() {
+        // rows [1, 2, 3] and [4, 5, 6]: the left column ends up along the bottom, so a line of
+        // text reads from bottom to top
+        let line = Coverage {
+            width: 3,
+            height: 2,
+            data: vec![1, 2, 3, 4, 5, 6],
+        };
+        let turned = line.rotated_ccw();
+        assert_eq!((turned.width, turned.height), (2, 3));
+        assert_eq!(turned.data, vec![3, 6, 2, 5, 1, 4]);
     }
 
     #[test]

@@ -7,7 +7,7 @@ use super::{
     limits::Limits,
     point::Point,
     srgb,
-    text::{DEFAULT_FONT_SIZE, Label, MAX_FONT_SIZE, TextPositioning},
+    text::{DEFAULT_FONT_SIZE, Label, MAX_FONT_SIZE, TextPositioning, wrap},
     ticks::{AxisTicks, axis_offset, fit_ticks, format_offset},
 };
 use crate::{Error, common::Result};
@@ -139,8 +139,24 @@ impl Canvas {
     }
 }
 
-/// Gap in pixels between tick labels and the plot area.
-const LABEL_GAP: u32 = 4;
+/// Most lines a title wraps onto.
+const TITLE_MAX_LINES: usize = 3;
+/// Most lines an axis name wraps onto.
+const NAME_MAX_LINES: usize = 2;
+/// Title size relative to the tick labels (matplotlib's `large`).
+const TITLE_SCALE: f32 = 1.2;
+/// Baseline-to-baseline distance of wrapped lines, in em (matplotlib's `linespacing`).
+const LINE_SPACING: f32 = 1.2;
+/// Gap between the tick labels and the plot, in em (matplotlib's `xtick.major.pad`).
+const TICK_GAP: f32 = 0.35;
+/// Gap between an axis name and the tick labels, in em (matplotlib's `axes.labelpad`).
+const NAME_GAP: f32 = 0.4;
+/// Gap between the title and the plot, in em (matplotlib's `axes.titlepad`).
+const TITLE_GAP: f32 = 0.6;
+/// Gap around an offset label, in em (matplotlib's `Axis.OFFSETTEXTPAD`).
+const OFFSET_GAP: f32 = 0.3;
+/// Text sharing a line and closer than this, in em, is moved onto separate lines.
+const MIN_APART: f32 = 0.5;
 /// Minimum horizontal gap in pixels between neighbouring x tick labels.
 const X_LABEL_SPACING: f64 = 8.0;
 /// Minimum vertical gap in pixels between neighbouring y tick labels.
@@ -162,6 +178,12 @@ struct Layout {
     tick_labels: Vec<PlacedText>,
     x_offset_label: Option<PlacedText>,
     y_offset_label: Option<PlacedText>,
+    /// Title lines, first on top.
+    title: Vec<PlacedText>,
+    /// x axis name lines, first on top.
+    x_name: Vec<PlacedText>,
+    /// y axis name lines turned to read upwards, first on the left.
+    y_name: Vec<PlacedText>,
 }
 
 impl Layout {
@@ -170,6 +192,9 @@ impl Layout {
         (self.tick_labels.into_iter())
             .chain(self.x_offset_label)
             .chain(self.y_offset_label)
+            .chain(self.title)
+            .chain(self.x_name)
+            .chain(self.y_name)
     }
 }
 
@@ -214,7 +239,6 @@ impl PlacedText {
     }
 
     /// The pixels it covers (inclusive), or `None` when it has none.
-    #[cfg(test)]
     fn bounds(&self) -> Option<Limits<u32>> {
         if self.coverage.width == 0 || self.coverage.height == 0 {
             return None;
@@ -422,7 +446,24 @@ impl TerminalCanvas {
         (color, style.size().unwrap_or(self.font_size))
     }
 
+    /// Lays out the graph. Text that normally shares a line (the title and the y offset, the x
+    /// axis name and the x offset) gets a line of its own when the two would collide.
     fn layout(&self, graph: &Graph, view: &Limits<f64>) -> Result<Layout> {
+        let (layout, collisions) = self.layout_with(graph, view, Stacking::default())?;
+        if collisions == Stacking::default() {
+            return Ok(layout);
+        }
+        // stacking only adds lines, so this pass has nothing left to collide
+        Ok(self.layout_with(graph, view, collisions)?.0)
+    }
+
+    /// One layout pass with `stacking` applied; also returns the shared lines that collide.
+    fn layout_with(
+        &self,
+        graph: &Graph,
+        view: &Limits<f64>,
+        stacking: Stacking,
+    ) -> Result<(Layout, Stacking)> {
         let (outer_min, outer_max) = self.buffered_area();
 
         let largest_marker_sz = graph
@@ -457,11 +498,25 @@ impl TerminalCanvas {
         let inset_y = largest_marker_sz.max(axes_inset.1);
 
         let (color, size) = self.label_style(axes.as_ref());
+        let title_size = ((size as f32 * TITLE_SCALE).round() as u32).clamp(1, MAX_FONT_SIZE);
         let font = &self.font;
-        let width = |text: &str| font.width(text, size).ceil() as u32;
-        let place =
-            |text: &str, left: u32, top: u32| PlacedText::new(font, text, size, color, left, top);
-        let text_h = font.metrics(size).height();
+        let width = |text: &str, size: u32| font.width(text, size).ceil() as u32;
+        let place = |text: &str, size: u32, left: u32, top: u32| {
+            PlacedText::new(font, text, size, color, left, top)
+        };
+        let tick = font.metrics(size);
+        let text_h = tick.height();
+        let title_h = font.metrics(title_size).height();
+        // gaps and line spacing scale with the text: em(0.35) is 0.35 of the tick label size
+        let em = |fraction: f32| (fraction * size as f32).round() as u32;
+        let (tick_gap, name_gap) = (em(TICK_GAP), em(NAME_GAP));
+        let (title_gap, offset_gap) = (em(TITLE_GAP), em(OFFSET_GAP));
+        let pitch = |size: u32| (size as f32 * LINE_SPACING).round() as u32;
+        // height of a block of `lines` wrapped lines, each `line_h` tall
+        let block = |lines: usize, line_h: u32, size: u32| match lines {
+            0 => 0,
+            n => (n as u32 - 1) * pitch(size) + line_h,
+        };
 
         // Far from zero, f64 can't hold evenly spaced ticks, and the labels get long. As in
         // matplotlib, such an axis gets an offset (`+1e15`) that its ticks are fitted, placed and
@@ -470,25 +525,68 @@ impl TerminalCanvas {
         let y_offset = axis_offset(view.min().y, view.max().y);
         let (x_min, x_max) = (view.min().x - x_offset, view.max().x - x_offset);
         let (y_min, y_max) = (view.min().y - y_offset, view.max().y - y_offset);
-        let x_offset_label = format_offset(x_offset).filter(|_| show_x_labels);
-        let y_offset_label = format_offset(y_offset).filter(|_| show_y_labels);
+        let x_offset_text = format_offset(x_offset).filter(|_| show_x_labels);
+        let y_offset_text = format_offset(y_offset).filter(|_| show_y_labels);
 
-        // x labels sit in a band along the bottom, with the x offset label on a line below them;
-        // the top y label needs half a line above the plot, the y offset label a full line
-        let x_band = if show_x_labels {
-            text_h + x_offset_label.as_ref().map_or(0, |_| text_h + 1)
+        // the title and x name wrap to the width inside the buffer; as with matplotlib's
+        // `axis("off")`, an axis without tick labels has no name either
+        let outer_w = (outer_max.x.saturating_sub(outer_min.x) + 1) as f32;
+        let title_lines = graph.title().map_or_else(Vec::new, |t| {
+            wrap(t, outer_w, TITLE_MAX_LINES, |s| font.width(s, title_size))
+        });
+        let x_name_lines = match graph.x_label() {
+            Some(t) if show_x_labels => wrap(t, outer_w, NAME_MAX_LINES, |s| font.width(s, size)),
+            _ => Vec::new(),
+        };
+        let title_block = block(title_lines.len(), title_h, title_size);
+        let x_name_block = block(x_name_lines.len(), text_h, size);
+
+        // bottom band, from the edge up: the x offset when it has a line of its own, the x
+        // name, then the tick labels
+        let x_offset_alone =
+            x_offset_text.is_some() && (x_name_lines.is_empty() || stacking.x_offset);
+        let x_offset_line = if x_offset_alone {
+            text_h + offset_gap
         } else {
             0
         };
-        let bottom = if show_x_labels { x_band + LABEL_GAP } else { 0 };
-        let top = if y_offset_label.is_some() {
-            text_h + LABEL_GAP
+        let x_name_band = if x_name_lines.is_empty() {
+            0
+        } else {
+            x_name_block + name_gap
+        };
+        let below_ticks = x_offset_line + x_name_band;
+        let bottom = if show_x_labels {
+            below_ticks + text_h + tick_gap
+        } else {
+            0
+        };
+
+        // top band, from the plot up: the y offset, and the title on the same line unless the
+        // two are stacked; the title also clears the top y tick label, which reaches half a
+        // line above the plot
+        let title_lift = if y_offset_text.is_some() && stacking.title {
+            offset_gap + text_h + title_gap
+        } else {
+            title_gap.max(text_h / 2 + 1)
+        };
+        let y_offset_band = if y_offset_text.is_some() {
+            offset_gap + text_h
+        } else {
+            0
+        };
+        let top = if !title_lines.is_empty() {
+            (title_lift + title_block).max(y_offset_band)
+        } else if y_offset_text.is_some() {
+            y_offset_band
         } else if show_y_labels {
             text_h / 2
         } else {
             0
         };
-        // saturating: huge markers, lines or buffers must end in CanvasTooSmall, not overflow
+
+        // saturating: huge markers, lines, text or buffers must end in CanvasTooSmall, not
+        // overflow
         let plot_min_y = outer_min.y.saturating_add(bottom).saturating_add(inset_y);
         let plot_max_y = outer_max.y.saturating_sub(top.saturating_add(inset_y));
         check_area(
@@ -497,16 +595,22 @@ impl TerminalCanvas {
         )?;
 
         let (canvas_max_x, canvas_max_y) = (self.limits.max().x, self.limits.max().y);
-        // y labels stay above the x label band and inside the canvas
-        let y_lo = if show_x_labels {
-            outer_min.y + x_band + 1 + text_h / 2
+        // the top row of the x tick labels
+        let x_labels_top = outer_min.y + below_ticks + text_h - 1;
+        // y tick labels are centered on their tick by the digits (matplotlib's
+        // `center_baseline`), stay inside the canvas, and stay a row above the x tick labels
+        let digit_center = (tick.ascent - tick.digit_height / 2.0).round() as u32;
+        let top_lo = if show_x_labels {
+            x_labels_top + text_h + 1
         } else {
-            text_h / 2
+            text_h.saturating_sub(1)
         };
-        let y_hi = canvas_max_y.saturating_sub(text_h - text_h / 2).max(y_lo);
-        let y_label_center = |value: f64| {
+        let top_hi = canvas_max_y.max(top_lo);
+        let y_label_top = |value: f64| {
             let y = to_canvas(value, y_min, y_max, plot_min_y as f64, plot_max_y as f64);
-            (y.round() as u32).clamp(y_lo, y_hi)
+            (y.round() as u32)
+                .saturating_add(digit_center)
+                .clamp(top_lo, top_hi)
         };
 
         // y ticks depend only on the plot height; their labels then set the left margin
@@ -516,18 +620,34 @@ impl TerminalCanvas {
             (plot_max_y - plot_min_y) as f64,
             |ticks, spacing| {
                 // the clamp above can push end labels into their neighbours
-                let centers: Vec<u32> = ticks.values.iter().map(|&v| y_label_center(v)).collect();
+                let tops: Vec<u32> = ticks.values.iter().map(|&v| y_label_top(v)).collect();
                 spacing >= text_h as f64 + Y_LABEL_SPACING
-                    && centers.windows(2).all(|c| c[1] >= c[0] + text_h)
+                    && tops.windows(2).all(|t| t[1] >= t[0] + text_h)
             },
         );
+
+        // left band: the y name, wrapped to the plot height and turned to read upwards, then
+        // the y tick labels
+        let plot_h = (plot_max_y - plot_min_y + 1) as f32;
+        let y_name_lines = match graph.y_label() {
+            Some(t) if show_y_labels => wrap(t, plot_h, NAME_MAX_LINES, |s| font.width(s, size)),
+            _ => Vec::new(),
+        };
+        let y_name_band = if y_name_lines.is_empty() {
+            0
+        } else {
+            block(y_name_lines.len(), text_h, size) + name_gap
+        };
         let y_label_w = if show_y_labels {
-            (y_ticks.labels.iter()).map(|l| width(l)).max().unwrap_or(0)
+            (y_ticks.labels.iter())
+                .map(|l| width(l, size))
+                .max()
+                .unwrap_or(0)
         } else {
             0
         };
         let left = if show_y_labels {
-            y_label_w + LABEL_GAP
+            y_name_band + y_label_w + tick_gap
         } else {
             0
         };
@@ -549,7 +669,7 @@ impl TerminalCanvas {
             x_max,
             (plot_max_x - plot_min_x) as f64,
             |ticks, spacing| {
-                let widths: Vec<u32> = ticks.labels.iter().map(|l| width(l)).collect();
+                let widths: Vec<u32> = ticks.labels.iter().map(|l| width(l, size)).collect();
                 let widest = widths.iter().copied().max().unwrap_or(0);
                 // the clamp in x_label_center can push end labels into their neighbours
                 let spans: Vec<(u32, u32)> = (ticks.values.iter().zip(&widths))
@@ -568,40 +688,113 @@ impl TerminalCanvas {
         let plot = Limits::new(plot_min, plot_max);
         let mut tick_labels = Vec::new();
         if show_x_labels {
-            // the top line of the band
-            let top = outer_min.y + x_band - 1;
             for (&value, label) in x_ticks.values.iter().zip(&x_ticks.labels) {
-                let w = width(label);
-                tick_labels.push(place(label, x_label_center(value, w) - w / 2, top));
+                let w = width(label, size);
+                tick_labels.push(place(
+                    label,
+                    size,
+                    x_label_center(value, w) - w / 2,
+                    x_labels_top,
+                ));
             }
         }
         if show_y_labels {
+            // right-aligned against the plot area
+            let right = outer_min.x + y_name_band + y_label_w;
             for (&value, label) in y_ticks.values.iter().zip(&y_ticks.labels) {
-                // right-aligned against the plot area, vertically centered on the tick
-                let left = outer_min.x + y_label_w - width(label);
-                tick_labels.push(place(label, left, y_label_center(value) + text_h / 2));
+                let left = right - width(label, size);
+                tick_labels.push(place(label, size, left, y_label_top(value)));
             }
         }
 
-        // where matplotlib puts them: the x offset under the right end of the x axis, the y
-        // offset above the top of the y axis
-        let x_offset_label = x_offset_label.map(|text| {
-            let left = (plot_max_x + 1).saturating_sub(width(&text));
-            place(&text, left, outer_min.y + text_h - 1)
-        });
-        let y_offset_label = y_offset_label
-            .map(|text| place(&text, plot_min_x.saturating_sub(axes_inset.0), outer_max.y));
+        // the title and x name are centered on the plot, kept inside the buffered area
+        let plot_center_x = (plot_min_x + plot_max_x) / 2;
+        let centered = |w: u32| {
+            (plot_center_x.saturating_sub(w / 2))
+                .min((outer_max.x + 1).saturating_sub(w))
+                .max(outer_min.x)
+        };
 
-        Ok(Layout {
-            plot,
-            x_ticks,
-            y_ticks,
-            x_offset,
-            y_offset,
-            tick_labels,
-            x_offset_label,
-            y_offset_label,
-        })
+        // the x name below the tick labels, first line on top
+        let x_name_top = x_labels_top.saturating_sub(text_h + name_gap);
+        let x_name: Vec<PlacedText> = (x_name_lines.iter().enumerate())
+            .map(|(i, line)| {
+                let top = x_name_top.saturating_sub(i as u32 * pitch(size));
+                place(line, size, centered(width(line, size)), top)
+            })
+            .collect();
+        // where matplotlib puts it: under the right end of the x axis, on the x name's first
+        // line or on a line of its own
+        let x_offset_label = x_offset_text.map(|text| {
+            let top = if x_offset_alone {
+                outer_min.y + text_h - 1
+            } else {
+                x_name_top
+            };
+            place(
+                &text,
+                size,
+                (plot_max_x + 1).saturating_sub(width(&text, size)),
+                top,
+            )
+        });
+
+        // above the plot: the y offset at the y axis, and the title, first line on top
+        let band_start = plot_max_y + inset_y + 1;
+        let y_offset_label = y_offset_text.map(|text| {
+            let left = plot_min_x.saturating_sub(axes_inset.0);
+            place(&text, size, left, band_start + offset_gap + text_h - 1)
+        });
+        let title_top = band_start + title_lift + title_block.saturating_sub(1);
+        let title: Vec<PlacedText> = (title_lines.iter().enumerate())
+            .map(|(i, line)| {
+                let top = title_top.saturating_sub(i as u32 * pitch(title_size));
+                place(line, title_size, centered(width(line, title_size)), top)
+            })
+            .collect();
+
+        // the y name: each line turned to read upwards, the first farthest from the plot, all
+        // centered on the plot vertically
+        let plot_center_y = (plot_min_y + plot_max_y) / 2;
+        let y_name: Vec<PlacedText> = (y_name_lines.iter().enumerate())
+            .map(|(i, line)| {
+                let mut text = place(line, size, outer_min.x + i as u32 * pitch(size), 0);
+                text.coverage = text.coverage.rotated_ccw();
+                text.top = plot_center_y + text.coverage.height / 2;
+                text
+            })
+            .collect();
+
+        // shared lines whose text would come closer than MIN_APART
+        let apart = em(MIN_APART);
+        let collide = |a: Option<&PlacedText>, b: Option<&PlacedText>| match (
+            a.and_then(PlacedText::bounds),
+            b.and_then(PlacedText::bounds),
+        ) {
+            (Some(a), Some(b)) => horizontal_gap(&a, &b) < apart,
+            _ => false,
+        };
+        let collisions = Stacking {
+            title: !stacking.title && collide(title.last(), y_offset_label.as_ref()),
+            x_offset: !x_offset_alone && collide(x_name.first(), x_offset_label.as_ref()),
+        };
+
+        Ok((
+            Layout {
+                plot,
+                x_ticks,
+                y_ticks,
+                x_offset,
+                y_offset,
+                tick_labels,
+                x_offset_label,
+                y_offset_label,
+                title,
+                x_name,
+                y_name,
+            },
+            collisions,
+        ))
     }
 }
 
@@ -621,10 +814,29 @@ fn check_area(min: &Point<u32>, max: &Point<u32>) -> Result<()> {
     Ok(())
 }
 
+/// Which text that normally shares a line gets a line of its own: the title (above the y
+/// offset) and the x offset (below the x axis name).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Stacking {
+    title: bool,
+    x_offset: bool,
+}
+
+/// Columns of empty space between two boxes side by side; 0 when their columns overlap.
+fn horizontal_gap(a: &Limits<u32>, b: &Limits<u32>) -> u32 {
+    if a.max().x < b.min().x {
+        b.min().x - a.max().x - 1
+    } else if b.max().x < a.min().x {
+        a.min().x - b.max().x - 1
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plotting::{colors, series::Series, text::TextStyle};
+    use crate::plotting::{colors, marker::MarkerStyle, series::Series, text::TextStyle};
 
     #[test]
     fn blend_mixes_into_one_pixel() {
@@ -964,6 +1176,229 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A series that draws nothing itself, so the plot's inset is just the 2-row axis.
+    fn plain_series() -> Series {
+        Series::new(&[Point::new(0.0, 0.0), Point::new(10.0, 10.0)])
+            .with_marker_style(MarkerStyle::None)
+    }
+
+    fn plain_graph() -> Graph {
+        Graph::new()
+            .with_series(plain_series())
+            .with_axes(white_axes())
+    }
+
+    fn layout_of(graph: &Graph, (w, h): (u32, u32), font_size: u32) -> Layout {
+        TerminalCanvas::new(w, h, colors::BLACK)
+            .with_buffer(BufferType::Uniform(8))
+            .with_font_size(font_size)
+            .with_graph(graph.clone())
+            .layout(graph, &graph.view_limits().unwrap())
+            .unwrap()
+    }
+
+    /// Values near 1e15: the y axis gets an offset label above its top-left end.
+    fn near_1e15() -> Vec<Point<f64>> {
+        (0..=10)
+            .map(|i| Point::new(i as f64, 1e15 + 0.1 * i as f64))
+            .collect()
+    }
+
+    /// Timestamps: the x axis gets an offset label under its right end.
+    fn timestamps() -> Vec<Point<f64>> {
+        (0..=10)
+            .map(|i| Point::new(1_700_000_000.0 + 10.0 * i as f64, i as f64))
+            .collect()
+    }
+
+    /// Words that fill most of `width` pixels at `size`.
+    fn line_filling(width: u32, size: u32) -> String {
+        let font = Font::default();
+        let mut text = String::from("Wide");
+        while font.width(&format!("{text} title"), size) < width as f32 - 30.0 {
+            text.push_str(" title");
+        }
+        text
+    }
+
+    #[test]
+    fn tick_labels_sit_a_third_of_an_em_below_the_plot() {
+        let layout = layout_of(&plain_graph(), (800, 600), 20);
+        // 0.35 em at 20 px is 7 rows, below the 2-row axis inset
+        assert_eq!(layout.tick_labels[0].top, layout.plot.min().y - 2 - 7 - 1);
+    }
+
+    #[test]
+    fn y_tick_labels_are_centered_on_their_tick_by_the_digits() {
+        let graph = plain_graph();
+        let view = graph.view_limits().unwrap();
+        let layout = layout_of(&graph, (800, 600), 28);
+        let x_count = layout.x_ticks.labels.len();
+        let (plot_min, plot_max) = (layout.plot.min().y as f64, layout.plot.max().y as f64);
+        for (label, &value) in layout.tick_labels[x_count..]
+            .iter()
+            .zip(&layout.y_ticks.values)
+        {
+            let c = &label.coverage;
+            let inked: Vec<u32> = (0..c.height)
+                .filter(|&row| (0..c.width).any(|col| c.get(col, row) > 0))
+                .collect();
+            let ink_middle = label.top as f64 - f64::from(inked[0] + inked[inked.len() - 1]) / 2.0;
+            let tick = to_canvas(value, view.min().y, view.max().y, plot_min, plot_max);
+            assert!(
+                (ink_middle - tick).abs() <= 1.0,
+                "label for {value}: ink centered at {ink_middle}, tick at {tick}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_title_and_axis_names_take_room_from_the_plot() {
+        let base = layout_of(&plain_graph(), (800, 600), 14).plot;
+        let titled = layout_of(&plain_graph().with_title("Title"), (800, 600), 14);
+        assert_eq!(titled.title.len(), 1);
+        assert!(titled.plot.max().y < base.max().y);
+        let x_named = layout_of(&plain_graph().with_x_label("Time (s)"), (800, 600), 14);
+        assert_eq!(x_named.x_name.len(), 1);
+        assert!(x_named.plot.min().y > base.min().y);
+        let y_named = layout_of(&plain_graph().with_y_label("Amplitude"), (800, 600), 14);
+        assert_eq!(y_named.y_name.len(), 1);
+        assert!(y_named.plot.min().x > base.min().x);
+    }
+
+    #[test]
+    fn blank_text_takes_no_room() {
+        let blank = plain_graph()
+            .with_title("  ")
+            .with_x_label("")
+            .with_y_label(" \n ");
+        let layout = layout_of(&blank, (800, 600), 14);
+        assert!(layout.title.is_empty() && layout.x_name.is_empty() && layout.y_name.is_empty());
+        assert_eq!(layout.plot, layout_of(&plain_graph(), (800, 600), 14).plot);
+    }
+
+    #[test]
+    fn a_long_title_wraps_to_three_lines_inside_the_buffer() {
+        let words = "the quick brown fox jumps over the lazy dog ".repeat(12);
+        let layout = layout_of(&plain_graph().with_title(words), (400, 300), 14);
+        assert_eq!(layout.title.len(), 3);
+        for line in &layout.title {
+            let b = line.bounds().unwrap();
+            // the buffered area of a 400-pixel canvas with an 8-pixel buffer is columns 8-391
+            assert!(
+                b.min().x >= 8 && b.max().x <= 391,
+                "{b:?} leaves the buffered area"
+            );
+        }
+    }
+
+    #[test]
+    fn the_y_name_reads_upwards_beside_the_tick_labels() {
+        let layout = layout_of(
+            &plain_graph().with_y_label("Amplitude (µV)"),
+            (800, 600),
+            14,
+        );
+        let name = layout.y_name[0].bounds().unwrap();
+        let (w, h) = name.span();
+        assert!(h > w, "turned upright: {name:?}");
+        let name_middle = (name.min().y + name.max().y) / 2;
+        let plot_middle = (layout.plot.min().y + layout.plot.max().y) / 2;
+        assert!(name_middle.abs_diff(plot_middle) <= 1);
+        let first_y_label = layout.tick_labels[layout.x_ticks.labels.len()]
+            .bounds()
+            .unwrap();
+        assert!(name.max().x < first_y_label.min().x);
+    }
+
+    #[test]
+    fn the_title_shares_the_y_offset_line_until_they_would_meet() {
+        let graph = Graph::new()
+            .with_series(Series::new(&near_1e15()))
+            .with_axes(white_axes());
+        let short = layout_of(&graph.clone().with_title("T"), (800, 600), 14);
+        let offset = short.y_offset_label.as_ref().unwrap().bounds().unwrap();
+        let title = short.title[0].bounds().unwrap();
+        assert!(
+            title.min().y <= offset.max().y,
+            "one band: {title:?} {offset:?}"
+        );
+
+        // a title almost as wide as the canvas reaches the offset at the left and moves up
+        let wide = layout_of(&graph.with_title(line_filling(784, 17)), (800, 600), 14);
+        assert_eq!(wide.title.len(), 1);
+        let offset = wide.y_offset_label.as_ref().unwrap().bounds().unwrap();
+        let title = wide.title[0].bounds().unwrap();
+        assert!(
+            title.min().y > offset.max().y,
+            "stacked: {title:?} above {offset:?}"
+        );
+    }
+
+    #[test]
+    fn the_x_offset_shares_the_x_name_line_until_they_would_meet() {
+        let graph = Graph::new()
+            .with_series(Series::new(&timestamps()))
+            .with_axes(white_axes());
+        let short = layout_of(&graph.clone().with_x_label("t"), (800, 600), 14);
+        assert_eq!(
+            short.x_offset_label.as_ref().unwrap().top,
+            short.x_name[0].top
+        );
+
+        let wide = layout_of(&graph.with_x_label(line_filling(784, 14)), (800, 600), 14);
+        let offset = wide.x_offset_label.as_ref().unwrap().bounds().unwrap();
+        let name = wide.x_name.last().unwrap().bounds().unwrap();
+        assert!(
+            offset.max().y < name.min().y,
+            "stacked: {offset:?} below {name:?}"
+        );
+    }
+
+    #[test]
+    fn no_text_overlaps_other_text() {
+        let points: Vec<_> = (0..=10)
+            .map(|i| Point::new(1_700_000_000.0 + 10.0 * i as f64, 1e15 + 0.1 * i as f64))
+            .collect();
+        let graph = Graph::new()
+            .with_series(Series::new(&points))
+            .with_axes(white_axes())
+            .with_title("Sensor drift")
+            .with_x_label("Time (s)")
+            .with_y_label("Reading (µV)");
+        for (w, h) in [(800, 600), (500, 300), (300, 200)] {
+            let layout = layout_of(&graph, (w, h), 14);
+            assert!(layout.x_offset_label.is_some() && layout.y_offset_label.is_some());
+            let boxes: Vec<Limits<u32>> = layout.into_texts().filter_map(|t| t.bounds()).collect();
+            for (i, a) in boxes.iter().enumerate() {
+                assert!(
+                    a.max().x < w && a.max().y < h,
+                    "{w}x{h}: {a:?} leaves the canvas"
+                );
+                for b in &boxes[i + 1..] {
+                    assert!(!a.intersects(b.clone()), "{w}x{h}: {a:?} overlaps {b:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_axis_without_tick_labels_has_no_name() {
+        use crate::plotting::line::LineStyle;
+        let y_only = Axes::new(
+            AxesPositioning::YOnly(LineStyle::solid(colors::WHITE, 1)),
+            TextStyle::with_color(colors::WHITE),
+        );
+        let graph = Graph::new()
+            .with_series(plain_series())
+            .with_axes(y_only)
+            .with_x_label("x")
+            .with_y_label("y");
+        let layout = layout_of(&graph, (800, 600), 14);
+        assert!(layout.x_name.is_empty());
+        assert_eq!(layout.y_name.len(), 1);
     }
 
     #[test]

@@ -16,6 +16,9 @@ pub struct Graph {
     y_limits: Option<(f64, f64)>,
     axes: Option<Axes>,
     grid_lines: Option<GridLines>,
+    title: Option<String>,
+    x_label: Option<String>,
+    y_label: Option<String>,
 }
 
 impl Graph {
@@ -39,6 +42,27 @@ impl Graph {
     /// Draws grid lines at the tick positions.
     pub fn with_grid_lines(mut self, grid_lines: GridLines) -> Self {
         self.grid_lines = Some(grid_lines);
+        self
+    }
+
+    /// Draws `text` as a title above the plot, 1.2 times the size of the tick labels. Long
+    /// titles wrap onto up to 3 lines; text that still doesn't fit ends with `…`.
+    pub fn with_title(mut self, text: impl Into<String>) -> Self {
+        self.title = Some(text.into());
+        self
+    }
+
+    /// Names the x axis: `text` is centered below the tick labels, wrapping onto up to 2 lines.
+    /// An axis without tick labels (see [`Axes`]) shows no name.
+    pub fn with_x_label(mut self, text: impl Into<String>) -> Self {
+        self.x_label = Some(text.into());
+        self
+    }
+
+    /// Names the y axis: `text` is drawn left of the tick labels, turned to read upwards and
+    /// wrapping onto up to 2 lines. An axis without tick labels shows no name.
+    pub fn with_y_label(mut self, text: impl Into<String>) -> Self {
+        self.y_label = Some(text.into());
         self
     }
 
@@ -67,6 +91,21 @@ impl Graph {
     /// The grid lines, if any.
     pub fn grid_lines(&self) -> Option<&GridLines> {
         self.grid_lines.as_ref()
+    }
+
+    /// The title, if one was set.
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    /// The x axis name, if one was set.
+    pub fn x_label(&self) -> Option<&str> {
+        self.x_label.as_deref()
+    }
+
+    /// The y axis name, if one was set.
+    pub fn y_label(&self) -> Option<&str> {
+        self.y_label.as_deref()
     }
 
     /// The explicit x range, if one was set.
@@ -174,6 +213,9 @@ impl Graph {
             y_limits: self.y_limits,
             axes: self.axes.clone(),
             grid_lines: self.grid_lines,
+            title: self.title.clone(),
+            x_label: self.x_label.clone(),
+            y_label: self.y_label.clone(),
         }
     }
 
