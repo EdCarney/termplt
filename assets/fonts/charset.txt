@@ -1,0 +1,34 @@
+# Characters kept in the embedded font (assets/fonts/go-regular-subset.ttf).
+# scripts/subset_font.sh passes this file to pyftsubset --unicodes-file, and a unit test in
+# src/plotting/font.rs checks that the embedded font has a glyph for every entry.
+
+# Basic Latin and Latin-1 Supplement (accents, ° ± µ ² ³ × ÷ ...)
+U+0020-007E
+U+00A0-00FF
+# Greek capitals (U+03A2 is unassigned) and small letters
+U+0391-03A1
+U+03A3-03A9
+U+03B1-03C9
+# Punctuation: – — ‘ ’ ‚ ‛ “ ” • … ‰
+U+2013-2014
+U+2018-201D
+U+2022
+U+2026
+U+2030
+# Superscripts ⁰ ⁴-⁹ and subscripts ₀-₉ (¹ ² ³ are in Latin-1)
+U+2070
+U+2074-2079
+U+2080-2089
+# Euro sign
+U+20AC
+# Arrows ← ↑ → ↓
+U+2190-2193
+# Math: ∆ ∑ − √ ∞ ≈ ≠ ≤ ≥
+U+2206
+U+2211
+U+2212
+U+221A
+U+221E
+U+2248
+U+2260
+U+2264-2265

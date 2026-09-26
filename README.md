@@ -14,7 +14,7 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 - **Axes and grid lines** — round tick values, with label space laid out automatically
 - **Axis limits** — optionally constrain x/y ranges with automatic point clipping
 - **Configurable canvas** — set dimensions, background color, and buffer padding
-- **Bitmap text** — built-in 10x11 pixel font for labels and numeric annotations
+- **TrueType text** — an embedded, anti-aliased Go font covering Latin-1, Greek and common math symbols; load your own font for other scripts
 - **Typed errors** — match on `termplt::Error` (no data, canvas too small, terminal unsupported, ...)
 - **Fast** — a million points render in about 0.1-0.3 s
 
@@ -261,6 +261,7 @@ Key abstractions:
 | `plotting::series` | `Series`: data points with marker and line styles, built from any numeric input |
 | `plotting::graph` | `Graph`: series, axes, grid lines and limits |
 | `plotting::canvas` | `TerminalCanvas`: layout (ticks, labels, margins) and rendering to RGB pixels |
+| `plotting::font` | `Font`: the built-in Go font or your own; text is rasterized with `ab_glyph` |
 | `terminal` | `Terminal` (support check, size, tmux handling, display) and `Image` (Kitty protocol) |
 | `Error` | Everything that can go wrong |
 
@@ -290,4 +291,4 @@ This creates 13 data files in `test_data/` covering sine/cosine, polynomials, ex
 
 ## License
 
-This project is licensed under the [MIT License](https://github.com/EdCarney/termplt/blob/main/LICENSE).
+This project is licensed under the [MIT License](https://github.com/EdCarney/termplt/blob/main/LICENSE). The embedded Go font is © 2016 Bigelow & Holmes Inc. and licensed under the [BSD 3-Clause License](https://github.com/EdCarney/termplt/blob/main/assets/fonts/LICENSE-Go).

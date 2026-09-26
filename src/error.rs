@@ -58,6 +58,8 @@ pub enum Error {
     UnsupportedTransmission,
     /// A file path that cannot be sent to the terminal (it must be valid UTF-8).
     InvalidPath(String),
+    /// Font data that is not a TrueType or OpenType font.
+    InvalidFont(String),
     /// Encoding or decoding an image failed.
     Image(image::ImageError),
     /// An I/O error, e.g. writing to the terminal or a file.
@@ -130,6 +132,7 @@ impl fmt::Display for Error {
                 "unsupported combination of pixel format and transmission medium"
             ),
             Error::InvalidPath(path) => write!(f, "image path is not valid UTF-8: {path}"),
+            Error::InvalidFont(msg) => write!(f, "invalid font: {msg}"),
             Error::Image(e) => write!(f, "image error: {e}"),
             Error::Io(e) => e.fmt(f),
         }

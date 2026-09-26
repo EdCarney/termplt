@@ -1,11 +1,13 @@
 use super::{
     axes::{Axes, AxesPositioning},
     colors,
-    common::{Drawable, FloatConvertable, MaskPoints},
+    common::FloatConvertable,
+    font::{Coverage, Font},
     graph::Graph,
     limits::Limits,
     point::Point,
-    text::{Label, Text, TextPositioning, TextStyle},
+    srgb,
+    text::{DEFAULT_FONT_SIZE, Label, MAX_FONT_SIZE, TextPositioning},
     ticks::{AxisTicks, axis_offset, fit_ticks, format_offset},
 };
 use crate::{Error, common::Result};
@@ -105,6 +107,22 @@ impl Canvas {
         }
     }
 
+    /// Draws `color` over the pixel at (`x`, `y`) with `coverage` (0 = none, 255 = all), mixing
+    /// in linear light. (0, 0) is the lower-left corner; points outside the canvas are ignored.
+    pub fn blend(&mut self, x: u32, y: u32, color: RGB8, coverage: u8) {
+        if x < self.width && y < self.height {
+            // rows are stored from the top
+            let row = (self.height - 1 - y) as usize;
+            let i = (row * self.width as usize + x as usize) * 3;
+            for (channel, fg) in self.bytes[i..i + 3]
+                .iter_mut()
+                .zip([color.r, color.g, color.b])
+            {
+                *channel = srgb::blend(*channel, fg, coverage);
+            }
+        }
+    }
+
     /// Sets the color for multiple points in the canvas.
     pub fn set_pixels(&mut self, points: &[Point<u32>], color: &RGB8) {
         for point in points {
@@ -140,8 +158,86 @@ struct Layout {
     x_offset: f64,
     /// Offset of the y axis, 0 for none.
     y_offset: f64,
-    /// Tick labels (x, then y), then the offset labels.
-    labels: Vec<Label>,
+    /// Tick labels: x, then y.
+    tick_labels: Vec<PlacedText>,
+    x_offset_label: Option<PlacedText>,
+    y_offset_label: Option<PlacedText>,
+}
+
+impl Layout {
+    /// Every piece of text in the layout.
+    fn into_texts(self) -> impl Iterator<Item = PlacedText> {
+        (self.tick_labels.into_iter())
+            .chain(self.x_offset_label)
+            .chain(self.y_offset_label)
+    }
+}
+
+/// Text rasterized and positioned on the canvas.
+#[derive(Debug, Clone)]
+struct PlacedText {
+    coverage: Coverage,
+    color: RGB8,
+    /// Column of the leftmost pixel.
+    left: u32,
+    /// Row of the top pixel (rows count up from the bottom of the canvas).
+    top: u32,
+}
+
+impl PlacedText {
+    /// `text` rasterized at `size` pixels with its top-left pixel at (`left`, `top`).
+    fn new(font: &Font, text: &str, size: u32, color: RGB8, left: u32, top: u32) -> PlacedText {
+        PlacedText {
+            coverage: font.rasterize(text, size),
+            color,
+            left,
+            top,
+        }
+    }
+
+    /// A label placed by its [`TextPositioning`]: centered on the point or starting at it, and
+    /// vertically centered on it either way.
+    fn from_label(font: &Font, label: &Label, size: u32) -> PlacedText {
+        let coverage = font.rasterize(label.text(), size);
+        let point = label.pos().point();
+        let left = match label.pos() {
+            TextPositioning::Centered(_) => point.x.saturating_sub(coverage.width / 2),
+            TextPositioning::LeftAligned(_) => point.x,
+        };
+        let top = point.y.saturating_add(coverage.height / 2);
+        PlacedText {
+            coverage,
+            color: label.style().color(),
+            left,
+            top,
+        }
+    }
+
+    /// The pixels it covers (inclusive), or `None` when it has none.
+    #[cfg(test)]
+    fn bounds(&self) -> Option<Limits<u32>> {
+        if self.coverage.width == 0 || self.coverage.height == 0 {
+            return None;
+        }
+        Some(Limits::new(
+            Point::new(self.left, self.top.saturating_sub(self.coverage.height - 1)),
+            Point::new(self.left.saturating_add(self.coverage.width - 1), self.top),
+        ))
+    }
+
+    fn draw(&self, canvas: &mut Canvas) {
+        for row in 0..self.coverage.height {
+            let Some(y) = self.top.checked_sub(row) else {
+                break;
+            };
+            for col in 0..self.coverage.width {
+                let coverage = self.coverage.get(col, row);
+                if coverage > 0 {
+                    canvas.blend(self.left.saturating_add(col), y, self.color, coverage);
+                }
+            }
+        }
+    }
 }
 
 /// A pixel canvas that a [`Graph`] and [`Label`]s are drawn on. [`Plot`](crate::Plot) builds
@@ -153,6 +249,8 @@ pub struct TerminalCanvas {
     buffer: CanvasBuffer,
     graph: Option<Graph>,
     labels: Vec<Label>,
+    font: Font,
+    font_size: u32,
     limits: Limits<u32>,
 }
 
@@ -165,6 +263,8 @@ impl TerminalCanvas {
             buffer: CanvasBuffer::new(BufferType::None),
             graph: None,
             labels: Vec::new(),
+            font: Font::default(),
+            font_size: DEFAULT_FONT_SIZE,
             limits: Limits::new(
                 Point::new(0, 0),
                 Point::new(width.saturating_sub(1), height.saturating_sub(1)),
@@ -191,6 +291,20 @@ impl TerminalCanvas {
         self
     }
 
+    /// Sets the font for all text. Characters it lacks are drawn with the built-in Go font.
+    pub fn with_font(mut self, font: Font) -> Self {
+        self.font = font;
+        self
+    }
+
+    /// Sets the base text size in pixels (the em size), clamped to `1..=`[`MAX_FONT_SIZE`].
+    /// Tick labels and any text without a size of its own use it. The default is
+    /// [`DEFAULT_FONT_SIZE`].
+    pub fn with_font_size(mut self, px: u32) -> Self {
+        self.font_size = px.clamp(1, MAX_FONT_SIZE);
+        self
+    }
+
     /// The canvas pixels as RGB8 bytes, row-major from the top row.
     pub fn get_bytes(&self) -> Vec<u8> {
         self.canvas.get_bytes()
@@ -210,6 +324,7 @@ impl TerminalCanvas {
             });
         }
 
+        let mut texts = Vec::new();
         if let Some(graph) = self.graph.take() {
             let view = graph.view_limits()?;
             let layout = self.layout(&graph, &view)?;
@@ -247,19 +362,17 @@ impl TerminalCanvas {
             for series in scaled_graph.data() {
                 series.draw_into(&mut self.canvas)?;
             }
-            self.labels.extend(layout.labels);
+            texts.extend(layout.into_texts());
         }
 
-        // labels are drawn last so they are not covered by the graph
-        let label_masks: Vec<Vec<MaskPoints>> = self
-            .labels
-            .iter()
-            .map(|txt| txt.get_mask())
-            .collect::<Result<_>>()?;
-        label_masks
-            .iter()
-            .flatten()
-            .for_each(|mask| self.canvas.set_pixels(&mask.points, &mask.color));
+        // user labels, then all text is drawn last so the graph doesn't cover it
+        for label in &self.labels {
+            let size = label.style().size().unwrap_or(self.font_size);
+            texts.push(PlacedText::from_label(&self.font, label, size));
+        }
+        for text in &texts {
+            text.draw(&mut self.canvas);
+        }
 
         Ok(self)
     }
@@ -288,10 +401,11 @@ impl TerminalCanvas {
         (min, max)
     }
 
-    /// Text style for tick labels. A label color identical to the background (e.g. the black
-    /// default text on the default black canvas) is replaced with black or white, whichever
-    /// contrasts with the background.
-    fn label_style(&self, axes: Option<&Axes>) -> TextStyle {
+    /// Color and size of tick labels: the axes' text style, at the canvas's base size when it
+    /// has no size of its own. A label color identical to the background (e.g. the black default
+    /// text on the default black canvas) is replaced with black or white, whichever contrasts
+    /// with the background.
+    fn label_style(&self, axes: Option<&Axes>) -> (RGB8, u32) {
         let style = axes.map(|a| *a.style()).unwrap_or_default();
         let color = if style.color() == self.background {
             let luminance = 0.2126 * self.background.r as f64
@@ -305,7 +419,7 @@ impl TerminalCanvas {
         } else {
             style.color()
         };
-        TextStyle::new(color, style.scale(), style.padding())
+        (color, style.size().unwrap_or(self.font_size))
     }
 
     fn layout(&self, graph: &Graph, view: &Limits<f64>) -> Result<Layout> {
@@ -342,9 +456,12 @@ impl TerminalCanvas {
         let inset_x = largest_marker_sz.max(axes_inset.0);
         let inset_y = largest_marker_sz.max(axes_inset.1);
 
-        let style = self.label_style(axes.as_ref());
-        let text = |label: &str| Text::new(label, style);
-        let text_h = text("0").height() as u32;
+        let (color, size) = self.label_style(axes.as_ref());
+        let font = &self.font;
+        let width = |text: &str| font.width(text, size).ceil() as u32;
+        let place =
+            |text: &str, left: u32, top: u32| PlacedText::new(font, text, size, color, left, top);
+        let text_h = font.metrics(size).height();
 
         // Far from zero, f64 can't hold evenly spaced ticks, and the labels get long. As in
         // matplotlib, such an axis gets an offset (`+1e15`) that its ticks are fitted, placed and
@@ -405,10 +522,7 @@ impl TerminalCanvas {
             },
         );
         let y_label_w = if show_y_labels {
-            (y_ticks.labels.iter())
-                .map(|l| text(l).width() as u32)
-                .max()
-                .unwrap_or(0)
+            (y_ticks.labels.iter()).map(|l| width(l)).max().unwrap_or(0)
         } else {
             0
         };
@@ -435,11 +549,7 @@ impl TerminalCanvas {
             x_max,
             (plot_max_x - plot_min_x) as f64,
             |ticks, spacing| {
-                let widths: Vec<u32> = ticks
-                    .labels
-                    .iter()
-                    .map(|l| text(l).width() as u32)
-                    .collect();
+                let widths: Vec<u32> = ticks.labels.iter().map(|l| width(l)).collect();
                 let widest = widths.iter().copied().max().unwrap_or(0);
                 // the clamp in x_label_center can push end labels into their neighbours
                 let spans: Vec<(u32, u32)> = (ticks.values.iter().zip(&widths))
@@ -456,54 +566,31 @@ impl TerminalCanvas {
         );
 
         let plot = Limits::new(plot_min, plot_max);
-        let mut labels = Vec::new();
-
+        let mut tick_labels = Vec::new();
         if show_x_labels {
             // the top line of the band
-            let center_y = outer_min.y + x_band - text_h + text_h / 2;
+            let top = outer_min.y + x_band - 1;
             for (&value, label) in x_ticks.values.iter().zip(&x_ticks.labels) {
-                let txt = text(label);
-                let x = x_label_center(value, txt.width() as u32);
-                labels.push(Label::new(
-                    txt,
-                    TextPositioning::Centered(Point::new(x, center_y)),
-                ));
+                let w = width(label);
+                tick_labels.push(place(label, x_label_center(value, w) - w / 2, top));
             }
         }
-
         if show_y_labels {
             for (&value, label) in y_ticks.values.iter().zip(&y_ticks.labels) {
-                let txt = text(label);
-                // right-align labels against the plot area
-                let x = outer_min.x + y_label_w - txt.width() as u32;
-                let y = y_label_center(value);
-                labels.push(Label::new(
-                    txt,
-                    TextPositioning::LeftAligned(Point::new(x, y)),
-                ));
+                // right-aligned against the plot area, vertically centered on the tick
+                let left = outer_min.x + y_label_w - width(label);
+                tick_labels.push(place(label, left, y_label_center(value) + text_h / 2));
             }
         }
 
         // where matplotlib puts them: the x offset under the right end of the x axis, the y
         // offset above the top of the y axis
-        if let Some(label) = x_offset_label {
-            let txt = text(&label);
-            let x = (plot_max_x + 1).saturating_sub(txt.width() as u32);
-            let y = outer_min.y + text_h / 2;
-            labels.push(Label::new(
-                txt,
-                TextPositioning::LeftAligned(Point::new(x, y)),
-            ));
-        }
-        if let Some(label) = y_offset_label {
-            let txt = text(&label);
-            let x = plot_min_x.saturating_sub(axes_inset.0);
-            let y = outer_max.y.saturating_sub(text_h - text_h / 2);
-            labels.push(Label::new(
-                txt,
-                TextPositioning::LeftAligned(Point::new(x, y)),
-            ));
-        }
+        let x_offset_label = x_offset_label.map(|text| {
+            let left = (plot_max_x + 1).saturating_sub(width(&text));
+            place(&text, left, outer_min.y + text_h - 1)
+        });
+        let y_offset_label = y_offset_label
+            .map(|text| place(&text, plot_min_x.saturating_sub(axes_inset.0), outer_max.y));
 
         Ok(Layout {
             plot,
@@ -511,7 +598,9 @@ impl TerminalCanvas {
             y_ticks,
             x_offset,
             y_offset,
-            labels,
+            tick_labels,
+            x_offset_label,
+            y_offset_label,
         })
     }
 }
@@ -535,7 +624,19 @@ fn check_area(min: &Point<u32>, max: &Point<u32>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plotting::{colors, series::Series};
+    use crate::plotting::{colors, series::Series, text::TextStyle};
+
+    #[test]
+    fn blend_mixes_into_one_pixel() {
+        let mut canvas = Canvas::new(2, 2, colors::BLACK);
+        canvas.blend(0, 0, colors::WHITE, 128);
+        canvas.blend(5, 5, colors::WHITE, 255); // outside: ignored
+        // (0, 0) is the lower-left pixel, stored in the last row
+        assert_eq!(
+            canvas.get_bytes(),
+            [0, 0, 0, 0, 0, 0, 188, 188, 188, 0, 0, 0]
+        );
+    }
 
     #[test]
     fn empty_graph_returns_error() {
@@ -780,6 +881,51 @@ mod tests {
     }
 
     #[test]
+    fn labels_are_drawn_with_anti_aliased_text() {
+        let label = Label::new(
+            "0",
+            TextStyle::new(colors::WHITE, 28),
+            TextPositioning::Centered(Point::new(20, 20)),
+        );
+        let bytes = TerminalCanvas::new(40, 40, colors::BLACK)
+            .with_label(label)
+            .draw()
+            .unwrap()
+            .get_bytes();
+        let reds: Vec<u8> = bytes.chunks(3).map(|px| px[0]).collect();
+        assert!(reds.contains(&255), "fully covered pixels");
+        assert!(
+            reds.iter().any(|&v| v > 0 && v < 255),
+            "partly covered edge pixels"
+        );
+    }
+
+    #[test]
+    fn the_base_font_size_sets_the_tick_label_size() {
+        let graph = Graph::new()
+            .with_series(Series::new(&[Point::new(0.0, 0.0), Point::new(10.0, 10.0)]))
+            .with_axes(white_axes());
+        let layout_at = |size| {
+            TerminalCanvas::new(800, 600, colors::BLACK)
+                .with_font_size(size)
+                .with_graph(graph.clone())
+                .layout(&graph, &graph.view_limits().unwrap())
+                .unwrap()
+        };
+        let (small, large) = (layout_at(14), layout_at(28));
+        assert_eq!(
+            small.tick_labels[0].coverage.height,
+            Font::default().metrics(14).height()
+        );
+        assert_eq!(
+            large.tick_labels[0].coverage.height,
+            Font::default().metrics(28).height()
+        );
+        // bigger labels leave less room for the plot
+        assert!(large.plot.span().1 < small.plot.span().1);
+    }
+
+    #[test]
     fn offset_labels_stay_clear_of_other_labels() {
         // timestamps on x and values near 1e15 on y give both axes an offset label
         let points: Vec<_> = (0..=10)
@@ -795,15 +941,22 @@ mod tests {
             let layout = canvas
                 .layout(&graph, &graph.view_limits().unwrap())
                 .unwrap();
-            let ticks = layout.x_ticks.labels.len() + layout.y_ticks.labels.len();
-            assert_eq!(layout.labels.len(), ticks + 2, "{w}x{h}: offset labels");
-            let boxes: Vec<_> = layout.labels.iter().map(|l| l.limits()).collect();
-            for offset in &boxes[ticks..] {
+            let offsets: Vec<_> = (layout.x_offset_label.iter())
+                .chain(&layout.y_offset_label)
+                .map(|t| t.bounds().unwrap())
+                .collect();
+            assert_eq!(offsets.len(), 2, "{w}x{h}: offset labels");
+            let ticks: Vec<_> = layout
+                .tick_labels
+                .iter()
+                .map(|t| t.bounds().unwrap())
+                .collect();
+            for offset in &offsets {
                 assert!(
                     offset.max().x < w && offset.max().y < h,
                     "{w}x{h}: {offset:?}"
                 );
-                for other in boxes.iter().filter(|b| *b != offset) {
+                for other in ticks.iter().chain(offsets.iter().filter(|o| *o != offset)) {
                     assert!(
                         !offset.intersects(other.clone()),
                         "{w}x{h}: {offset:?} overlaps {other:?}"
@@ -836,9 +989,9 @@ mod tests {
             let layout = canvas
                 .layout(&graph, &graph.view_limits().unwrap())
                 .unwrap();
-            let x_labels: Vec<_> = (layout.labels.iter())
+            let x_labels: Vec<_> = (layout.tick_labels.iter())
                 .take(layout.x_ticks.labels.len())
-                .map(|l| l.limits())
+                .map(|l| l.bounds().unwrap())
                 .collect();
             assert!(x_labels.len() >= 2, "{w}x{h}");
             for pair in x_labels.windows(2) {

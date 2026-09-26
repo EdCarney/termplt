@@ -120,8 +120,8 @@ proptest! {
         buffer in buffer(),
         with_axes in any::<bool>(),
         axis_thickness in size(3),
-        text_scale in prop_oneof![4 => 0usize..4, 1 => any::<usize>()],
-        text_padding in prop_oneof![4 => 0usize..4, 1 => any::<usize>()],
+        text_size in prop_oneof![4 => 0u32..40, 1 => any::<u32>()],
+        font_size in prop_oneof![4 => 1u32..40, 1 => any::<u32>()],
         with_grid in any::<bool>(),
         x_limits in prop::option::of((any_coord(), any_coord())),
         y_limits in prop::option::of((any_coord(), any_coord())),
@@ -133,7 +133,7 @@ proptest! {
         if with_axes {
             graph = graph.with_axes(Axes::new(
                 AxesPositioning::XY(LineStyle::solid(colors::WHITE, axis_thickness)),
-                TextStyle::new(colors::WHITE, text_scale, text_padding),
+                TextStyle::new(colors::WHITE, text_size),
             ));
         }
         if with_grid {
@@ -148,6 +148,7 @@ proptest! {
 
         // Ok or Err are both acceptable; a panic fails the test
         let _ = TerminalCanvas::new(width, height, colors::BLACK)
+            .with_font_size(font_size)
             .with_buffer(buffer)
             .with_graph(graph)
             .draw();

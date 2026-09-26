@@ -1,11 +1,11 @@
 [package]
 name = "termplt"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 # let-chains need 1.88; checked by the MSRV job in CI
 rust-version = "1.88"
 description = "A Rust library for rendering 2D plots directly in Kitty-compatible terminals"
-license = "MIT"
+license = "MIT AND BSD-3-Clause"
 repository = "https://github.com/EdCarney/termplt"
 keywords = ["terminal", "plotting", "kitty", "graphs", "cli"]
 categories = ["command-line-utilities", "visualization"]
@@ -17,6 +17,7 @@ path = "src/bin/termplt/main.rs"
 required-features = ["cli"]
 
 [dependencies]
+ab_glyph = { version = "0.2.32", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive", "string"], optional = true }
 clap_complete = { version = "4", optional = true }
 crossterm = "0.29.0"

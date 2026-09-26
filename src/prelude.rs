@@ -6,6 +6,7 @@ pub use crate::{
         axes::{Axes, AxesPositioning},
         canvas::{BufferType, TerminalCanvas},
         colors,
+        font::Font,
         graph::Graph,
         grid_lines::GridLines,
         line::LineStyle,

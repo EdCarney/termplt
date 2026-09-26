@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
+## [0.3.0] - Unreleased
+
+Text is drawn with an embedded TrueType font. The low-level text API has **breaking changes**;
+see "Changed" and "Removed".
+
+### Added
+- `plotting::font::Font` (also in the prelude): the built-in Go font by default, or any
+  TrueType or OpenType font with `Font::from_bytes`. Characters a font lacks are drawn with Go.
+- `TerminalCanvas::with_font` and `with_font_size`, `text::DEFAULT_FONT_SIZE` (14 px) and
+  `text::MAX_FONT_SIZE` (400 px).
+- `Error::InvalidFont`.
+- Release archives include `LICENSE` and the font's `LICENSE-Go`.
+
+### Changed
+- All text, tick labels included, is drawn with an embedded, trimmed copy of the Go font
+  (BSD-3-Clause), anti-aliased and blended in linear light. It covers Latin-1, Greek and common
+  math symbols. The crate's license is now `MIT AND BSD-3-Clause`.
+- Numbers use the Unicode minus sign `−`, as matplotlib does.
+- **Breaking:** `TextStyle::new(color, size_px)` replaces `TextStyle::new(color, scale,
+  padding)`, and `TextStyle::size()` replaces `scale()` and `padding()`.
+  `TextStyle::with_color` is unchanged; its text takes the canvas's base size.
+- **Breaking:** `Label::new(text, style, pos)` with `text()`, `style()` and `pos()` replaces
+  `Label::new(Text, TextPositioning)`, `txt()` and `limits()`. `Label` no longer implements
+  `Drawable`.
+
+### Removed
+- **Breaking:** `Text`, `MAX_TEXT_SCALE` and `MAX_TEXT_PADDING` (the bitmap font).
+
 ## [0.2.1] - 2026-09-25
 
 ### Fixed
@@ -124,6 +152,7 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 
 First releases (0.1.0 and 0.1.1, published the same day).
 
+[0.3.0]: https://github.com/EdCarney/termplt/compare/v0.2.1...HEAD
 [0.2.1]: https://github.com/EdCarney/termplt/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/EdCarney/termplt/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/EdCarney/termplt/compare/v0.1.1...v0.1.2
