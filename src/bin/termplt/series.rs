@@ -76,6 +76,7 @@ pub struct SeriesSpec {
     pub x: Option<Column>,
     pub y: Option<Column>,
     pub style: Style,
+    pub label: Option<String>,
 }
 
 impl SeriesSpec {
@@ -85,6 +86,7 @@ impl SeriesSpec {
             x: None,
             y: None,
             style: Style::default(),
+            label: None,
         }
     }
 }
@@ -94,6 +96,7 @@ const KEYS: &[&str] = &[
     "data",
     "x",
     "y",
+    "label",
     "color",
     "marker",
     "marker-size",
@@ -110,6 +113,7 @@ pub fn parse_spec(spec: &str) -> Result<SeriesSpec> {
     let mut source = None;
     let mut x = None;
     let mut y = None;
+    let mut label = None;
     let mut style = Style::default();
 
     for pair in split_pairs(spec) {
@@ -144,6 +148,7 @@ pub fn parse_spec(spec: &str) -> Result<SeriesSpec> {
             }
             "x" => x = Some(Column::parse(&value)?),
             "y" => y = Some(Column::parse(&value)?),
+            "label" => label = Some(value),
             "color" => style.color = Some(value),
             "marker" => style.marker = Some(value),
             "marker-size" => style.marker_size = Some(number(&value)?),
@@ -172,6 +177,7 @@ pub fn parse_spec(spec: &str) -> Result<SeriesSpec> {
         x,
         y,
         style,
+        label,
     })
 }
 
@@ -359,6 +365,18 @@ pub fn build_series(points: &[Point<f64>], style: &Style, index: usize) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn label_key_names_the_series() {
+        // a comma not followed by `key=` stays in the name
+        let spec = parse_spec("file=a.csv,label=temp, °C").unwrap();
+        assert_eq!(spec.label.as_deref(), Some("temp, °C"));
+        assert_eq!(
+            parse_spec("file=a.csv,label=").unwrap().label.as_deref(),
+            Some("")
+        );
+        assert_eq!(parse_spec("file=a.csv").unwrap().label, None);
+    }
 
     #[test]
     fn spec_with_file_columns_and_style() {

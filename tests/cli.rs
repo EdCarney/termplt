@@ -208,3 +208,37 @@ fn font_size_must_be_at_least_one() {
         stderr(&out)
     );
 }
+
+#[test]
+fn series_are_named_for_the_legend() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.csv"), dir.path().join("b.csv"));
+    std::fs::write(&a, HEADED).unwrap();
+    std::fs::write(&b, HEADED).unwrap();
+    let png = dir.path().join("plot.png");
+    let out = termplt(
+        &[
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "-d",
+            "(0,2),(1,2)",
+            "-s",
+            "data=(0,1),(2,3),label=fit",
+            "-o",
+            png.to_str().unwrap(),
+            "-v",
+        ],
+        "",
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    let err = stderr(&out);
+    // both headers are "temp", so the files name their series; inline data has no name
+    for label in [
+        r#"label="a""#,
+        r#"label="b""#,
+        "label=none",
+        r#"label="fit""#,
+    ] {
+        assert!(err.contains(label), "{label} missing from:\n{err}");
+    }
+}

@@ -6,6 +6,7 @@ mod series;
 use clap::{CommandFactory, Parser};
 use cli::Cli;
 use data::{Column, ColumnNames, Table};
+use names::NameSource;
 use series::{SeriesSpec, Source, Style};
 use std::{
     error::Error,
@@ -77,16 +78,38 @@ fn run(cli: Cli) -> Result<()> {
     let mut column_names = Vec::new();
     let mut plot = Plot::new()
         .background(series::parse_color(&cli.bg)?)
-        .grid(!cli.no_grid);
+        .grid(!cli.no_grid)
+        // one series needs no legend
+        .legend(specs.len() >= 2);
+    let mut loaded = Vec::new();
+    let mut name_sources = Vec::new();
     for (index, spec) in specs.iter().enumerate() {
-        let (points, names) = load_points(spec, &mut stdin_cache)?;
-        column_names.push(names);
+        let (points, columns, y_column) = load_points(spec, &mut stdin_cache)?;
         let series = series::build_series(&points, &spec.style.or(&defaults), index)?;
+        name_sources.push(NameSource {
+            label: spec.label.clone(),
+            path: match &spec.source {
+                Source::File(path) => Some(path.clone()),
+                Source::Inline(_) => None,
+            },
+            header: columns.y.clone(),
+            column: y_column,
+        });
+        column_names.push(columns);
+        loaded.push((series, points.len()));
+    }
+    let series_names = names::series_names(&name_sources);
+    for (index, ((series, count), name)) in loaded.into_iter().zip(series_names).enumerate() {
+        let series = match &name {
+            Some(name) => series.with_label(name.clone()),
+            None => series,
+        };
         if cli.verbose {
+            let label = name.map_or_else(|| "none".to_string(), |name| format!("{name:?}"));
             eprintln!(
-                "[verbose] series {index}: {} points from {}, marker={:?}, line={:?}",
-                points.len(),
-                spec.source.describe(),
+                "[verbose] series {index}: {count} points from {}, label={label}, marker={:?}, \
+                 line={:?}",
+                specs[index].source.describe(),
                 series.marker_style(),
                 series.line_style()
             );
@@ -277,12 +300,16 @@ fn collect_specs(cli: &Cli, stdin_is_piped: bool) -> Result<Vec<SeriesSpec>> {
 fn load_points(
     spec: &SeriesSpec,
     stdin_cache: &mut Option<String>,
-) -> Result<(Vec<termplt::plotting::point::Point<f64>>, ColumnNames)> {
+) -> Result<(
+    Vec<termplt::plotting::point::Point<f64>>,
+    ColumnNames,
+    usize,
+)> {
     let source = spec.source.describe();
-    let (points, skipped_missing, names) = match &spec.source {
+    let (points, skipped_missing, names, y_column) = match &spec.source {
         Source::Inline(s) => {
             let points = data::parse_inline(s).map_err(|e| format!("{source}: {e}"))?;
-            (points, 0, ColumnNames::default())
+            (points, 0, ColumnNames::default(), 0)
         }
         Source::File(path) => {
             let content = if path == "-" {
@@ -300,7 +327,12 @@ fn load_points(
             };
             let name = if path == "-" { "stdin" } else { path.as_str() };
             let parsed = Table::parse(&content).points(spec.x.as_ref(), spec.y.as_ref(), name)?;
-            (parsed.points, parsed.skipped_missing, parsed.names)
+            (
+                parsed.points,
+                parsed.skipped_missing,
+                parsed.names,
+                parsed.y_column,
+            )
         }
     };
 
@@ -322,12 +354,21 @@ fn load_points(
     if points.is_empty() {
         return Err(format!("no data points found in {source}").into());
     }
-    Ok((points, names))
+    Ok((points, names, y_column))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn load_points_reports_the_y_column() {
+        let mut spec = SeriesSpec::new(Source::File("-".into()));
+        spec.y = Some(Column::Name("b".into()));
+        let mut cache = Some("t,a,b\n1,2,3\n".to_string());
+        let (_, columns, y_column) = load_points(&spec, &mut cache).unwrap();
+        assert_eq!((columns.y.as_deref(), y_column), (Some("b"), 3));
+    }
 
     fn cli(args: &[&str]) -> Cli {
         Cli::try_parse_from(std::iter::once("termplt").chain(args.iter().copied())).unwrap()

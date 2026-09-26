@@ -23,6 +23,7 @@ Examples:
 Series specs (-s/--series) are comma-separated key=value pairs:
   file=PATH | data=POINTS   the data for the series ('-' reads stdin); exactly one is required
   x=COL, y=COL              columns to plot (defaults to --x-col/--y-col)
+  label=TEXT                the series' name in the legend ('label=' for none)
   color, marker, marker-size, marker-color, line, line-color, line-thickness
                             style for this series (defaults to the matching options)
 
