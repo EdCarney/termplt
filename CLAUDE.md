@@ -13,6 +13,7 @@ cargo clippy --all-targets -- -D warnings  # Lint (CI fails on any warning)
 cargo fmt --check                    # Formatting (enforced in CI)
 TERMPLT_UPDATE_SNAPSHOTS=1 cargo test --test golden  # Regenerate golden PNGs after an intentional rendering change (review them!)
 scripts/readme_images.sh             # Regenerate the README images in docs/images/ (same commands as the README)
+scripts/subset_font.sh               # Rebuild the embedded font from the pinned Go source (needs python3 and network)
 PROPTEST_CASES=20000 cargo test --test properties    # Longer property-test run
 cargo run -- --data "(1,1),(2,4)"    # Render a plot via the CLI (needs a Kitty-protocol terminal)
 cargo run -- data.csv -o plot.png    # Write a PNG instead (no terminal needed; handy for checking output)
@@ -35,7 +36,7 @@ Public API layers, top-down:
 - `terminal`: `Terminal` (support check, size, tmux handling, display) plus re-exported `WindowSize`, `get_window_size`, `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
 - `Error`/`Result` (`error.rs`): one `#[non_exhaustive]` enum for the whole crate.
 
-`kitty_graphics`, `terminal_commands` and `plotting::{common, numbers, ticks}` are private; re-export what users need rather than making them public.
+`kitty_graphics`, `terminal_commands` and `plotting::{common, srgb, ticks}` are private; re-export what users need rather than making them public.
 
 ### Numeric Types (`plotting/common.rs`)
 
@@ -57,7 +58,7 @@ TerminalCanvas::draw()
   ├── axes.get_mask(plot)            # axis lines just outside the plot area
   ├── series.draw_into(canvas)       # markers, then lines, straight into the canvas
   ├── Canvas::set_pixels()           # write RGB8 into the flat pixel buffer
-  └── labels → get_mask → set_pixels # tick labels (bitmap font), drawn last
+  └── text → font.rasterize → Canvas::blend  # all labels, drawn last
 ```
 
 Ticks (`ticks.rs`): values are k × step with step ∈ {1, 2, 5} × 10^k (Heckbert); `fit_ticks` picks the densest count (≤ `MAX_TICKS`) whose labels don't overlap at the actual pixel size. Labels on an axis share decimal places; scientific notation when |v| ≥ 1e6 or step < 1e-4. An axis whose range shares ≥ 4 leading digits gets a matplotlib-style offset (`axis_offset`, computed from the view range so it's known before layout): its ticks are fitted, placed and labeled relative to it, which keeps them exact where f64 can't represent `offset + k × step` (e.g. near 1e15), and the offset label (`+1e15`) goes under the right end of the x axis or above the y axis. A label color equal to the background is replaced with black/white. `get_drawable_limits()` returns the plot area from the same layout.
@@ -83,9 +84,9 @@ In tmux it draws with `C=1` and prints the newlines itself.
 
 `BetweenPoints` lines use Bresenham's algorithm; thickness stamps a disc of radius `thickness` at each pixel (round joins). `Horizontal`/`Vertical` lines use range iteration; thickness shifts parallel copies. `LineStyle::Dashed` filters the ordered path with a 6-on/4-off pattern. `MarkerStyle::None` draws no marker.
 
-### Text/Number Rendering (`text.rs`, `numbers.rs`)
+### Text Rendering (`font.rs`, `srgb.rs`, `text.rs`)
 
-Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `+`, `e`, ` `; other characters render as a placeholder box. Blank glyph rows are spaces, and the parser skips empty lines, so an editor that trims trailing whitespace breaks glyphs (a test counts the rows). Supports scaling (pixel replication) and padding. `num_to_str` uses decimal when `0.1^sig_figs < |x| < 10^sig_figs`, otherwise scientific notation, with trailing zero stripping.
+Text uses an embedded Go Regular font, trimmed to `assets/fonts/charset.txt` by `scripts/subset_font.sh` (pinned source, hash-checked; a unit test checks the font covers the charset). `Font` (the built-in font or `Font::from_bytes`) falls back to Go for missing characters, then to the `.notdef` box. `Font::rasterize` draws one line into an 8-bit `Coverage` bitmap with `ab_glyph`; the canvas's `PlacedText` positions it and `Canvas::blend` mixes it in linear light using the committed integer table in `srgb.rs` (no `powf`, so every OS gives the same bytes). Sizes are em sizes in whole pixels: `TextStyle` has an optional size (none = the canvas's base size, `DEFAULT_FONT_SIZE` = 14). Numbers use the Unicode minus.
 
 ### CLI (`src/bin/termplt/`)
 
@@ -108,4 +109,4 @@ Bitmap font: 10x11 pixel grids for `0-9`, `.`, `-`, `+`, `e`, ` `; other charact
 See `IMPROVEMENTS.md` for the full prioritized list and status. Key open items:
 - Clipping to explicit limits drops points (the line breaks there) rather than clipping line segments at the boundary
 - `Limits::new` panics on inverted bounds (internal invariant); use `Limits::try_new` for untrusted input
-- Bitmap font only covers `0-9 . - + e`, so there are no titles, axis names or legends yet
+- No titles, axis names or legends yet (in progress: see `docs/superpowers/specs/2026-09-25-text-rendering-design.md`)

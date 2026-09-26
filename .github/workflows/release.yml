@@ -91,7 +91,9 @@ jobs:
         if: matrix.archive_ext == 'tar.gz'
         run: |
           ARCHIVE="${{ env.BINARY_NAME }}-${{ env.TAG }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
-          tar czf "$ARCHIVE" -C "target/${{ matrix.target }}/release" ${{ env.BINARY_NAME }}
+          # the licenses travel with the binary: termplt's (MIT) and the embedded Go font's (BSD-3)
+          tar czf "$ARCHIVE" -C "target/${{ matrix.target }}/release" ${{ env.BINARY_NAME }} \
+            -C "$GITHUB_WORKSPACE" LICENSE -C "$GITHUB_WORKSPACE/assets/fonts" LICENSE-Go
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
       - name: Package binary (Windows)
@@ -99,7 +101,7 @@ jobs:
         shell: pwsh
         run: |
           $ARCHIVE = "${{ env.BINARY_NAME }}-${{ env.TAG }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
-          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe" -DestinationPath $ARCHIVE
+          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe", "LICENSE", "assets/fonts/LICENSE-Go" -DestinationPath $ARCHIVE
           echo "ARCHIVE=$ARCHIVE" >> $env:GITHUB_ENV
 
       - name: Upload artifact
