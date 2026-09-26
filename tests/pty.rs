@@ -11,6 +11,8 @@ use std::{
     os::unix::{fs::PermissionsExt, process::CommandExt},
     process::{Command, ExitStatus, Stdio},
     ptr,
+    sync::{Mutex, PoisonError},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -111,15 +113,46 @@ impl Run {
     }
 }
 
-/// Runs the CLI with its stdin, stdout and stderr on a new pty (which becomes its controlling
-/// terminal, so `/dev/tty` works) and plays `term` on the other end.
+/// Where the CLI's stdin comes from.
+enum Stdin {
+    /// The pty, like stdout and stderr.
+    Pty,
+    /// A pipe fed from a script of `(delay, text)` steps: each text is written once its delay has
+    /// passed since the previous step (the first since the start), and the pipe is closed after
+    /// the last step.
+    Pipe(Vec<(Duration, String)>),
+}
+
+/// Held from creating a child's descriptors until it is spawned. Without `pipe2` (macOS) a pipe
+/// is made close-on-exec just after it is created, and a child forked by another test in between
+/// would keep the write end open and hold back the EOF.
+static SPAWN: Mutex<()> = Mutex::new(());
+
+/// Runs the CLI with its stdin, stdout and stderr on a new pty and plays `term` on the other end.
 fn run(term: FakeTerminal, args: &[&str], env: &[(&str, &str)]) -> Run {
+    run_with(term, args, env, Stdin::Pty)
+}
+
+/// Runs the CLI with its stdout and stderr on a new pty (which becomes its controlling terminal,
+/// so `/dev/tty` works) and its stdin as given, and plays `term` on the other end.
+fn run_with(term: FakeTerminal, args: &[&str], env: &[(&str, &str)], stdin: Stdin) -> Run {
+    let spawning = SPAWN.lock().unwrap_or_else(PoisonError::into_inner);
     let (master, slave) = open_pty(term);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_termplt"));
+    let script = match stdin {
+        Stdin::Pty => {
+            cmd.stdin(Stdio::from(slave.try_clone().unwrap()));
+            None
+        }
+        Stdin::Pipe(script) => {
+            let (reader, writer) = io::pipe().unwrap();
+            cmd.stdin(reader);
+            Some((writer, script))
+        }
+    };
     cmd.args(args)
         .env_remove("TMUX")
         .env("TERM", "xterm-kitty")
-        .stdin(Stdio::from(slave.try_clone().unwrap()))
         .stdout(Stdio::from(slave.try_clone().unwrap()))
         .stderr(Stdio::from(slave));
     for (key, value) in env {
@@ -128,7 +161,8 @@ fn run(term: FakeTerminal, args: &[&str], env: &[(&str, &str)]) -> Run {
     // SAFETY: only async-signal-safe calls between fork and exec
     unsafe {
         cmd.pre_exec(|| {
-            if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
+            // stdout, since stdin may be a pipe
+            if libc::setsid() < 0 || libc::ioctl(1, libc::TIOCSCTTY as _, 0) < 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
@@ -137,8 +171,11 @@ fn run(term: FakeTerminal, args: &[&str], env: &[(&str, &str)]) -> Run {
 
     let start = Instant::now();
     let mut child = cmd.spawn().unwrap();
-    // drop our copies of the slave (moved into `cmd`) so reads fail once the CLI exits
+    drop(spawning);
+    // drop our copies of the slave and of the pipe's read end (moved into `cmd`), so reads fail
+    // once the CLI exits
     drop(cmd);
+    let feeder = script.map(|(pipe, script)| thread::spawn(move || feed(pipe, script)));
 
     let mut master = File::from(master);
     let mut output = Vec::new();
@@ -167,10 +204,25 @@ fn run(term: FakeTerminal, args: &[&str], env: &[(&str, &str)]) -> Run {
         }
     }
     let status = child.wait().unwrap();
+    let elapsed = start.elapsed();
+    if let Some(feeder) = feeder {
+        feeder.join().unwrap();
+    }
     Run {
         status,
         output,
-        elapsed: start.elapsed(),
+        elapsed,
+    }
+}
+
+/// Writes the script to the CLI's stdin, then closes it.
+fn feed(mut pipe: io::PipeWriter, script: Vec<(Duration, String)>) {
+    for (delay, text) in script {
+        thread::sleep(delay);
+        if pipe.write_all(text.as_bytes()).is_err() {
+            // the CLI has exited
+            return;
+        }
     }
 }
 
@@ -226,22 +278,107 @@ fn count(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
+/// A piece of what the CLI wrote.
+#[derive(Debug, PartialEq)]
+enum Event {
+    /// A graphics command: its control data and its (base64) payload.
+    Apc { ctrl: String, payload: Vec<u8> },
+    /// `ESC [ n A`
+    CursorUp(u32),
+    /// `ESC [ n B`
+    CursorDown(u32),
+    /// Everything else, other escape sequences included.
+    Text(Vec<u8>),
+}
+
+/// Splits the output into graphics commands, cursor moves and text, in order; consecutive text
+/// is one event.
+fn events(output: &[u8]) -> Vec<Event> {
+    let mut events = Vec::new();
+    let mut pos = 0;
+    while pos < output.len() {
+        let rest = &output[pos..];
+        if let Some(body) = rest.strip_prefix(APC_START) {
+            let end = find(body, ST).expect("unterminated graphics command");
+            let body = &body[..end];
+            let sep = body.iter().position(|&b| b == b';').unwrap_or(body.len());
+            events.push(Event::Apc {
+                ctrl: String::from_utf8(body[..sep].to_vec()).unwrap(),
+                payload: body.get(sep + 1..).unwrap_or_default().to_vec(),
+            });
+            pos += APC_START.len() + end + ST.len();
+        } else if let Some((event, len)) = cursor_move(rest) {
+            events.push(event);
+            pos += len;
+        } else {
+            match events.last_mut() {
+                Some(Event::Text(text)) => text.push(rest[0]),
+                _ => events.push(Event::Text(vec![rest[0]])),
+            }
+            pos += 1;
+        }
+    }
+    events
+}
+
+/// The cursor move `ESC [ n A` or `ESC [ n B` at the start of `bytes` (n defaults to 1), and
+/// its length.
+fn cursor_move(bytes: &[u8]) -> Option<(Event, usize)> {
+    let params = bytes.strip_prefix(b"\x1b[")?;
+    let digits = params.iter().take_while(|b| b.is_ascii_digit()).count();
+    let n = match digits {
+        0 => 1,
+        _ => std::str::from_utf8(&params[..digits]).ok()?.parse().ok()?,
+    };
+    let event = match params.get(digits)? {
+        b'A' => Event::CursorUp(n),
+        b'B' => Event::CursorDown(n),
+        _ => return None,
+    };
+    Some((event, b"\x1b[".len() + digits + 1))
+}
+
 /// Graphics commands as (control data, payload) pairs.
 fn apc_commands(output: &[u8]) -> Vec<(String, Vec<u8>)> {
-    let mut commands = Vec::new();
-    let mut rest = output;
-    while let Some(start) = find(rest, APC_START) {
-        rest = &rest[start + APC_START.len()..];
-        let end = find(rest, ST).expect("unterminated graphics command");
-        let body = &rest[..end];
-        let sep = body.iter().position(|&b| b == b';').unwrap_or(body.len());
-        commands.push((
-            String::from_utf8(body[..sep].to_vec()).unwrap(),
-            body.get(sep + 1..).unwrap_or_default().to_vec(),
-        ));
-        rest = &rest[end + ST.len()..];
+    events(output)
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Apc { ctrl, payload } => Some((ctrl, payload)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The value of `key` in a graphics command's control data (`a=T,f=100,...`).
+fn control_value<'a>(ctrl: &'a str, key: &str) -> Option<&'a str> {
+    ctrl.split(',')
+        .find_map(|kv| kv.strip_prefix(key)?.strip_prefix('='))
+}
+
+/// The images transmitted (`a=T`, or `a=t`, the default), each as its first chunk's control data
+/// and its decoded payload. An image's chunks are joined until one without `m=1`. Queries and
+/// commands that transmit nothing (put, delete) are skipped.
+fn transmissions(output: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let mut images = Vec::new();
+    // the image whose chunks are arriving: its first control data and its payload so far
+    let mut current: Option<(String, Vec<u8>)> = None;
+    for (ctrl, payload) in apc_commands(output) {
+        let (first, mut data) = match current.take() {
+            Some(image) => image,
+            None if matches!(control_value(&ctrl, "a"), None | Some("t" | "T")) => {
+                (ctrl.clone(), Vec::new())
+            }
+            None => continue,
+        };
+        data.extend_from_slice(&payload);
+        if control_value(&ctrl, "m") == Some("1") {
+            current = Some((first, data));
+        } else {
+            images.push((first, base64_decode(&data)));
+        }
     }
-    commands
+    assert!(current.is_none(), "the last image has no final chunk (m=0)");
+    images
 }
 
 /// Replaces graphics commands with `<image>` so the rest of the output can be read as text.
@@ -274,7 +411,8 @@ fn after_last_image(output: &[u8]) -> &[u8] {
     &output[end + ST.len()..]
 }
 
-/// Undoes tmux DCS passthrough: the wrapper is removed and doubled escapes are halved.
+/// Undoes tmux DCS passthrough: the wrapper is removed and doubled escapes are halved. Output
+/// outside it, such as cursor moves (only graphics commands are wrapped), is kept as it is.
 fn unwrap_tmux(output: &[u8]) -> Vec<u8> {
     let mut plain = Vec::new();
     let mut i = 0;
@@ -329,28 +467,18 @@ fn base64_decode(data: &[u8]) -> Vec<u8> {
 /// Checks that exactly one image was sent, as a PNG displayed without replies, and returns its
 /// size.
 fn sent_image(output: &[u8]) -> (u32, u32) {
-    let commands: Vec<_> = apc_commands(output)
-        .into_iter()
-        .filter(|(ctrl, _)| !ctrl.contains("a=q"))
-        .collect();
-    assert!(!commands.is_empty(), "no image was sent");
-    let first = &commands[0].0;
+    let images = transmissions(output);
+    assert!(!images.is_empty(), "no image was sent");
+    assert_eq!(images.len(), 1, "expected a single image");
+    let (first, payload) = &images[0];
     for key in ["a=T", "f=100", "q=2"] {
         assert!(
             first.split(',').any(|kv| kv == key),
             "{key} missing: {first}"
         );
     }
-    // one image: only the last chunk ends the transmission
-    let ends = commands
-        .iter()
-        .filter(|(ctrl, _)| ctrl.contains("m=0"))
-        .count();
-    assert_eq!(ends, 1, "expected a single image");
-    let payload: Vec<u8> = commands.iter().flat_map(|(_, p)| p.clone()).collect();
-    let png =
-        image::load_from_memory_with_format(&base64_decode(&payload), image::ImageFormat::Png)
-            .expect("the payload is not a PNG");
+    let png = image::load_from_memory_with_format(payload, image::ImageFormat::Png)
+        .expect("the payload is not a PNG");
     (png.width(), png.height())
 }
 
@@ -367,6 +495,29 @@ fn draws_in_a_kitty_terminal() {
     assert!(!contains(&run.output, PIXEL_SIZE_REQUEST));
     // the cursor ends up on the line below the image
     assert_eq!(after_last_image(&run.output), b"\r\n");
+}
+
+#[test]
+fn piped_stdin_in_a_terminal() {
+    // the data arrives over time, and the pipe closes after the last line
+    let script = vec![
+        (Duration::ZERO, "1,2\n".to_string()),
+        (Duration::from_millis(200), "3,4\n".to_string()),
+    ];
+    let piped = run_with(FakeTerminal::KITTY, &[], &[], Stdin::Pipe(script));
+    assert!(piped.status.success(), "{}", piped.text());
+    assert_eq!(sent_image(&piped.output), PLOT_SIZE);
+    // the query went to the tty, not to stdin, and its reply was read there
+    assert_eq!(count(&piped.output, b"a=q"), 1);
+    assert_eq!(count(&piped.output, DA1_REQUEST), 1);
+    assert!(!piped.text().contains("did not answer"), "{}", piped.text());
+    assert_eq!(after_last_image(&piped.output), b"\r\n");
+    // every line was read: the image is the one the same points give inline
+    let inline = run(FakeTerminal::KITTY, &["--data", "(1,2),(3,4)"], &[]);
+    assert!(
+        transmissions(&piped.output) == transmissions(&inline.output),
+        "the piped points drew a different image"
+    );
 }
 
 #[test]
@@ -533,4 +684,62 @@ fn tmux_without_passthrough_is_an_error() {
         run.text()
     );
     assert!(!contains(&run.output, APC_START));
+}
+
+// The harness itself.
+
+#[test]
+fn events_keep_graphics_commands_cursor_moves_and_text_in_order() {
+    let output =
+        b"\x1b_Ga=T,f=100,m=1;QUJD\x1b\\\x1b_Gm=0;REVG\x1b\\\x1b[30Aplot\r\n\x1b[c\x1b[30B";
+    assert_eq!(
+        events(output),
+        [
+            Event::Apc {
+                ctrl: "a=T,f=100,m=1".into(),
+                payload: b"QUJD".to_vec()
+            },
+            Event::Apc {
+                ctrl: "m=0".into(),
+                payload: b"REVG".to_vec()
+            },
+            Event::CursorUp(30),
+            // other escape sequences are text, and consecutive text is one event
+            Event::Text(b"plot\r\n\x1b[c".to_vec()),
+            Event::CursorDown(30),
+        ]
+    );
+}
+
+#[test]
+fn transmissions_join_the_chunks_of_an_image() {
+    // a query and a delete around a 2-chunk image: only the image is a transmission
+    let output = b"\x1b_Gi=31,a=q,s=1,v=1,f=24,t=d,m=0;AAAA\x1b\\\x1b[c\
+        \x1b_Ga=T,f=100,q=2,m=1;QUJD\x1b\\\x1b_Gm=0;REVG\x1b\\\r\n\x1b_Ga=d,d=i,i=1\x1b\\";
+    assert_eq!(
+        transmissions(output),
+        [("a=T,f=100,q=2,m=1".to_string(), b"ABCDEF".to_vec())]
+    );
+}
+
+#[test]
+fn unwrap_tmux_leaves_cursor_moves_alone() {
+    // only graphics commands are wrapped in the passthrough
+    let output = b"\x1bPtmux;\x1b\x1b_Ga=T,m=0;QUJD\x1b\x1b\\\x1b\\\x1b[3A\
+        \x1bPtmux;\x1b\x1b_Ga=p,i=1\x1b\x1b\\\x1b\\\x1b[3B";
+    assert_eq!(
+        events(&unwrap_tmux(output)),
+        [
+            Event::Apc {
+                ctrl: "a=T,m=0".into(),
+                payload: b"QUJD".to_vec()
+            },
+            Event::CursorUp(3),
+            Event::Apc {
+                ctrl: "a=p,i=1".into(),
+                payload: Vec::new()
+            },
+            Event::CursorDown(3),
+        ]
+    );
 }
