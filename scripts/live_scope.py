@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 r"""Prints a two-channel "oscilloscope" CSV stream for `termplt --follow`: a sine and a square wave.
 
-    python3 scripts/live_scope.py | termplt -f -x time -y sine,square --window 200 \
-        --ylim -1.5,1.5 --marker none --line-thickness 1 --title "Oscilloscope"
+    python3 scripts/live_scope.py | termplt -f -x time -y sine,square --window 200 --ylim -1.5,1.5 \
+        --marker none --line-thickness 1 --title "Oscilloscope" --legend-loc upper-left
 
 Writes a `time,sine,square` header, then one row every 1/RATE seconds for SECONDS seconds
 (forever with 0). The square wave is the sum of its first HARMONICS odd harmonics,

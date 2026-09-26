@@ -2,7 +2,7 @@
 r"""Prints a live CSV stream of a mass-spring-damper for `termplt --follow`: x, v and a.
 
     python3 scripts/live_oscillator.py | termplt -f -x time -y position,velocity,acceleration \
-        --window 500 --marker none --line-thickness 1 --title "Mass-spring-damper"
+        --window 500 --marker none --line-thickness 1 --title "Mass-spring-damper" --legend-loc lower-left
 
 Writes a `time,position,velocity,acceleration` header, then one row every 1/RATE seconds for
 SECONDS seconds (forever with 0). The system is x'' + 2 zeta omega x' + omega^2 x = F(t), from
