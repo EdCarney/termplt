@@ -3,8 +3,8 @@ mod data;
 mod names;
 mod series;
 
-use clap::{CommandFactory, Parser};
-use cli::Cli;
+use clap::{CommandFactory, Parser, ValueEnum};
+use cli::{Cli, LegendLoc};
 use data::{Column, ColumnNames, Table};
 use names::NameSource;
 use series::{SeriesSpec, Source, Style};
@@ -79,8 +79,10 @@ fn run(cli: Cli) -> Result<()> {
     let mut plot = Plot::new()
         .background(series::parse_color(&cli.bg)?)
         .grid(!cli.no_grid)
-        // one series needs no legend
-        .legend(specs.len() >= 2);
+        .legend(legend_shown(&cli, specs.len()));
+    if let Some(loc) = cli.legend_loc {
+        plot = plot.legend_location(loc.into());
+    }
     let mut loaded = Vec::new();
     let mut name_sources = Vec::new();
     for (index, spec) in specs.iter().enumerate() {
@@ -115,6 +117,15 @@ fn run(cli: Cli) -> Result<()> {
             );
         }
         plot = plot.series(series);
+    }
+    if cli.verbose {
+        if legend_shown(&cli, specs.len()) {
+            let loc = cli.legend_loc.unwrap_or(LegendLoc::Best);
+            let name = loc.to_possible_value().expect("no variant is skipped");
+            eprintln!("[verbose] legend: on, {}", name.get_name());
+        } else {
+            eprintln!("[verbose] legend: off");
+        }
     }
     // explicit names win; an empty one removes a name taken from the headers
     let names = data::axis_names(&column_names);
@@ -295,6 +306,13 @@ fn collect_specs(cli: &Cli, stdin_is_piped: bool) -> Result<Vec<SeriesSpec>> {
     Ok(specs)
 }
 
+/// Whether to show the legend: `--no-legend` hides it; `--legend` or `--legend-loc` shows it;
+/// otherwise it's shown for 2 or more series. The plot still draws one only when a series has
+/// a name.
+fn legend_shown(cli: &Cli, series: usize) -> bool {
+    !cli.no_legend && (cli.legend || cli.legend_loc.is_some() || series >= 2)
+}
+
 /// Reads and parses a series' points, skipping (with a warning) rows with missing values and
 /// points with NaN or infinite coordinates. Stdin is read at most once and shared.
 fn load_points(
@@ -372,6 +390,21 @@ mod tests {
 
     fn cli(args: &[&str]) -> Cli {
         Cli::try_parse_from(std::iter::once("termplt").chain(args.iter().copied())).unwrap()
+    }
+
+    #[test]
+    fn the_legend_shows_for_two_or_more_series_unless_told_otherwise() {
+        assert!(!legend_shown(&cli(&[]), 1));
+        assert!(legend_shown(&cli(&[]), 2));
+        assert!(legend_shown(&cli(&["--legend"]), 1));
+        assert!(legend_shown(&cli(&["--legend-loc", "upper-left"]), 1));
+        assert!(!legend_shown(&cli(&["--no-legend"]), 2));
+        assert!(!legend_shown(
+            &cli(&["--legend-loc", "center", "--no-legend"]),
+            2
+        ));
+        assert!(!legend_shown(&cli(&["--legend", "--no-legend"]), 1));
+        assert!(legend_shown(&cli(&["--no-legend", "--legend"]), 1));
     }
 
     #[test]
