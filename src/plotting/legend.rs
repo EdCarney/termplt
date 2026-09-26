@@ -2,8 +2,10 @@
 
 use super::{
     canvas::LINE_SPACING,
+    limits::Limits,
     line::LineStyle,
     marker::MarkerStyle,
+    point::Point,
     series::Series,
     text::{ELLIPSIS, wrap},
 };
@@ -35,6 +37,23 @@ pub enum LegendLocation {
     UpperCenter,
     /// The middle of the plot.
     Center,
+}
+
+impl LegendLocation {
+    /// The fixed locations in matplotlib's order (its `loc` codes 1 to 10), the order "best"
+    /// tries them in.
+    pub(crate) const FIXED: [LegendLocation; 10] = [
+        LegendLocation::UpperRight,
+        LegendLocation::UpperLeft,
+        LegendLocation::LowerLeft,
+        LegendLocation::LowerRight,
+        LegendLocation::Right,
+        LegendLocation::CenterLeft,
+        LegendLocation::CenterRight,
+        LegendLocation::LowerCenter,
+        LegendLocation::UpperCenter,
+        LegendLocation::Center,
+    ];
 }
 
 /// Space inside the frame, around the entries, in em (matplotlib's `legend.borderpad`).
@@ -241,10 +260,134 @@ pub(crate) fn build(
     })
 }
 
+/// The legend's box at `location`: `width` x `height` pixels, `pad` pixels in from the edges
+/// of `plot` (inclusive pixel bounds, rows counting up). A centered box that can't sit exactly
+/// in the middle moves half a pixel toward the lower left. `Best` gives the upper right.
+pub(crate) fn candidate(
+    location: LegendLocation,
+    plot: &Limits<u32>,
+    width: u32,
+    height: u32,
+    pad: u32,
+) -> Limits<u32> {
+    use LegendLocation::*;
+    let (min, max) = (*plot.min(), *plot.max());
+    let (plot_w, plot_h) = (max.x - min.x + 1, max.y - min.y + 1);
+    let left = match location {
+        UpperLeft | LowerLeft | CenterLeft => min.x + pad,
+        LowerCenter | UpperCenter | Center => min.x + plot_w.saturating_sub(width) / 2,
+        Best | UpperRight | LowerRight | Right | CenterRight => {
+            (max.x + 1).saturating_sub(pad + width)
+        }
+    };
+    let bottom = match location {
+        LowerLeft | LowerRight | LowerCenter => min.y + pad,
+        Right | CenterLeft | CenterRight | Center => min.y + plot_h.saturating_sub(height) / 2,
+        Best | UpperRight | UpperLeft | UpperCenter => (max.y + 1).saturating_sub(pad + height),
+    };
+    Limits::new(
+        Point::new(left, bottom),
+        Point::new(left + width.max(1) - 1, bottom + height.max(1) - 1),
+    )
+}
+
+/// Index of the candidate box covering the least data, as matplotlib's `loc="best"` picks it
+/// (`Legend._find_best_position`): the first that covers nothing, else the lowest score, a tie
+/// going to the earlier box. `series` are in canvas pixels.
+pub(crate) fn best(candidates: &[Limits<u32>], series: &[Series]) -> usize {
+    let mut lowest = (usize::MAX, 0);
+    for (i, candidate) in candidates.iter().enumerate() {
+        let score = badness(candidate, series);
+        if score == 0 {
+            return i;
+        }
+        if score < lowest.0 {
+            lowest = (score, i);
+        }
+    }
+    lowest.1
+}
+
+/// matplotlib's score for a legend box: every series' points strictly inside it, plus one for
+/// each line whose drawn path touches it. Marker sizes are ignored, as in matplotlib.
+fn badness(bbox: &Limits<u32>, series: &[Series]) -> usize {
+    let rect = Rect::new(bbox);
+    let finite = |p: &Point<f64>| p.x.is_finite() && p.y.is_finite();
+    (series.iter())
+        .map(|s| {
+            let has_line = s.line_style().is_some();
+            if !has_line && s.marker_style().color().is_none() {
+                return 0; // it draws nothing
+            }
+            let inside = s.data().iter().filter(|p| rect.contains(p)).count();
+            // segments with a non-finite end aren't drawn
+            let touches = has_line
+                && (s.data().windows(2))
+                    .any(|w| finite(&w[0]) && finite(&w[1]) && rect.touches(w[0], w[1]));
+            inside + usize::from(touches)
+        })
+        .sum()
+}
+
+/// A box of pixels as a continuous rectangle: pixel `x` covers `x` to `x + 1`.
+struct Rect {
+    x0: f64,
+    x1: f64,
+    y0: f64,
+    y1: f64,
+}
+
+impl Rect {
+    fn new(bbox: &Limits<u32>) -> Rect {
+        Rect {
+            x0: f64::from(bbox.min().x),
+            x1: f64::from(bbox.max().x) + 1.0,
+            y0: f64::from(bbox.min().y),
+            y1: f64::from(bbox.max().y) + 1.0,
+        }
+    }
+
+    /// Whether `p` is strictly inside; never for a NaN or infinite point.
+    fn contains(&self, p: &Point<f64>) -> bool {
+        self.x0 < p.x && p.x < self.x1 && self.y0 < p.y && p.y < self.y1
+    }
+
+    /// Whether the segment from `a` to `b` touches the rectangle, edges included
+    /// (Liang–Barsky clipping).
+    fn touches(&self, a: Point<f64>, b: Point<f64>) -> bool {
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+        for (p, q) in [
+            (-dx, a.x - self.x0),
+            (dx, self.x1 - a.x),
+            (-dy, a.y - self.y0),
+            (dy, self.y1 - a.y),
+        ] {
+            if p == 0.0 {
+                // parallel to this edge: outside it means no contact
+                if q < 0.0 {
+                    return false;
+                }
+            } else {
+                let t = q / p;
+                if p < 0.0 {
+                    t0 = t0.max(t);
+                } else {
+                    t1 = t1.min(t);
+                }
+                if t0 > t1 {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plotting::colors;
+    use crate::plotting::{colors, limits::Limits, point::Point};
 
     /// 14 px text in a fake font: 16 px lines, digits centered 8 px down, 7 px per character.
     const TEXT: TextSize = TextSize {
@@ -385,5 +528,137 @@ mod tests {
         let legend = build(&[entry(" \n ")], TEXT, measure, 400, 300).unwrap();
         assert_eq!(texts(&legend), [vec![("", 6)]]);
         assert!(legend.rows[0].sample.is_some());
+    }
+
+    #[test]
+    fn fixed_locations_follow_matplotlibs_codes() {
+        use LegendLocation::*;
+        assert_eq!(
+            LegendLocation::FIXED,
+            [
+                UpperRight,
+                UpperLeft,
+                LowerLeft,
+                LowerRight,
+                Right,
+                CenterLeft,
+                CenterRight,
+                LowerCenter,
+                UpperCenter,
+                Center
+            ]
+        );
+    }
+
+    #[test]
+    fn candidates_sit_inside_the_pads() {
+        use LegendLocation::*;
+        // a 200 x 100 plot area; a 60 x 30 legend; a 7 px pad
+        let plot = Limits::new(Point::new(10, 20), Point::new(209, 119));
+        let expected = [
+            (UpperRight, (143, 83), (202, 112)),
+            (UpperLeft, (17, 83), (76, 112)),
+            (LowerLeft, (17, 27), (76, 56)),
+            (LowerRight, (143, 27), (202, 56)),
+            (Right, (143, 55), (202, 84)),
+            (CenterLeft, (17, 55), (76, 84)),
+            (CenterRight, (143, 55), (202, 84)),
+            (LowerCenter, (80, 27), (139, 56)),
+            (UpperCenter, (80, 83), (139, 112)),
+            (Center, (80, 55), (139, 84)),
+        ];
+        for (location, min, max) in expected {
+            let bbox = candidate(location, &plot, 60, 30, 7);
+            assert_eq!(
+                (*bbox.min(), *bbox.max()),
+                (Point::new(min.0, min.1), Point::new(max.0, max.1)),
+                "{location:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_uneven_center_moves_toward_the_lower_left() {
+        // 201 x 101: the exact middle is half a pixel right of and above (80, 55)
+        let plot = Limits::new(Point::new(10, 20), Point::new(210, 120));
+        let bbox = candidate(LegendLocation::Center, &plot, 60, 30, 7);
+        assert_eq!(*bbox.min(), Point::new(80, 55));
+    }
+
+    /// A marker-only series.
+    fn scatter(points: &[(f64, f64)]) -> Series {
+        Series::from(points.to_vec())
+    }
+
+    /// A line-only series.
+    fn line(points: &[(f64, f64)]) -> Series {
+        Series::from(points.to_vec())
+            .with_marker_style(MarkerStyle::None)
+            .with_line_style(LineStyle::default())
+    }
+
+    /// Pixels 10 to 19 each way, so the box spans 10.0 to 20.0.
+    fn bbox() -> Limits<u32> {
+        Limits::new(Point::new(10, 10), Point::new(19, 19))
+    }
+
+    #[test]
+    fn points_strictly_inside_count() {
+        let points = scatter(&[
+            (15.0, 15.0),
+            (12.0, 19.5),
+            (10.0, 15.0), // on the left edge
+            (20.0, 15.0), // on the right edge
+            (25.0, 15.0),
+        ]);
+        assert_eq!(badness(&bbox(), &[points]), 2);
+    }
+
+    #[test]
+    fn a_line_touching_the_box_counts_once() {
+        // through the box, with no point inside
+        assert_eq!(badness(&bbox(), &[line(&[(0.0, 15.0), (30.0, 15.0)])]), 1);
+        // inside: its two points and its path
+        assert_eq!(badness(&bbox(), &[line(&[(12.0, 12.0), (18.0, 18.0)])]), 3);
+        // along the top edge
+        assert_eq!(badness(&bbox(), &[line(&[(0.0, 20.0), (30.0, 20.0)])]), 1);
+        // past it
+        assert_eq!(badness(&bbox(), &[line(&[(0.0, 25.0), (30.0, 25.0)])]), 0);
+    }
+
+    #[test]
+    fn scatter_points_have_no_path() {
+        assert_eq!(
+            badness(&bbox(), &[scatter(&[(0.0, 15.0), (30.0, 15.0)])]),
+            0
+        );
+    }
+
+    #[test]
+    fn segments_at_a_gap_are_skipped() {
+        let gap = line(&[(0.0, 15.0), (f64::NAN, f64::NAN), (30.0, 15.0)]);
+        assert_eq!(badness(&bbox(), &[gap]), 0);
+    }
+
+    #[test]
+    fn a_series_that_draws_nothing_scores_nothing() {
+        let invisible = scatter(&[(15.0, 15.0)]).with_marker_style(MarkerStyle::None);
+        assert_eq!(badness(&bbox(), &[invisible]), 0);
+    }
+
+    #[test]
+    fn best_takes_the_first_empty_box_else_the_lowest_score() {
+        let boxes = [
+            Limits::new(Point::new(0, 0), Point::new(9, 9)),
+            Limits::new(Point::new(20, 0), Point::new(29, 9)),
+            Limits::new(Point::new(40, 0), Point::new(49, 9)),
+        ];
+        let at = |x: f64| scatter(&[(x, 5.0)]);
+        // the first two are covered
+        assert_eq!(best(&boxes, &[at(5.0), at(25.0)]), 2);
+        // the second is the first empty one
+        assert_eq!(best(&boxes, &[at(5.0)]), 1);
+        // none is empty: scores 2, 1, 1, and the tie goes to the earlier box
+        assert_eq!(best(&boxes, &[at(5.0), at(6.0), at(25.0), at(45.0)]), 1);
     }
 }
