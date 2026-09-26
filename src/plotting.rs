@@ -4,6 +4,8 @@ pub mod axes;
 pub mod canvas;
 pub mod colors;
 mod common;
+/// Fonts for text on plots.
+pub mod font;
 /// A set of series on shared axes.
 pub mod graph;
 /// Grid lines at the tick positions.
