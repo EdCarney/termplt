@@ -35,21 +35,18 @@ impl fmt::Display for TerminalCommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TerminalCommandError::NoTerminal(e) => {
-                write!(f, "No terminal available to query ({e})")
+                write!(f, "no terminal available to query ({e})")
             }
-            TerminalCommandError::Unsupported => write!(
-                f,
-                "The terminal does not support the required query; a terminal implementing the \
-                 Kitty graphics protocol (e.g. Kitty, WezTerm, Ghostty) is required"
-            ),
+            TerminalCommandError::Unsupported => {
+                write!(f, "the terminal does not answer this query")
+            }
             TerminalCommandError::Timeout(timeout) => write!(
                 f,
-                "The terminal did not respond within {} ms; a terminal implementing the Kitty \
-                 graphics protocol (e.g. Kitty, WezTerm, Ghostty) is required",
+                "the terminal did not answer a query within {} ms",
                 timeout.as_millis()
             ),
             TerminalCommandError::InvalidResponse(resp) => {
-                write!(f, "Unexpected response from terminal: {resp}")
+                write!(f, "unexpected response from the terminal: {resp}")
             }
         }
     }

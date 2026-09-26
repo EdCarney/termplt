@@ -28,6 +28,9 @@ pub use crate::{
 /// fonts).
 pub const ASSUMED_CELL_SIZE: (u32, u32) = (9, 18);
 
+/// Window size in cells (columns, rows) assumed when the terminal reports no size at all.
+pub const ASSUMED_CELL_COUNT: (u16, u16) = (80, 24);
+
 /// Smallest size [`Terminal::default_plot_size`] returns.
 pub const MIN_PLOT_SIZE: (u32, u32) = (200, 150);
 
@@ -43,8 +46,9 @@ impl Terminal {
     ///
     /// Fails with [`Error::NotATerminal`], [`Error::GraphicsUnsupported`],
     /// [`Error::GraphicsRejected`] or [`Error::TmuxPassthroughDisabled`] when images cannot be
-    /// shown. A terminal that answers no queries at all is assumed to work, and a terminal that
-    /// doesn't report its size in pixels gets an estimate based on [`ASSUMED_CELL_SIZE`]; use
+    /// shown. A terminal that answers no queries at all is assumed to work, a terminal that
+    /// doesn't report its size in pixels gets an estimate based on [`ASSUMED_CELL_SIZE`], and one
+    /// that reports no size at all is assumed to be [`ASSUMED_CELL_COUNT`] cells; use
     /// [`Terminal::connect_with_log`] to see those warnings.
     pub fn connect() -> Result<Terminal> {
         Terminal::connect_with_log(false, &mut io::sink())
@@ -98,19 +102,33 @@ impl Terminal {
 
         let window = match term.window_size() {
             Ok(window) => window,
-            Err(e) => {
-                let window = term
-                    .cell_count()
-                    .and_then(|(cols, rows)| estimate_window_size(cols, rows))
-                    .ok_or(e)?;
-                writeln!(
-                    log,
-                    "warning: the terminal did not report its size in pixels; assuming {}x{} \
-                     pixel cells",
-                    window.pix_per_col, window.pix_per_row
-                )?;
-                window
-            }
+            Err(_) => match term
+                .cell_count()
+                .and_then(|(cols, rows)| estimate_window_size(cols, rows))
+            {
+                Some(window) => {
+                    writeln!(
+                        log,
+                        "warning: the terminal did not report its size in pixels; assuming \
+                         {}x{} pixel cells",
+                        window.pix_per_col, window.pix_per_row
+                    )?;
+                    window
+                }
+                // like a terminal that answers no graphics query, try anyway
+                None => {
+                    let (cols, rows) = ASSUMED_CELL_COUNT;
+                    let window = estimate_window_size(cols, rows)
+                        .expect("the assumed cell count is non-zero");
+                    writeln!(
+                        log,
+                        "warning: the terminal did not report its size; assuming {cols}x{rows} \
+                         cells of {}x{} pixels",
+                        window.pix_per_col, window.pix_per_row
+                    )?;
+                    window
+                }
+            },
         };
         if verbose {
             writeln!(
@@ -459,22 +477,23 @@ mod tests {
     }
 
     #[test]
-    fn no_size_at_all_returns_the_original_error() {
-        let term = FakeTerminal {
-            window_size: no_window_size,
-            cell_count: None,
-            ..Default::default()
-        };
-        let err = run(&term, false).0.unwrap_err().to_string();
-        assert!(err.contains("no reply to CSI 14t"));
-
+    fn no_size_at_all_assumes_a_standard_window() {
         // a zero-sized report is as good as none
-        let term = FakeTerminal {
-            window_size: no_window_size,
-            cell_count: Some((0, 0)),
-            ..Default::default()
-        };
-        assert!(run(&term, false).0.is_err());
+        for cell_count in [None, Some((0, 0))] {
+            let term = FakeTerminal {
+                window_size: no_window_size,
+                cell_count,
+                ..Default::default()
+            };
+            let (window, log) = run(&term, false);
+            let window = window.unwrap();
+            assert_eq!((window.cols, window.rows), (80, 24));
+            assert_eq!((window.x_pix, window.y_pix), (720, 432));
+            assert!(
+                log.contains("did not report its size; assuming 80x24 cells"),
+                "{log}"
+            );
+        }
     }
 
     #[test]

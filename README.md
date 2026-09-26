@@ -72,7 +72,7 @@ _The screenshots above are from an earlier version; axes now use round tick valu
 
 | Option | Description |
 |---|---|
-| `FILE...` | Data files (CSV, TSV or whitespace-delimited); `-` reads stdin. Piped stdin is read automatically when no other data is given |
+| `FILE...` | Data files (comma-, semicolon-, tab- or whitespace-delimited); `-` reads stdin. Piped stdin is read automatically when no other data is given |
 | `-d, --data <POINTS>` | Inline points: `"(1,2),(3,4)"`, `"1,2 3,4"` or `"1,2;3,4"` |
 | `-s, --series <SPEC>` | A series with its own data, columns and style (see below) |
 | `-x, --x-col <COL>` | Column for x: header name, 1-based index, or `index` for the row number (default: 1) |

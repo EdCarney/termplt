@@ -433,14 +433,14 @@ pub fn from_name(name: &str) -> Option<RGB8> {
         .map(|(_, c)| *c)
 }
 
-/// Parses a color name (see [`from_name`]) or a hex color: `#RRGGBB` or `#RGB` (the `#` is
-/// optional).
+/// Parses a color name (see [`from_name`]) or a hex color: `#RRGGBB` or `#RGB`. The `#` is
+/// required, so a mistyped name such as "bad" or "facade" is not taken for hex.
 pub fn parse(value: &str) -> Option<RGB8> {
     from_name(value).or_else(|| parse_hex(value.trim()))
 }
 
 fn parse_hex(value: &str) -> Option<RGB8> {
-    let hex = value.strip_prefix('#').unwrap_or(value);
+    let hex = value.strip_prefix('#')?;
     if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }
@@ -502,7 +502,11 @@ mod tests {
     fn parse_accepts_names_and_hex() {
         assert_eq!(parse("lime"), Some(LIME));
         assert_eq!(parse("#ff8800"), Some(RGB8::new(255, 136, 0)));
-        assert_eq!(parse("FF8800"), Some(RGB8::new(255, 136, 0)));
+        assert_eq!(parse("#FF8800"), Some(RGB8::new(255, 136, 0)));
+        // hex needs the '#', so words made of hex digits are rejected
+        for word in ["FF8800", "bad", "facade", "decade"] {
+            assert_eq!(parse(word), None, "{word}");
+        }
         assert_eq!(parse("#f80"), Some(RGB8::new(255, 136, 0)));
         assert_eq!(parse("#ff88"), None);
         assert_eq!(parse("#gg0000"), None);

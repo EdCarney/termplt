@@ -36,7 +36,7 @@ A file with a single column is plotted against the row number.";
     after_help = EXAMPLES
 )]
 pub struct Cli {
-    /// Data files (CSV, TSV or whitespace-delimited); '-' reads stdin. Piped stdin is read
+    /// Data files (comma-, semicolon-, tab- or whitespace-delimited); '-' reads stdin. Piped stdin is read
     /// automatically when no other data is given
     #[arg(value_name = "FILE", value_hint = ValueHint::FilePath)]
     pub files: Vec<String>,
