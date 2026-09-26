@@ -250,15 +250,11 @@ impl PlacedText {
     }
 
     fn draw(&self, canvas: &mut Canvas) {
-        for row in 0..self.coverage.height {
-            let Some(y) = self.top.checked_sub(row) else {
-                break;
-            };
-            for col in 0..self.coverage.width {
-                let coverage = self.coverage.get(col, row);
-                if coverage > 0 {
-                    canvas.blend(self.left.saturating_add(col), y, self.color, coverage);
-                }
+        for (x, y, coverage) in self.coverage.ink() {
+            // the bitmap's rows count down, the canvas's count up
+            let (x, y) = (i64::from(self.left) + x, i64::from(self.top) - y);
+            if let (Ok(x), Ok(y)) = (u32::try_from(x), u32::try_from(y)) {
+                canvas.blend(x, y, self.color, coverage);
             }
         }
     }
@@ -1126,6 +1122,53 @@ mod tests {
             reds.iter().any(|&v| v > 0 && v < 255),
             "partly covered edge pixels"
         );
+    }
+
+    #[test]
+    fn ink_left_of_the_pen_is_drawn() {
+        // Go's j reaches about 1.6 px left of its pen position at 40 px
+        let label = Label::new(
+            "j",
+            TextStyle::new(colors::WHITE, 40),
+            TextPositioning::LeftAligned(Point::new(20, 30)),
+        );
+        let bytes = TerminalCanvas::new(60, 60, colors::BLACK)
+            .with_label(label)
+            .draw()
+            .unwrap()
+            .get_bytes();
+        let lit_left = (bytes.chunks(3).enumerate())
+            .filter(|(i, px)| i % 60 < 20 && px[0] > 0)
+            .count();
+        assert!(lit_left > 0, "the tail of the j is cut off");
+    }
+
+    #[test]
+    fn ink_above_the_ascent_is_drawn() {
+        // this font's line box is shorter than its digits, as many fonts' boxes are shorter
+        // than their accented capitals (Å, É)
+        let font =
+            Font::from_bytes(include_bytes!("../../tests/fixtures/short-ascent.ttf").to_vec())
+                .unwrap();
+        let size = 40;
+        // the box's top row, as a label centered on row 40 is placed
+        let top = 40 + font.metrics(size).height() / 2;
+        let label = Label::new(
+            "0",
+            TextStyle::new(colors::WHITE, size),
+            TextPositioning::LeftAligned(Point::new(20, 40)),
+        );
+        let bytes = TerminalCanvas::new(100, 100, colors::BLACK)
+            .with_font(font)
+            .with_label(label)
+            .draw()
+            .unwrap()
+            .get_bytes();
+        // bytes are stored from the top row; canvas rows count up from the bottom
+        let lit_above = (bytes.chunks(3).enumerate())
+            .filter(|(i, px)| 99 - (i / 100) as u32 > top && px[0] > 0)
+            .count();
+        assert!(lit_above > 0, "the top of the 0 is cut off above row {top}");
     }
 
     #[test]

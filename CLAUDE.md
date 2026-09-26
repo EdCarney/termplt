@@ -86,7 +86,7 @@ In tmux it draws with `C=1` and prints the newlines itself.
 
 ### Text Rendering (`font.rs`, `srgb.rs`, `text.rs`)
 
-Text uses an embedded Go Regular font, trimmed to `assets/fonts/charset.txt` by `scripts/subset_font.sh` (pinned source, hash-checked; a unit test checks the font covers the charset). `Font` (the built-in font or `Font::from_bytes`) falls back to Go for missing characters, then to the `.notdef` box. `Font::rasterize` draws one line into an 8-bit `Coverage` bitmap with `ab_glyph`; the canvas's `PlacedText` positions it and `Canvas::blend` mixes it in linear light using the committed integer table in `srgb.rs` (no `powf`, so every OS gives the same bytes). Sizes are em sizes in whole pixels: `TextStyle` has an optional size (none = the canvas's base size, `DEFAULT_FONT_SIZE` = 14). Numbers use the Unicode minus.
+Text uses an embedded Go Regular font, trimmed to `assets/fonts/charset.txt` by `scripts/subset_font.sh` (pinned source, hash-checked; a unit test checks the font covers the charset). `Font` (the built-in font or `Font::from_bytes`) falls back to Go for missing characters, then to the `.notdef` box. `Font::rasterize` draws one line into an 8-bit `Coverage` bitmap with `ab_glyph` (layout uses the line box; ink past it, such as accents above a font's ascent, is kept up to 1 em out); the canvas's `PlacedText` positions it and `Canvas::blend` mixes it in linear light using the committed integer table in `srgb.rs` (no `powf`, so every OS gives the same bytes). Sizes are em sizes in whole pixels: `TextStyle` has an optional size (none = the canvas's base size, `DEFAULT_FONT_SIZE` = 14). Numbers use the Unicode minus.
 
 ### CLI (`src/bin/termplt/`)
 
