@@ -9,6 +9,7 @@ use super::{
     series::Series,
     text::{ELLIPSIS, wrap},
 };
+use rgb::RGB8;
 
 /// Where the legend goes inside the plot area. The fixed locations are matplotlib's `loc`
 /// values, in the same order; [`LegendLocation::Best`] picks the one covering the least data.
@@ -70,6 +71,8 @@ pub(crate) const BORDER_AXES_PAD: f32 = 0.5;
 pub(crate) const CORNER_RADIUS: f32 = 0.2;
 /// Most lines a label wraps onto.
 pub(crate) const MAX_LABEL_LINES: usize = 2;
+/// Opacity of the frame, out of 255 (matplotlib's `legend.framealpha`, 0.8).
+pub(crate) const FRAME_ALPHA: u8 = 204;
 
 /// `fraction` of an em at `size` pixels, in whole pixels.
 pub(crate) fn em(fraction: f32, size: u32) -> u32 {
@@ -384,6 +387,59 @@ impl Rect {
     }
 }
 
+/// How much of each pixel of a `width` x `height` box the frame covers, 0 to 255, row-major
+/// from the top: the rounded rectangle's inside (`fill`) and its 1 px edge (`edge`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Frame {
+    pub fill: Vec<u8>,
+    pub edge: Vec<u8>,
+}
+
+/// The frame of a `width` x `height` legend with corners of `radius` pixels, anti-aliased from
+/// the distance of each pixel's center to the rounded rectangle. Only `sqrt` is used, which is
+/// exact in IEEE arithmetic, so every platform gets the same bytes.
+pub(crate) fn frame(width: u32, height: u32, radius: u32) -> Frame {
+    let (half_w, half_h) = (width as f32 / 2.0, height as f32 / 2.0);
+    let radius = (radius as f32).min(half_w).min(half_h);
+    // coverage of a rounded rectangle centered on the origin, at (x, y)
+    let coverage = |x: f32, y: f32, half_w: f32, half_h: f32, r: f32| {
+        let (qx, qy) = (x.abs() - (half_w - r), y.abs() - (half_h - r));
+        let (ox, oy) = (qx.max(0.0), qy.max(0.0));
+        let distance = (ox * ox + oy * oy).sqrt() + qx.max(qy).min(0.0) - r;
+        (0.5 - distance).clamp(0.0, 1.0)
+    };
+    let inner_radius = (radius - 1.0).max(0.0);
+    let to_byte = |c: f32| (c * 255.0).round() as u8;
+    let pixels = width as usize * height as usize;
+    let (mut fill, mut edge) = (Vec::with_capacity(pixels), Vec::with_capacity(pixels));
+    for row in 0..height {
+        for col in 0..width {
+            let (x, y) = (col as f32 + 0.5 - half_w, row as f32 + 0.5 - half_h);
+            let outer = coverage(x, y, half_w, half_h, radius);
+            let inner = coverage(x, y, half_w - 1.0, half_h - 1.0, inner_radius);
+            fill.push(to_byte(inner));
+            edge.push(to_byte((outer - inner).max(0.0)));
+        }
+    }
+    Frame { fill, edge }
+}
+
+/// The frame's edge color: 80% `background` and 20% `text`, per channel in sRGB, rounded.
+/// Black text on white gives matplotlib's `0.8` gray.
+pub(crate) fn edge_color(background: RGB8, text: RGB8) -> RGB8 {
+    let mix = |b: u8, t: u8| ((4 * u32::from(b) + u32::from(t) + 2) / 5) as u8;
+    RGB8::new(
+        mix(background.r, text.r),
+        mix(background.g, text.g),
+        mix(background.b, text.b),
+    )
+}
+
+/// `coverage` scaled by the frame's opacity, rounded.
+pub(crate) fn alpha(coverage: u8) -> u8 {
+    ((u32::from(coverage) * u32::from(FRAME_ALPHA) + 127) / 255) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -660,5 +716,65 @@ mod tests {
         assert_eq!(best(&boxes, &[at(5.0)]), 1);
         // none is empty: scores 2, 1, 1, and the tie goes to the earlier box
         assert_eq!(best(&boxes, &[at(5.0), at(6.0), at(25.0), at(45.0)]), 1);
+    }
+
+    #[test]
+    fn a_square_frame_has_a_one_pixel_edge() {
+        let frame = frame(10, 6, 0);
+        for y in 0..6 {
+            for x in 0..10 {
+                let i = y * 10 + x;
+                let border = x == 0 || y == 0 || x == 9 || y == 5;
+                assert_eq!(
+                    frame.edge[i],
+                    if border { 255 } else { 0 },
+                    "edge ({x}, {y})"
+                );
+                assert_eq!(
+                    frame.fill[i],
+                    if border { 0 } else { 255 },
+                    "fill ({x}, {y})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rounded_corners_leave_the_corner_pixel_out() {
+        let frame = frame(20, 10, 3);
+        let at = |v: &[u8], x: usize, y: usize| v[y * 20 + x];
+        assert_eq!((at(&frame.edge, 0, 0), at(&frame.fill, 0, 0)), (0, 0));
+        // the middle of the top edge is all edge; the middle is all fill
+        assert_eq!((at(&frame.edge, 10, 0), at(&frame.fill, 10, 0)), (255, 0));
+        assert_eq!((at(&frame.edge, 10, 5), at(&frame.fill, 10, 5)), (0, 255));
+        // a pixel on the curve is partly covered
+        let curve = at(&frame.edge, 1, 0);
+        assert!(0 < curve && curve < 255, "{curve}");
+        // the corners match
+        assert_eq!(at(&frame.edge, 1, 0), at(&frame.edge, 18, 9));
+    }
+
+    #[test]
+    fn the_edge_is_a_fifth_of_the_way_to_the_text_color() {
+        // matplotlib's 0.8 gray for black text on white
+        assert_eq!(
+            edge_color(colors::WHITE, colors::BLACK),
+            RGB8::new(204, 204, 204)
+        );
+        assert_eq!(
+            edge_color(colors::BLACK, colors::WHITE),
+            RGB8::new(51, 51, 51)
+        );
+        assert_eq!(
+            edge_color(RGB8::new(0, 0, 128), colors::WHITE),
+            RGB8::new(51, 51, 153)
+        );
+    }
+
+    #[test]
+    fn the_frame_is_80_percent_opaque() {
+        assert_eq!(alpha(255), FRAME_ALPHA);
+        assert_eq!(alpha(0), 0);
+        assert_eq!(alpha(128), 102);
     }
 }
