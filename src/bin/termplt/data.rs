@@ -35,6 +35,29 @@ impl Column {
 pub struct Parsed {
     pub points: Vec<Point<f64>>,
     pub skipped_missing: usize,
+    pub names: ColumnNames,
+}
+
+/// The header names of the columns a series was read from; `None` where a column has none.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ColumnNames {
+    pub x: Option<String>,
+    pub y: Option<String>,
+}
+
+/// The names to put on the axes: an axis is named only when every series has a name for it and
+/// all the names are the same (compared exactly).
+pub fn axis_names(series: &[ColumnNames]) -> ColumnNames {
+    fn agreed<'a>(mut names: impl Iterator<Item = &'a Option<String>>) -> Option<String> {
+        let first = names.next()?.clone()?;
+        names
+            .all(|name| name.as_deref() == Some(first.as_str()))
+            .then_some(first)
+    }
+    ColumnNames {
+        x: agreed(series.iter().map(|s| &s.x)),
+        y: agreed(series.iter().map(|s| &s.y)),
+    }
 }
 
 /// Parses inline points: "(1,2),(3,4)", "(1, 2) (3, 4)", "1,2 3,4" or "1,2;3,4".
@@ -179,6 +202,16 @@ impl Table {
         }
     }
 
+    /// The header text of a resolved column; `None` for the row number, a table without a
+    /// header, or an empty header cell.
+    fn header_name(&self, column: &Column) -> Option<String> {
+        let Column::Index(i) = column else {
+            return None;
+        };
+        let name = self.header.as_ref()?.get(*i)?.trim();
+        (!name.is_empty()).then(|| name.to_string())
+    }
+
     fn column_label(&self, column: &Column) -> String {
         match column {
             Column::Index(i) => match self.header.as_ref().and_then(|h| h.get(*i)) {
@@ -209,7 +242,13 @@ impl Table {
             return Err("the y column cannot be 'index'".into());
         }
 
-        let mut parsed = Parsed::default();
+        let mut parsed = Parsed {
+            names: ColumnNames {
+                x: self.header_name(&x),
+                y: self.header_name(&y),
+            },
+            ..Parsed::default()
+        };
         for (row_number, (line, fields)) in self.rows.iter().enumerate() {
             let value = |column: &Column, axis: &str| -> Result<Option<f64>> {
                 let token = match column {
@@ -276,6 +315,87 @@ mod tests {
 
     fn pts(v: &[(f64, f64)]) -> Vec<Point<f64>> {
         v.iter().map(|&(x, y)| Point::new(x, y)).collect()
+    }
+
+    fn names(x: Option<&str>, y: Option<&str>) -> ColumnNames {
+        ColumnNames {
+            x: x.map(str::to_string),
+            y: y.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn points_report_the_header_names_of_their_columns() {
+        let table = Table::parse("time,temp,humidity\n0,20,50\n1,21,51\n");
+        let named = |x: Option<Column>, y: Option<Column>| {
+            table.points(x.as_ref(), y.as_ref(), "t").unwrap().names
+        };
+        assert_eq!(named(None, None), names(Some("time"), Some("temp")));
+        // -x 3
+        assert_eq!(
+            named(Some(Column::Index(2)), None),
+            names(Some("humidity"), Some("temp"))
+        );
+        // names match ignoring case, but the header's own text is reported
+        assert_eq!(
+            named(None, Some(Column::Name("HUMIDITY".into()))),
+            names(Some("time"), Some("humidity"))
+        );
+        // -x index
+        assert_eq!(
+            named(Some(Column::RowNumber), None),
+            names(None, Some("temp"))
+        );
+    }
+
+    #[test]
+    fn columns_without_a_header_name_have_none() {
+        let named = |content: &str| Table::parse(content).points(None, None, "t").unwrap().names;
+        assert_eq!(named("0,20\n1,21\n"), ColumnNames::default());
+        // a single column is plotted against the row number
+        assert_eq!(named("temp\n20\n21\n"), names(None, Some("temp")));
+        assert_eq!(named("time,\n0,20\n"), names(Some("time"), None));
+        // quoted and padded header cells give clean names
+        assert_eq!(
+            named("\"time (s)\" , temp\n0,20\n"),
+            names(Some("time (s)"), Some("temp"))
+        );
+    }
+
+    #[test]
+    fn axes_are_named_only_when_every_series_agrees() {
+        let temps = names(Some("time"), Some("temp"));
+        let cases = [
+            (vec![temps.clone()], names(Some("time"), Some("temp"))),
+            // -y temp,humidity: two different y names
+            (
+                vec![temps.clone(), names(Some("time"), Some("humidity"))],
+                names(Some("time"), None),
+            ),
+            // two files with the same header
+            (
+                vec![temps.clone(), temps.clone()],
+                names(Some("time"), Some("temp")),
+            ),
+            (
+                vec![temps.clone(), names(Some("t"), Some("temp"))],
+                names(None, Some("temp")),
+            ),
+            // inline data has no names
+            (
+                vec![temps.clone(), ColumnNames::default()],
+                names(None, None),
+            ),
+            // compared exactly
+            (
+                vec![names(Some("Time"), Some("temp")), temps.clone()],
+                names(None, Some("temp")),
+            ),
+            (vec![], names(None, None)),
+        ];
+        for (series, expected) in cases {
+            assert_eq!(axis_names(&series), expected, "{series:?}");
+        }
     }
 
     // -- inline data --

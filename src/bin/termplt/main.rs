@@ -4,7 +4,7 @@ mod series;
 
 use clap::{CommandFactory, Parser};
 use cli::Cli;
-use data::{Column, Table};
+use data::{Column, ColumnNames, Table};
 use series::{SeriesSpec, Source, Style};
 use std::{
     error::Error,
@@ -71,11 +71,13 @@ fn run(cli: Cli) -> Result<()> {
     };
 
     let mut stdin_cache = None;
+    let mut column_names = Vec::new();
     let mut plot = Plot::new()
         .background(series::parse_color(&cli.bg)?)
         .grid(!cli.no_grid);
     for (index, spec) in specs.iter().enumerate() {
-        let points = load_points(spec, &mut stdin_cache)?;
+        let (points, names) = load_points(spec, &mut stdin_cache)?;
+        column_names.push(names);
         let series = series::build_series(&points, &spec.style.or(&defaults), index)?;
         if cli.verbose {
             eprintln!(
@@ -87,6 +89,13 @@ fn run(cli: Cli) -> Result<()> {
             );
         }
         plot = plot.series(series);
+    }
+    let names = data::axis_names(&column_names);
+    if let Some(name) = names.x {
+        plot = plot.x_label(name);
+    }
+    if let Some(name) = names.y {
+        plot = plot.y_label(name);
     }
     if let Some((min, max)) = cli.xlim {
         plot = plot.x_limits(min, max);
@@ -236,12 +245,12 @@ fn collect_specs(cli: &Cli, stdin_is_piped: bool) -> Result<Vec<SeriesSpec>> {
 fn load_points(
     spec: &SeriesSpec,
     stdin_cache: &mut Option<String>,
-) -> Result<Vec<termplt::plotting::point::Point<f64>>> {
+) -> Result<(Vec<termplt::plotting::point::Point<f64>>, ColumnNames)> {
     let source = spec.source.describe();
-    let (points, skipped_missing) = match &spec.source {
+    let (points, skipped_missing, names) = match &spec.source {
         Source::Inline(s) => {
             let points = data::parse_inline(s).map_err(|e| format!("{source}: {e}"))?;
-            (points, 0)
+            (points, 0, ColumnNames::default())
         }
         Source::File(path) => {
             let content = if path == "-" {
@@ -259,7 +268,7 @@ fn load_points(
             };
             let name = if path == "-" { "stdin" } else { path.as_str() };
             let parsed = Table::parse(&content).points(spec.x.as_ref(), spec.y.as_ref(), name)?;
-            (parsed.points, parsed.skipped_missing)
+            (parsed.points, parsed.skipped_missing, parsed.names)
         }
     };
 
@@ -281,7 +290,7 @@ fn load_points(
     if points.is_empty() {
         return Err(format!("no data points found in {source}").into());
     }
-    Ok(points)
+    Ok((points, names))
 }
 
 #[cfg(test)]
@@ -364,7 +373,7 @@ mod tests {
     #[test]
     fn load_points_skips_non_finite_values() {
         let spec = SeriesSpec::new(Source::Inline("(1,nan),(2,2),(inf,3),(4,4)".into()));
-        let points = load_points(&spec, &mut None).unwrap();
+        let points = load_points(&spec, &mut None).unwrap().0;
         assert_eq!(points.len(), 2);
         let spec = SeriesSpec::new(Source::Inline("(nan,1),(2,-inf)".into()));
         assert!(load_points(&spec, &mut None).is_err());
@@ -374,7 +383,7 @@ mod tests {
     fn load_points_reuses_cached_stdin() {
         let spec = SeriesSpec::new(Source::File("-".into()));
         let mut cache = Some("x,y\n1,2\n3,4\n".to_string());
-        assert_eq!(load_points(&spec, &mut cache).unwrap().len(), 2);
-        assert_eq!(load_points(&spec, &mut cache).unwrap().len(), 2);
+        assert_eq!(load_points(&spec, &mut cache).unwrap().0.len(), 2);
+        assert_eq!(load_points(&spec, &mut cache).unwrap().0.len(), 2);
     }
 }
