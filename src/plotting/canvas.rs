@@ -5,6 +5,7 @@ use super::{
     graph::Graph,
     limits::Limits,
     point::Point,
+    srgb,
     text::{Label, Text, TextPositioning, TextStyle},
     ticks::{AxisTicks, axis_offset, fit_ticks, format_offset},
 };
@@ -102,6 +103,22 @@ impl Canvas {
             let row = (self.height - 1 - y) as usize;
             let i = (row * self.width as usize + x as usize) * 3;
             self.bytes[i..i + 3].copy_from_slice(&[color.r, color.g, color.b]);
+        }
+    }
+
+    /// Draws `color` over the pixel at (`x`, `y`) with `coverage` (0 = none, 255 = all), mixing
+    /// in linear light. (0, 0) is the lower-left corner; points outside the canvas are ignored.
+    pub fn blend(&mut self, x: u32, y: u32, color: RGB8, coverage: u8) {
+        if x < self.width && y < self.height {
+            // rows are stored from the top
+            let row = (self.height - 1 - y) as usize;
+            let i = (row * self.width as usize + x as usize) * 3;
+            for (channel, fg) in self.bytes[i..i + 3]
+                .iter_mut()
+                .zip([color.r, color.g, color.b])
+            {
+                *channel = srgb::blend(*channel, fg, coverage);
+            }
         }
     }
 
@@ -536,6 +553,18 @@ fn check_area(min: &Point<u32>, max: &Point<u32>) -> Result<()> {
 mod tests {
     use super::*;
     use crate::plotting::{colors, series::Series};
+
+    #[test]
+    fn blend_mixes_into_one_pixel() {
+        let mut canvas = Canvas::new(2, 2, colors::BLACK);
+        canvas.blend(0, 0, colors::WHITE, 128);
+        canvas.blend(5, 5, colors::WHITE, 255); // outside: ignored
+        // (0, 0) is the lower-left pixel, stored in the last row
+        assert_eq!(
+            canvas.get_bytes(),
+            [0, 0, 0, 0, 0, 0, 188, 188, 188, 0, 0, 0]
+        );
+    }
 
     #[test]
     fn empty_graph_returns_error() {

@@ -22,6 +22,7 @@ mod numbers;
 pub mod point;
 /// Data series.
 pub mod series;
+mod srgb;
 /// Bitmap text for labels.
 pub mod text;
 mod ticks;
