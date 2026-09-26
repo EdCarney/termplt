@@ -127,6 +127,8 @@ Markers at the minimum and maximum sit on the axis lines. Add default padding of
 The mask order is axes, then grid, then series (`graph.rs` `get_mask`). Draw the grid first.
 
 ### 13. No title, axis names or legend
+◐ **Titles and axis names done (0.3.0):** TrueType text (embedded Go font, `ab_glyph`), `Plot::title`/`x_label`/`y_label`, `--title`/`--xlabel`/`--ylabel`, and names from CSV headers. The legend is next.
+
 The bitmap font covers only `0-9 . - e` and space. Add a small ASCII bitmap font (for example a public-domain 6×8 font, scaled) so titles, axis names and a legend with per-series names become possible. In the CLI that could be `--label "sin(x)"` per series and `--title`.
 
 ### 14. Default text color is black
@@ -156,7 +158,7 @@ Piping (`some_cmd | termplt`) is the most common workflow in a terminal. Accept 
 - Plot single-column data as y against the row index.
 
 ### 18. Output and layout flags
-◐ **Mostly done (Phase 3):** `--width`, `--height`, `-o/--output`, `--xlim`, `--ylim`, `--bg` and `--no-grid` are in. `--title` still needs a text font (item 13), and `--log-x`/`--log-y` still need log scaling in the library; both are deferred.
+◐ **Mostly done (Phase 3):** `--width`, `--height`, `-o/--output`, `--xlim`, `--ylim`, `--bg` and `--no-grid` are in. `--title` is done (0.3.0); `--log-x`/`--log-y` still need log scaling in the library and are deferred.
 
 - `--width` and `--height` (or `--rows` and `--cols` in cells).
 - `--output plot.png`: the `image` crate is already a dependency. This also covers non-kitty terminals, CI and reports.
@@ -254,7 +256,7 @@ Reading VT replies from a raw console stdin depends on VT input mode. CI only ru
 ## P2: library API ergonomics
 
 ### 32. Add a high-level entry point
-✅ **Done (Phase 5):** `termplt::Plot` with `line`, `scatter`, `line_points` and `series`, plus limits, size, background and grid, and `show()`/`show_in()`, `save_png()` and `render()`. `show()` sizes itself to the terminal through the new `terminal::Terminal`, which is the CLI's support/tmux/size logic moved into the library. Also added `termplt::prelude`. `.title()` waits on item 13 (the font).
+✅ **Done (Phase 5):** `termplt::Plot` with `line`, `scatter`, `line_points` and `series`, plus limits, size, background and grid, and `show()`/`show_in()`, `save_png()` and `render()`. `show()` sizes itself to the terminal through the new `terminal::Terminal`, which is the CLI's support/tmux/size logic moved into the library. Also added `termplt::prelude`. `.title()` is done (0.3.0).
 
 The README example needs about 50 lines, 10 imports and hand-wired `Image` + `PixelFormat` + `Transmission` code.
 - Add `termplt::prelude`.

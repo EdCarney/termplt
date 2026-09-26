@@ -21,6 +21,9 @@ see "Changed" and "Removed".
   ends with `…` when it still doesn't fit; the y name reads upwards.
 - `Plot::font` and `Plot::font_size`. `Plot::show` matches the terminal's text size
   (`Terminal::text_size`); PNGs use 14 px.
+- CLI: `--title`, `--xlabel`, `--ylabel`, `--font` and `--font-size`. Axes are named from CSV
+  headers when every series has the same one (`--xlabel ""` removes a name). In a terminal the
+  text matches the terminal's own size; with `--output` it is 14 px.
 
 ### Changed
 - All text, tick labels included, is drawn with an embedded, trimmed copy of the Go font

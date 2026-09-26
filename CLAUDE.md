@@ -31,7 +31,7 @@ Releases (`.github/workflows/release.yml`): push a `v*` tag equal to the `Cargo.
 **termplt** is a Rust library for rendering 2D plots directly in Kitty-compatible terminals using the Kitty graphics protocol. User data of any numeric type is stored as `f64`, scaled to pixel coordinates, rendered to an in-memory RGB canvas, then PNG-encoded and transmitted via Kitty APC escape sequences.
 
 Public API layers, top-down:
-- `Plot` (`plot.rs`): one-call builder (`line`/`scatter`/`line_points`/`series`, limits, size, background, grid; `show`, `save_png`, `render`). The CLI uses it too.
+- `Plot` (`plot.rs`): one-call builder (`line`/`scatter`/`line_points`/`series`, limits, size, background, grid, `title`/`x_label`/`y_label`, `font`/`font_size` (terminal-matched in `show()`); `show`, `save_png`, `render`). The CLI uses it too.
 - `plotting::{series::Series, graph::Graph, canvas::TerminalCanvas}` and the style types; `prelude` re-exports the common ones.
 - `terminal`: `Terminal` (support check, size, tmux handling, display) plus re-exported `WindowSize`, `get_window_size`, `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
 - `Error`/`Result` (`error.rs`): one `#[non_exhaustive]` enum for the whole crate.
@@ -50,9 +50,9 @@ Public API layers, top-down:
 TerminalCanvas::draw()
   ├── graph.view_limits()            # finite data limits + explicit limits, clipped,
   │                                  #   5% margin on automatic axes, zero spans padded
-  ├── layout()                       # y ticks (fit plot height) → left margin from widest y label
-  │                                  #   → x ticks (fit plot width); bottom band for x labels;
-  │                                  #   inset for markers/thick lines/axes → plot area
+  ├── layout()                       # two passes: bands sized from measured text (title and y
+  │                                  #   offset; x name and x offset; tick labels), gaps in em;
+  │                                  #   stacked when shared lines would collide
   ├── graph.scale_with_view(..)      # clip → shift-to-origin → proportional scale → shift-to-plot
   ├── grid_lines.get_mask_at(..)     # grid at tick positions (drawn first)
   ├── axes.get_mask(plot)            # axis lines just outside the plot area
@@ -92,8 +92,8 @@ Text uses an embedded Go Regular font, trimmed to `assets/fonts/charset.txt` by 
 
 - `cli.rs`: clap derive definition; `--completions <SHELL>` prints a `clap_complete` script (static: flags, `--marker`/`--line` possible values, color names via `ColorParser`, file-path hints). Style options (`--color`, `--marker`, `--line`, ...) are defaults for every series; old snake_case flags are hidden aliases.
 - `series.rs`: `--series` spec parsing (`key=value` pairs; a `,`/`;` only splits when followed by `key=`, so `data=(1,2),(3,4)` works), style resolution, palette, marker/line name parsing.
-- `data.rs`: inline point parsing and `Table` (CSV/TSV/whitespace, header detection, columns by name or 1-based index, `index` = row number, missing values skipped).
-- `main.rs`: collects series (FILE args × y columns, then `--data`, then `--series`; piped stdin when nothing else is given, read once and cached) into a `Plot`, connects a `Terminal` (errors get a `--output` hint) or writes a PNG with `--output`.
+- `data.rs`: inline point parsing and `Table` (CSV/TSV/whitespace, header detection, columns by name or 1-based index, `index` = row number, missing values skipped). `Table::points` also reports the header names of the resolved columns; `axis_names` names an axis only when every series agrees.
+- `main.rs`: collects series (FILE args × y columns, then `--data`, then `--series`; piped stdin when nothing else is given, read once and cached) into a `Plot`, connects a `Terminal` (errors get a `--output` hint) or writes a PNG with `--output`. It applies `--title`/`--xlabel`/`--ylabel` over the header names, `--font`, and the text size (the terminal's, or 14 with `--output`).
 
 ## Testing
 
@@ -109,4 +109,4 @@ Text uses an embedded Go Regular font, trimmed to `assets/fonts/charset.txt` by 
 See `IMPROVEMENTS.md` for the full prioritized list and status. Key open items:
 - Clipping to explicit limits drops points (the line breaks there) rather than clipping line segments at the boundary
 - `Limits::new` panics on inverted bounds (internal invariant); use `Limits::try_new` for untrusted input
-- No titles, axis names or legends yet (in progress: see `docs/superpowers/specs/2026-09-25-text-rendering-design.md`)
+- No legend yet (spec 2 of 0.3.0)
