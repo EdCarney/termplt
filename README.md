@@ -50,7 +50,7 @@ termplt test_data/sine.csv test_data/cosine.csv
 # Several columns of one file, selected by header name
 termplt sensors.csv -x time -y temp,humidity
 ```
-<img width="600" height="450" alt="Sine and cosine curves in two palette colors" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/multiple-series.png" />
+<img width="600" height="450" alt="Sine and cosine curves in two palette colors, with a legend" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/multiple-series.png" />
 
 ```bash
 # Custom styling for every series
@@ -71,7 +71,7 @@ termplt test_data/noisy_linear.csv --marker none --color lime --line-thickness 1
 # Title and axis names (by default the axes are named from the CSV header)
 termplt test_data/sine.csv test_data/cosine.csv --title "Sine and cosine" --xlabel "angle (rad)" --ylabel "value"
 ```
-<img width="600" height="450" alt="Sine and cosine curves with a title and named axes" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/titles.png" />
+<img width="600" height="450" alt="Sine and cosine curves with a title, named axes and a legend" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/titles.png" />
 
 ```bash
 # A legend names each series: from label=, the column header, or the file name
