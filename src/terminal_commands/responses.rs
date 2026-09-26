@@ -311,7 +311,7 @@ mod sys {
     }
 
     fn wait_select(fd: RawFd, timeout: Duration) -> io::Result<bool> {
-        if fd < 0 || fd as usize >= libc::FD_SETSIZE as usize {
+        if fd < 0 || fd as usize >= libc::FD_SETSIZE {
             return Err(io::Error::other(format!(
                 "file descriptor {fd} is out of range for select"
             )));
