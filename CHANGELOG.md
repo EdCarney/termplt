@@ -90,6 +90,8 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 - Overflow panics in the layout with huge marker sizes, line or axis thicknesses or buffers,
   and in `Label` near `u32::MAX`; a division by zero for terminals reporting fewer pixels than
   cells.
+- On macOS the CLI hung forever when the terminal answered no query: `poll()` doesn't support
+  `/dev/tty` there, so the 2 s timeout never fired. Queries now wait with `select()` on macOS.
 - On Windows, VT input is enabled on the console while a query runs, so replies can arrive.
 - Query timeouts no longer claim a Kitty terminal is required when the query was for the size.
 - CSV: a UTF-8 byte order mark no longer makes the first row a header; semicolon-separated
