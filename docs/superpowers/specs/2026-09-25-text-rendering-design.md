@@ -175,11 +175,11 @@ The buffer around the canvas edge (`BufferType`) stays as it is. The fixed `LABE
 - y tick labels are right-aligned to the tick-label column. They're centered on their tick by the height of the digit `0` in their font, not their whole line box (matplotlib's `center_baseline`).
 - Offsets are placed as in 0.2.1: the y offset left-aligned at the y axis above the plot, and the x offset right-aligned at the plot's right edge below the tick labels.
 
-**Collisions (two passes)**
+**Collisions (repeated passes)**
 1. Lay out with the title sharing the y offset's line, and the x offset sharing the x name's line.
-2. A pair collides when its two boxes on the shared line would be less than 0.5 em apart horizontally. If either pair collides, lay out once more with that pair stacked: the title goes a line above the y offset, or the x offset a line below the x name.
+2. A pair collides when its two boxes on the shared line would be less than 0.5 em apart horizontally. If a pair collides, lay out again with that pair stacked: the title goes a line above the y offset, or the x offset a line below the x name.
 
-Stacking only adds lines, so a second pass never causes a new collision.
+Stacking shrinks the plot, which re-wraps the y name and moves the x name and the y offset, so it can make the other pair collide. Layout repeats until no new pair collides. Stacked pairs stay stacked, so this ends within three passes. (The first version of this spec claimed a second pass could never collide; the final review showed otherwise.)
 
 **Wrapping.** `wrap(text, max_width, max_lines, measure) -> Vec<String>` is a pure function with a measuring closure.
 - It breaks at spaces and at `\n`.

@@ -449,12 +449,21 @@ impl TerminalCanvas {
     /// Lays out the graph. Text that normally shares a line (the title and the y offset, the x
     /// axis name and the x offset) gets a line of its own when the two would collide.
     fn layout(&self, graph: &Graph, view: &Limits<f64>) -> Result<Layout> {
-        let (layout, collisions) = self.layout_with(graph, view, Stacking::default())?;
-        if collisions == Stacking::default() {
-            return Ok(layout);
+        // Stacking one pair shrinks the plot, which re-wraps the y name and moves the other
+        // pair, so it can cause a new collision. Stacked pairs stay stacked, so this settles
+        // within three passes.
+        let mut stacking = Stacking::default();
+        loop {
+            let (layout, collisions) = self.layout_with(graph, view, stacking)?;
+            let next = Stacking {
+                title: stacking.title || collisions.title,
+                x_offset: stacking.x_offset || collisions.x_offset,
+            };
+            if next == stacking {
+                return Ok(layout);
+            }
+            stacking = next;
         }
-        // stacking only adds lines, so this pass has nothing left to collide
-        Ok(self.layout_with(graph, view, collisions)?.0)
     }
 
     /// One layout pass with `stacking` applied; also returns the shared lines that collide.
@@ -1380,6 +1389,72 @@ mod tests {
             offset.max().y < name.min().y,
             "stacked: {offset:?} below {name:?}"
         );
+    }
+
+    /// Fails when a shared line holds two texts closer than MIN_APART.
+    fn assert_shared_lines_apart(layout: &Layout, font_size: u32) {
+        let apart = (MIN_APART * font_size as f32).round() as u32;
+        let pairs = [
+            (layout.title.last(), layout.y_offset_label.as_ref()),
+            (layout.x_name.first(), layout.x_offset_label.as_ref()),
+        ];
+        for (text, offset) in pairs {
+            let (Some(text), Some(offset)) = (text, offset) else {
+                continue;
+            };
+            let (a, b) = (text.bounds().unwrap(), offset.bounds().unwrap());
+            let share_rows = a.min().y <= b.max().y && b.min().y <= a.max().y;
+            if share_rows {
+                let gap = horizontal_gap(&a, &b);
+                assert!(gap >= apart, "{a:?} and {b:?} share a line {gap} px apart");
+            }
+        }
+    }
+
+    #[test]
+    fn a_collision_that_appears_in_the_second_pass_is_stacked_too() {
+        // stacking the title shrinks the plot, which re-wraps the y name and moves the x name
+        // into the x offset
+        let points: Vec<_> = (0..=10)
+            .map(|i| Point::new(1_700_000_000.0 + 10.0 * i as f64, 1e15 + 0.1 * i as f64))
+            .collect();
+        let graph = Graph::new()
+            .with_series(Series::new(&points))
+            .with_axes(white_axes())
+            .with_title("n".repeat(34))
+            .with_x_label("m".repeat(25))
+            .with_y_label("yyyy ".repeat(8));
+        assert_shared_lines_apart(&layout_of(&graph, (400, 300), 12), 12);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn shared_lines_always_keep_their_distance(
+            title in "[a-z ]{0,60}",
+            x_label in "[a-z ]{0,60}",
+            y_label in "[a-z ]{0,60}",
+            w in 250u32..900,
+            h in 200u32..700,
+            font_size in 8u32..30,
+        ) {
+            // offsets on both axes, so both shared lines are in play
+            let points: Vec<_> = (0..=10)
+                .map(|i| Point::new(1_700_000_000.0 + 10.0 * i as f64, 1e15 + 0.1 * i as f64))
+                .collect();
+            let graph = Graph::new()
+                .with_series(Series::new(&points))
+                .with_axes(white_axes())
+                .with_title(title)
+                .with_x_label(x_label)
+                .with_y_label(y_label);
+            let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+                .with_buffer(BufferType::Uniform(8))
+                .with_font_size(font_size)
+                .with_graph(graph.clone());
+            if let Ok(layout) = canvas.layout(&graph, &graph.view_limits().unwrap()) {
+                assert_shared_lines_apart(&layout, font_size);
+            }
+        }
     }
 
     #[test]

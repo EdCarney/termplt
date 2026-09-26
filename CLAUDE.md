@@ -50,7 +50,7 @@ Public API layers, top-down:
 TerminalCanvas::draw()
   ├── graph.view_limits()            # finite data limits + explicit limits, clipped,
   │                                  #   5% margin on automatic axes, zero spans padded
-  ├── layout()                       # two passes: bands sized from measured text (title and y
+  ├── layout()                       # up to 3 passes: bands sized from measured text (title and y
   │                                  #   offset; x name and x offset; tick labels), gaps in em;
   │                                  #   stacked when shared lines would collide
   ├── graph.scale_with_view(..)      # clip → shift-to-origin → proportional scale → shift-to-plot
