@@ -146,7 +146,7 @@ const NAME_MAX_LINES: usize = 2;
 /// Title size relative to the tick labels (matplotlib's `large`).
 const TITLE_SCALE: f32 = 1.2;
 /// Baseline-to-baseline distance of wrapped lines, in em (matplotlib's `linespacing`).
-const LINE_SPACING: f32 = 1.2;
+pub(crate) const LINE_SPACING: f32 = 1.2;
 /// Gap between the tick labels and the plot, in em (matplotlib's `xtick.major.pad`).
 const TICK_GAP: f32 = 0.35;
 /// Gap between an axis name and the tick labels, in em (matplotlib's `axes.labelpad`).
