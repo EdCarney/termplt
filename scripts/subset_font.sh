@@ -32,4 +32,14 @@ subset() {
 subset --unicodes-file=assets/fonts/charset.txt --output-file=assets/fonts/go-regular-subset.ttf
 mkdir -p tests/fixtures
 subset --unicodes=U+0030-0039 --output-file=tests/fixtures/digits-only.ttf
-ls -l assets/fonts/go-regular-subset.ttf tests/fixtures/digits-only.ttf
+# the same digits with a line box shorter than they are, like fonts whose accents rise above the
+# ascent: tests check that ink outside the line box is still drawn
+"$work/venv/bin/python" - <<'PY'
+from fontTools.ttLib import TTFont
+font = TTFont("tests/fixtures/digits-only.ttf", recalcTimestamp=False)
+font["hhea"].ascent = 1000
+font["OS/2"].sTypoAscender = 1000
+font["OS/2"].usWinAscent = 1000
+font.save("tests/fixtures/short-ascent.ttf")
+PY
+ls -l assets/fonts/go-regular-subset.ttf tests/fixtures/digits-only.ttf tests/fixtures/short-ascent.ttf

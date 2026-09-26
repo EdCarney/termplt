@@ -12,7 +12,7 @@
 //! # Ok::<(), termplt::Error>(())
 //! ```
 
-use crate::{Error, Result};
+use crate::{Error, Result, plotting::text::MAX_FONT_SIZE};
 use std::io::{self, IsTerminal, Write};
 
 pub use crate::{
@@ -166,6 +166,13 @@ impl Terminal {
         default_plot_size(&self.window)
     }
 
+    /// The base text size in pixels that matches the terminal's own text: a terminal row is
+    /// about 1.2 em, so the row height divided by 1.2, at least 8 and at most
+    /// [`MAX_FONT_SIZE`].
+    pub fn text_size(&self) -> u32 {
+        text_size_for(&self.window)
+    }
+
     /// Displays an image at the cursor and moves the cursor below it.
     pub fn show(&self, image: &Image) -> Result<()> {
         let mut stdout = io::stdout();
@@ -274,6 +281,22 @@ fn estimate_window_size(cols: u16, rows: u16) -> Option<WindowSize> {
     })
 }
 
+/// See [`Terminal::text_size`].
+fn text_size_for(window: &WindowSize) -> u32 {
+    ((window.pix_per_row as f32 / 1.2).round() as u32).clamp(8, MAX_FONT_SIZE)
+}
+
+#[cfg(test)]
+impl Terminal {
+    /// A terminal of a given size, for tests elsewhere in the crate.
+    pub(crate) fn with_window(window: WindowSize) -> Terminal {
+        Terminal {
+            window,
+            passthrough: Passthrough::None,
+        }
+    }
+}
+
 /// Rows an image of `height` pixels covers, i.e. how far to move the cursor to get below it.
 fn rows_covered(height: u32, window: &WindowSize) -> u32 {
     height.div_ceil(window.pix_per_row.max(1))
@@ -283,6 +306,25 @@ fn rows_covered(height: u32, window: &WindowSize) -> u32 {
 mod tests {
     use super::*;
     use std::{cell::Cell, time::Duration};
+
+    #[test]
+    fn text_size_matches_the_terminal_rows() {
+        let size = |pix_per_row| {
+            text_size_for(&WindowSize {
+                rows: 24,
+                cols: 80,
+                x_pix: 800,
+                y_pix: 24 * pix_per_row,
+                pix_per_row,
+                pix_per_col: 10,
+            })
+        };
+        assert_eq!(size(34), 28); // a 2x (Retina) terminal with 17 pt rows
+        assert_eq!(size(17), 14);
+        assert_eq!(size(9), 8); // never below 8 px
+        assert_eq!(size(0), 8); // a terminal that reports no row height
+        assert_eq!(size(1000), MAX_FONT_SIZE);
+    }
 
     /// Scripted answers; counts the calls that talk to the terminal.
     struct FakeTerminal {

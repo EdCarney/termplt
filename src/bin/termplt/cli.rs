@@ -8,7 +8,7 @@ use clap::{
 use clap_complete::Shell;
 use std::ffi::OsStr;
 use std::path::PathBuf;
-use termplt::plotting::colors;
+use termplt::plotting::{colors, text::MAX_FONT_SIZE};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -18,6 +18,7 @@ Examples:
   termplt sensors.csv -x time -y temp,humidity
   termplt -s \"file=a.csv,color=red\" -s \"file=b.csv,color=#1e90ff,marker=none,line=dashed\"
   termplt data.csv --xlim 0,10 --ylim -1,1 -o plot.png
+  termplt data.csv --title \"Temperatures\" --ylabel \"°C\"
 
 Series specs (-s/--series) are comma-separated key=value pairs:
   file=PATH | data=POINTS   the data for the series ('-' reads stdin); exactly one is required
@@ -171,6 +172,54 @@ pub struct Cli {
     /// needed
     #[arg(short, long, value_name = "FILE", value_hint = ValueHint::FilePath, help_heading = "Plot")]
     pub output: Option<PathBuf>,
+
+    /// Plot title; long titles wrap onto up to 3 lines
+    #[arg(
+        long,
+        value_name = "TEXT",
+        allow_hyphen_values = true,
+        help_heading = "Text"
+    )]
+    pub title: Option<String>,
+
+    /// X axis name [default: the x column's header, when every series has the same one]; ""
+    /// for none
+    #[arg(
+        long,
+        value_name = "TEXT",
+        allow_hyphen_values = true,
+        alias = "x-label",
+        alias = "x_label",
+        help_heading = "Text"
+    )]
+    pub xlabel: Option<String>,
+
+    /// Y axis name [default: the y column's header, when every series has the same one]; ""
+    /// for none
+    #[arg(
+        long,
+        value_name = "TEXT",
+        allow_hyphen_values = true,
+        alias = "y-label",
+        alias = "y_label",
+        help_heading = "Text"
+    )]
+    pub ylabel: Option<String>,
+
+    /// TrueType or OpenType font file for all text; characters it lacks use the built-in Go
+    /// font
+    #[arg(long, value_name = "FILE", value_hint = ValueHint::FilePath, help_heading = "Text")]
+    pub font: Option<PathBuf>,
+
+    /// Base text size in pixels; the title is 1.2 times larger [default: the terminal's text
+    /// size, or 14 with --output]
+    #[arg(
+        long,
+        value_name = "PX",
+        value_parser = clap::value_parser!(u32).range(1..=i64::from(MAX_FONT_SIZE)),
+        help_heading = "Text"
+    )]
+    pub font_size: Option<u32>,
 
     /// List the available color names
     #[arg(long)]

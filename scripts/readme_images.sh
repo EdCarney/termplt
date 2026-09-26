@@ -18,4 +18,7 @@ mkdir -p "$out"
 "$termplt" test_data/noisy_linear.csv --marker none --color lime --line-thickness 1 \
     --xlim 0,10 -o "$out/line-limits.png"
 
+"$termplt" test_data/sine.csv test_data/cosine.csv --title "Sine and cosine" \
+    --xlabel "angle (rad)" --ylabel "value" -o "$out/titles.png"
+
 echo "Wrote $(ls "$out" | wc -l | tr -d ' ') images to $out/"

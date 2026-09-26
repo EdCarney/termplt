@@ -4,7 +4,7 @@ mod series;
 
 use clap::{CommandFactory, Parser};
 use cli::Cli;
-use data::{Column, Table};
+use data::{Column, ColumnNames, Table};
 use series::{SeriesSpec, Source, Style};
 use std::{
     error::Error,
@@ -14,7 +14,7 @@ use std::{
 };
 use termplt::{
     DEFAULT_PNG_SIZE, Plot,
-    plotting::colors,
+    plotting::{colors, font::Font, text::DEFAULT_FONT_SIZE},
     terminal::{Image, Terminal},
 };
 
@@ -52,6 +52,8 @@ fn run(cli: Cli) -> Result<()> {
     if let Some(path) = &cli.output {
         check_output_path(path)?;
     }
+    // a bad font fails before any data is read
+    let font = cli.font.as_deref().map(load_font).transpose()?;
 
     let stdin_is_terminal = io::stdin().is_terminal();
     let specs = collect_specs(&cli, !stdin_is_terminal)?;
@@ -71,11 +73,13 @@ fn run(cli: Cli) -> Result<()> {
     };
 
     let mut stdin_cache = None;
+    let mut column_names = Vec::new();
     let mut plot = Plot::new()
         .background(series::parse_color(&cli.bg)?)
         .grid(!cli.no_grid);
     for (index, spec) in specs.iter().enumerate() {
-        let points = load_points(spec, &mut stdin_cache)?;
+        let (points, names) = load_points(spec, &mut stdin_cache)?;
+        column_names.push(names);
         let series = series::build_series(&points, &spec.style.or(&defaults), index)?;
         if cli.verbose {
             eprintln!(
@@ -87,6 +91,17 @@ fn run(cli: Cli) -> Result<()> {
             );
         }
         plot = plot.series(series);
+    }
+    // explicit names win; an empty one removes a name taken from the headers
+    let names = data::axis_names(&column_names);
+    if let Some(text) = cli.title.clone() {
+        plot = plot.title(text);
+    }
+    if let Some(text) = cli.xlabel.clone().or(names.x) {
+        plot = plot.x_label(text);
+    }
+    if let Some(text) = cli.ylabel.clone().or(names.y) {
+        plot = plot.y_label(text);
     }
     if let Some((min, max)) = cli.xlim {
         plot = plot.x_limits(min, max);
@@ -110,7 +125,25 @@ fn run(cli: Cli) -> Result<()> {
         cli.width.unwrap_or(default_size.0),
         cli.height.unwrap_or(default_size.1),
     );
-    let plot = plot.size(width, height);
+    let (font_size, font_size_source) = match (cli.font_size, &terminal) {
+        (Some(px), _) => (px, "--font-size".to_string()),
+        (None, Some(terminal)) => (
+            terminal.text_size(),
+            format!("terminal rows are {} px", terminal.window().pix_per_row),
+        ),
+        (None, None) => (DEFAULT_FONT_SIZE, "default for --output".to_string()),
+    };
+    let mut plot = plot.size(width, height).font_size(font_size);
+    if let Some(font) = font {
+        plot = plot.font(font);
+    }
+    if cli.verbose {
+        let font_name = cli
+            .font
+            .as_ref()
+            .map_or_else(|| "Go (built in)".to_string(), |p| p.display().to_string());
+        eprintln!("[verbose] text: {font_size} px ({font_size_source}), font: {font_name}");
+    }
 
     if cli.verbose {
         eprintln!("[verbose] canvas: {width}x{height} pixels");
@@ -172,6 +205,13 @@ fn with_hint(e: termplt::Error) -> Box<dyn Error> {
 }
 
 /// Only PNG output is supported; catch other extensions before doing any work.
+/// Reads a font file for --font.
+fn load_font(path: &Path) -> Result<Font> {
+    let data = fs::read(path).map_err(|e| format!("cannot read font '{}': {e}", path.display()))?;
+    Font::from_bytes(data)
+        .map_err(|_| format!("'{}' is not a TrueType or OpenType font", path.display()).into())
+}
+
 fn check_output_path(path: &Path) -> Result<()> {
     match path.extension().and_then(|e| e.to_str()) {
         Some(ext) if ext.eq_ignore_ascii_case("png") => Ok(()),
@@ -236,12 +276,12 @@ fn collect_specs(cli: &Cli, stdin_is_piped: bool) -> Result<Vec<SeriesSpec>> {
 fn load_points(
     spec: &SeriesSpec,
     stdin_cache: &mut Option<String>,
-) -> Result<Vec<termplt::plotting::point::Point<f64>>> {
+) -> Result<(Vec<termplt::plotting::point::Point<f64>>, ColumnNames)> {
     let source = spec.source.describe();
-    let (points, skipped_missing) = match &spec.source {
+    let (points, skipped_missing, names) = match &spec.source {
         Source::Inline(s) => {
             let points = data::parse_inline(s).map_err(|e| format!("{source}: {e}"))?;
-            (points, 0)
+            (points, 0, ColumnNames::default())
         }
         Source::File(path) => {
             let content = if path == "-" {
@@ -259,7 +299,7 @@ fn load_points(
             };
             let name = if path == "-" { "stdin" } else { path.as_str() };
             let parsed = Table::parse(&content).points(spec.x.as_ref(), spec.y.as_ref(), name)?;
-            (parsed.points, parsed.skipped_missing)
+            (parsed.points, parsed.skipped_missing, parsed.names)
         }
     };
 
@@ -281,7 +321,7 @@ fn load_points(
     if points.is_empty() {
         return Err(format!("no data points found in {source}").into());
     }
-    Ok(points)
+    Ok((points, names))
 }
 
 #[cfg(test)]
@@ -364,7 +404,7 @@ mod tests {
     #[test]
     fn load_points_skips_non_finite_values() {
         let spec = SeriesSpec::new(Source::Inline("(1,nan),(2,2),(inf,3),(4,4)".into()));
-        let points = load_points(&spec, &mut None).unwrap();
+        let points = load_points(&spec, &mut None).unwrap().0;
         assert_eq!(points.len(), 2);
         let spec = SeriesSpec::new(Source::Inline("(nan,1),(2,-inf)".into()));
         assert!(load_points(&spec, &mut None).is_err());
@@ -374,7 +414,7 @@ mod tests {
     fn load_points_reuses_cached_stdin() {
         let spec = SeriesSpec::new(Source::File("-".into()));
         let mut cache = Some("x,y\n1,2\n3,4\n".to_string());
-        assert_eq!(load_points(&spec, &mut cache).unwrap().len(), 2);
-        assert_eq!(load_points(&spec, &mut cache).unwrap().len(), 2);
+        assert_eq!(load_points(&spec, &mut cache).unwrap().0.len(), 2);
+        assert_eq!(load_points(&spec, &mut cache).unwrap().0.len(), 2);
     }
 }

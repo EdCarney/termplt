@@ -16,12 +16,22 @@ see "Changed" and "Removed".
   `text::MAX_FONT_SIZE` (400 px).
 - `Error::InvalidFont`.
 - Release archives include `LICENSE` and the font's `LICENSE-Go`.
+- Titles and axis names: `Plot::title`, `x_label` and `y_label`, and `Graph::with_title`,
+  `with_x_label` and `with_y_label`. Long text wraps (titles onto 3 lines, names onto 2) and
+  ends with `…` when it still doesn't fit; the y name reads upwards.
+- `Plot::font` and `Plot::font_size`. `Plot::show` matches the terminal's text size
+  (`Terminal::text_size`); PNGs use 14 px.
+- CLI: `--title`, `--xlabel`, `--ylabel`, `--font` and `--font-size`. Axes are named from CSV
+  headers when every series has the same one (`--xlabel ""` removes a name). In a terminal the
+  text matches the terminal's own size; with `--output` it is 14 px.
 
 ### Changed
 - All text, tick labels included, is drawn with an embedded, trimmed copy of the Go font
   (BSD-3-Clause), anti-aliased and blended in linear light. It covers Latin-1, Greek and common
   math symbols. The crate's license is now `MIT AND BSD-3-Clause`.
 - Numbers use the Unicode minus sign `−`, as matplotlib does.
+- Gaps around tick labels, names and the title scale with the text size (matplotlib's
+  paddings), and y tick labels are centered on their digits.
 - **Breaking:** `TextStyle::new(color, size_px)` replaces `TextStyle::new(color, scale,
   padding)`, and `TextStyle::size()` replaces `scale()` and `padding()`.
   `TextStyle::with_color` is unchanged; its text takes the canvas's base size.

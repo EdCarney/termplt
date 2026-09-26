@@ -109,6 +109,15 @@ fn series() -> impl Strategy<Value = Series> {
     })
 }
 
+/// Titles and axis names: absent, blank, any printable text, or far too long.
+fn text() -> impl Strategy<Value = Option<String>> {
+    prop::option::of(prop_oneof![
+        4 => "\\PC{0,40}",
+        1 => "[a-z ]{150,400}",
+        1 => Just("\n \n".to_string()),
+    ])
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
@@ -123,6 +132,9 @@ proptest! {
         text_size in prop_oneof![4 => 0u32..40, 1 => any::<u32>()],
         font_size in prop_oneof![4 => 1u32..40, 1 => any::<u32>()],
         with_grid in any::<bool>(),
+        title in text(),
+        x_label in text(),
+        y_label in text(),
         x_limits in prop::option::of((any_coord(), any_coord())),
         y_limits in prop::option::of((any_coord(), any_coord())),
     ) {
@@ -144,6 +156,16 @@ proptest! {
         }
         if let Some((min, max)) = y_limits {
             graph = graph.with_y_limits(min, max);
+        }
+
+        if let Some(text) = title {
+            graph = graph.with_title(text);
+        }
+        if let Some(text) = x_label {
+            graph = graph.with_x_label(text);
+        }
+        if let Some(text) = y_label {
+            graph = graph.with_y_label(text);
         }
 
         // Ok or Err are both acceptable; a panic fails the test

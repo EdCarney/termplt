@@ -84,9 +84,10 @@ impl Font {
             .map_or(0.0, |glyph| glyph.x + glyph.advance)
     }
 
-    /// Draws `text` on one line at `size` pixels. The bitmap is as wide as the text and as
-    /// tall as the line box, with the baseline `ascent` rows from the top; ink outside that box
-    /// (rare overhangs) is dropped.
+    /// Draws `text` on one line at `size` pixels. The line box is as wide as the text and as
+    /// tall as the font's line, with the baseline `ascent` rows from the top. Ink past the box
+    /// (accents above the ascent, a `j` left of its pen position, italic overhangs) is kept, up
+    /// to one em beyond each side.
     pub(crate) fn rasterize(&self, text: &str, size: u32) -> Coverage {
         let metrics = self.metrics(size);
         let glyphs = self.positions(text, size);
@@ -95,20 +96,38 @@ impl Font {
             .map_or(0.0, |glyph| glyph.x + glyph.advance)
             .ceil() as u32;
         let height = metrics.height();
-        let mut data = vec![0u8; width as usize * height as usize];
-        for glyph in &glyphs {
-            let placed = glyph
-                .id
-                .with_scale_and_position(scale(glyph.font, size), point(glyph.x, metrics.ascent));
-            let Some(outline) = glyph.font.outline_glyph(placed) else {
-                continue;
-            };
+        let outlines: Vec<_> = (glyphs.iter())
+            .filter_map(|glyph| {
+                let placed = glyph.id.with_scale_and_position(
+                    scale(glyph.font, size),
+                    point(glyph.x, metrics.ascent),
+                );
+                glyph.font.outline_glyph(placed)
+            })
+            .collect();
+
+        // the ink box: the line box grown to the glyphs' bounds, at most an em further on each
+        // side, which also bounds the bitmap for fonts with absurd glyph bounds
+        let reach = i64::from(size);
+        let (mut x0, mut y0) = (0_i64, 0_i64);
+        let (mut x1, mut y1) = (i64::from(width), i64::from(height));
+        for outline in &outlines {
+            let bounds = outline.px_bounds();
+            x0 = x0.min((bounds.min.x as i64).max(-reach));
+            y0 = y0.min((bounds.min.y as i64).max(-reach));
+            x1 = x1.max((bounds.max.x.ceil() as i64).min(i64::from(width) + reach));
+            y1 = y1.max((bounds.max.y.ceil() as i64).min(i64::from(height) + reach));
+        }
+        let (ink_width, ink_height) = ((x1 - x0) as u32, (y1 - y0) as u32);
+        let mut data = vec![0u8; ink_width as usize * ink_height as usize];
+        for outline in &outlines {
             let bounds = outline.px_bounds();
             outline.draw(|gx, gy, coverage| {
-                let x = bounds.min.x as i64 + i64::from(gx);
-                let y = bounds.min.y as i64 + i64::from(gy);
-                if (0..i64::from(width)).contains(&x) && (0..i64::from(height)).contains(&y) {
-                    let i = y as usize * width as usize + x as usize;
+                let x = bounds.min.x as i64 + i64::from(gx) - x0;
+                let y = bounds.min.y as i64 + i64::from(gy) - y0;
+                if (0..i64::from(ink_width)).contains(&x) && (0..i64::from(ink_height)).contains(&y)
+                {
+                    let i = y as usize * ink_width as usize + x as usize;
                     let add = (coverage.clamp(0.0, 1.0) * 255.0).round() as u8;
                     data[i] = data[i].saturating_add(add);
                 }
@@ -118,6 +137,10 @@ impl Font {
             width,
             height,
             data,
+            ink_width,
+            ink_height,
+            ink_left: x0 as i32,
+            ink_top: y0 as i32,
         }
     }
 
@@ -187,19 +210,70 @@ impl LineMetrics {
     }
 }
 
-/// A line of text drawn as 8-bit coverage (0 = empty, 255 = fully covered), row-major from the
-/// top row.
+/// A line of text drawn as 8-bit coverage (0 = empty, 255 = fully covered). Layout places the
+/// line box, `width` x `height`. The ink can reach past it, so it is kept as its own bitmap
+/// (`data`, row-major from the top) whose top-left pixel sits at (`ink_left`, `ink_top`)
+/// relative to the box's top-left.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Coverage {
     pub width: u32,
     pub height: u32,
     pub data: Vec<u8>,
+    pub ink_width: u32,
+    pub ink_height: u32,
+    pub ink_left: i32,
+    pub ink_top: i32,
 }
 
 impl Coverage {
-    /// Coverage at column `x`, row `y` (from the top).
+    /// Coverage at column `x`, row `y` of the line box; 0 where there is no ink.
+    #[cfg(test)]
     pub fn get(&self, x: u32, y: u32) -> u8 {
-        self.data[y as usize * self.width as usize + x as usize]
+        let col = i64::from(x) - i64::from(self.ink_left);
+        let row = i64::from(y) - i64::from(self.ink_top);
+        if (0..i64::from(self.ink_width)).contains(&col)
+            && (0..i64::from(self.ink_height)).contains(&row)
+        {
+            self.data[row as usize * self.ink_width as usize + col as usize]
+        } else {
+            0
+        }
+    }
+
+    /// Every inked pixel as (column, row, coverage) relative to the line box's top-left; the
+    /// column and row can be negative or past the box.
+    pub fn ink(&self) -> impl Iterator<Item = (i64, i64, u8)> + '_ {
+        let width = self.ink_width.max(1) as usize;
+        (self.data.iter().enumerate())
+            .filter(|(_, coverage)| **coverage > 0)
+            .map(move |(i, &coverage)| {
+                let (row, col) = (i / width, i % width);
+                let x = i64::from(self.ink_left) + col as i64;
+                let y = i64::from(self.ink_top) + row as i64;
+                (x, y, coverage)
+            })
+    }
+
+    /// Turned 90° counter-clockwise, so a line of text reads from bottom to top. A point
+    /// (x, y) of the box moves to (y, width - 1 - x).
+    pub fn rotated_ccw(&self) -> Coverage {
+        let (ink_width, ink_height) = (self.ink_height, self.ink_width);
+        let mut data = vec![0; self.data.len()];
+        for y in 0..self.ink_height {
+            for x in 0..self.ink_width {
+                let i = (self.ink_width - 1 - x) as usize * ink_width as usize + y as usize;
+                data[i] = self.data[y as usize * self.ink_width as usize + x as usize];
+            }
+        }
+        Coverage {
+            width: self.height,
+            height: self.width,
+            data,
+            ink_width,
+            ink_height,
+            ink_left: self.ink_top,
+            ink_top: self.width as i32 - self.ink_left - self.ink_width as i32,
+        }
     }
 }
 
@@ -344,6 +418,55 @@ mod tests {
         // CJK is not in the built-in font: the .notdef box must still show
         let line = Font::default().rasterize("\u{4e00}", 14);
         assert!(line.data.iter().any(|&c| c > 0));
+    }
+
+    #[test]
+    fn rotation_turns_the_bitmap_counter_clockwise() {
+        // rows [1, 2, 3] and [4, 5, 6]: the left column ends up along the bottom, so a line of
+        // text reads from bottom to top
+        let line = Coverage {
+            width: 3,
+            height: 2,
+            data: vec![1, 2, 3, 4, 5, 6],
+            ink_width: 3,
+            ink_height: 2,
+            ink_left: 0,
+            ink_top: 0,
+        };
+        let turned = line.rotated_ccw();
+        assert_eq!((turned.width, turned.height), (2, 3));
+        assert_eq!(turned.data, vec![3, 6, 2, 5, 1, 4]);
+        assert_eq!((turned.ink_left, turned.ink_top), (0, 0));
+    }
+
+    #[test]
+    fn rotation_carries_ink_outside_the_box_along() {
+        // a 3x2 box whose ink starts one column left of it: that column ends up one row below
+        // the turned box
+        let line = Coverage {
+            width: 3,
+            height: 2,
+            data: vec![9, 1, 2, 3, 9, 4, 5, 6],
+            ink_width: 4,
+            ink_height: 2,
+            ink_left: -1,
+            ink_top: 0,
+        };
+        let turned = line.rotated_ccw();
+        assert_eq!((turned.width, turned.height), (2, 3));
+        let below: Vec<u8> = (turned.ink())
+            .filter(|&(_, y, _)| y == 3)
+            .map(|(_, _, c)| c)
+            .collect();
+        assert_eq!(below, vec![9, 9]);
+        // the box itself turns as before
+        assert_eq!(
+            (0..3)
+                .flat_map(|y| (0..2).map(move |x| (x, y)))
+                .map(|(x, y)| turned.get(x, y))
+                .collect::<Vec<_>>(),
+            vec![3, 6, 2, 5, 1, 4]
+        );
     }
 
     #[test]

@@ -66,6 +66,12 @@ termplt test_data/noisy_linear.csv --marker none --color lime --line-thickness 1
 ```
 <img width="600" height="450" alt="Green line of noisy linear data with the x axis limited to 0 to 10" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/line-limits.png" />
 
+```bash
+# Title and axis names (by default the axes are named from the CSV header)
+termplt test_data/sine.csv test_data/cosine.csv --title "Sine and cosine" --xlabel "angle (rad)" --ylabel "value"
+```
+<img width="600" height="450" alt="Sine and cosine curves with a title and named axes" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/titles.png" />
+
 ### Options
 
 | Option | Description |
@@ -85,6 +91,10 @@ termplt test_data/noisy_linear.csv --marker none --color lime --line-thickness 1
 | `--bg <COLOR>` | Background color (default: black) |
 | `--no-grid` | Hide grid lines |
 | `-o, --output <FILE>` | Write a PNG file (e.g. `plot.png`) instead of displaying; no terminal needed |
+| `--title <TEXT>` | Plot title; long titles wrap onto up to 3 lines |
+| `--xlabel <TEXT>` / `--ylabel <TEXT>` | Axis names (default: the column header when every series has the same one; `""` for none) |
+| `--font <FILE>` | A `.ttf`/`.otf` font for all text; characters it lacks use the built-in Go font |
+| `--font-size <PX>` | Base text size (default: matches the terminal's text, or 14 with `--output`) |
 | `--list-colors` / `--list-markers` | List color names / marker styles |
 | `-v, --verbose` | Print terminal size, canvas and plot area to stderr |
 | `--completions <SHELL>` | Print a completion script for `bash`, `zsh`, `fish`, `powershell` or `elvish` |
@@ -94,7 +104,7 @@ Style options apply to every series. Unset colors and markers cycle through a pa
 
 A `--series` spec is a list of `key=value` pairs separated by commas: `file=PATH` or `data=POINTS` (required), `x=COL`, `y=COL`, `color`, `marker`, `marker-size`, `marker-color`, `line`, `line-color` and `line-thickness`. Keys override the options above for that series. Inline data keeps its commas, e.g. `-s "data=(1,2),(3,4),color=red"`.
 
-Data files may have a header row (detected automatically), `#` comments and blank lines. A single-column file is plotted against the row number. Rows with missing values (empty, `NA`, `null`, ...) and NaN/infinite values are skipped with a warning.
+Data files may have a header row (detected automatically), `#` comments and blank lines. A single-column file is plotted against the row number. Rows with missing values (empty, `NA`, `null`, ...) and NaN/infinite values are skipped with a warning. Header names become axis names when every series agrees.
 
 ### Shell completions
 
@@ -177,6 +187,8 @@ fn main() -> termplt::Result<()> {
         .line((&xs, &sin)) // a line in the first palette color
         .line_points((&xs, &cos)) // a line with markers in the next one
         .scatter(vec![(2, 0.5), (7, -0.5)]) // any numeric types
+        .title("Waves")
+        .x_label("x")
         .show()?; // sized to fit the terminal
 
     // or write a PNG; no terminal needed
@@ -188,7 +200,7 @@ fn main() -> termplt::Result<()> {
 }
 ```
 
-`Plot` draws axes with tick labels and a grid, picks colors from `colors::PALETTE`, and adapts the axes to light backgrounds (`.background(colors::WHITE)`). Other options: `.x_limits(min, max)`, `.y_limits(min, max)`, `.grid(false)`, and `.series(s)` for a series with your own styles.
+`Plot` draws axes with tick labels and a grid, picks colors from `colors::PALETTE`, and adapts the axes to light backgrounds (`.background(colors::WHITE)`). Other options: `.x_limits(min, max)`, `.y_limits(min, max)`, `.grid(false)`, `.title(..)`, `.x_label(..)`, `.y_label(..)`, `.font(Font::from_bytes(..)?)`, `.font_size(px)`, and `.series(s)` for a series with your own styles.
 
 ### Full control
 
