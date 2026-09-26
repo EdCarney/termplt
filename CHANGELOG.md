@@ -4,10 +4,11 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-09-26
 
-Text is drawn with an embedded TrueType font. The low-level text API has **breaking changes**;
-see "Changed" and "Removed".
+Text is drawn with an embedded TrueType font, and plots get titles, axis names and
+matplotlib-style legends. The low-level text API has **breaking changes**; see "Changed" and
+"Removed".
 
 ### Added
 - `plotting::font::Font` (also in the prelude): the built-in Go font by default, or any
@@ -172,7 +173,7 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 
 First releases (0.1.0 and 0.1.1, published the same day).
 
-[0.3.0]: https://github.com/EdCarney/termplt/compare/v0.2.1...HEAD
+[0.3.0]: https://github.com/EdCarney/termplt/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/EdCarney/termplt/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/EdCarney/termplt/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/EdCarney/termplt/compare/v0.1.1...v0.1.2
