@@ -276,3 +276,91 @@ fn label_color_matching_background_is_replaced() {
         );
     check("label_color_matching_background_is_replaced", w, h, canvas);
 }
+
+#[test]
+fn title_and_axis_names() {
+    // both axes have offsets too, so every kind of text is on the plot
+    let (w, h) = (400, 300);
+    let points: Vec<_> = (0..=20)
+        .map(|i| {
+            Point::new(
+                1_700_000_000.0 + 5.0 * i as f64,
+                1e15 + 0.125 * (i % 7) as f64,
+            )
+        })
+        .collect();
+    let series = Series::new(&points)
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::Solid {
+            color: colors::GOLD,
+            thickness: 0,
+        });
+    let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(
+            Graph::new()
+                .with_series(series)
+                .with_axes(axes())
+                .with_grid_lines(grid())
+                .with_title("Sensor drift, Δt = 5 s")
+                .with_x_label("Time (s)")
+                .with_y_label("Reading (µV)"),
+        );
+    check("title_and_axis_names", w, h, canvas);
+}
+
+#[test]
+fn long_text_wraps() {
+    let (w, h) = (320, 240);
+    let series = Series::new(&curve(11, 0.0, 1.0, |x| x * x)).with_line_style(LineStyle::Solid {
+        color: colors::CYAN,
+        thickness: 0,
+    });
+    let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(
+            Graph::new()
+                .with_series(series)
+                .with_axes(axes())
+                .with_grid_lines(grid())
+                .with_title(
+                    "A title far too long to fit on one line of this small canvas, so it \
+                     wraps and is finally cut off with an ellipsis after three lines of text",
+                )
+                .with_x_label("an axis name that is also much too long for this canvas")
+                .with_y_label("a long y axis name, wrapped to the plot height"),
+        );
+    check("long_text_wraps", w, h, canvas);
+}
+
+#[test]
+fn light_background_text() {
+    // dark anti-aliased text on white: blending has to darken towards black correctly
+    let (w, h) = (320, 240);
+    let series =
+        Series::new(&curve(9, -2.0, 0.5, |x| x * x * x)).with_line_style(LineStyle::Solid {
+            color: colors::RED,
+            thickness: 1,
+        });
+    let canvas = TerminalCanvas::new(w, h, colors::WHITE)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(
+            Graph::new()
+                .with_series(series)
+                .with_axes(Axes::new(
+                    AxesPositioning::XY(LineStyle::Solid {
+                        color: colors::BLACK,
+                        thickness: 1,
+                    }),
+                    TextStyle::with_color(colors::BLACK),
+                ))
+                .with_grid_lines(GridLines::XY(LineStyle::Solid {
+                    color: colors::LIGHT_GRAY,
+                    thickness: 0,
+                }))
+                .with_title("Dark text on white")
+                .with_x_label("x")
+                .with_y_label("x³"),
+        );
+    check("light_background_text", w, h, canvas);
+}

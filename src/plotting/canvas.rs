@@ -707,20 +707,25 @@ impl TerminalCanvas {
             }
         }
 
-        // the title and x name are centered on the plot, kept inside the buffered area
+        // the title and x name are centered on the plot; a block too wide for that shifts as a
+        // whole to stay inside the buffered area, so its lines stay centered on each other
         let plot_center_x = (plot_min_x + plot_max_x) / 2;
-        let centered = |w: u32| {
-            (plot_center_x.saturating_sub(w / 2))
-                .min((outer_max.x + 1).saturating_sub(w))
-                .max(outer_min.x)
+        let block_center = |widths: &[u32]| {
+            let widest = widths.iter().copied().max().unwrap_or(0);
+            let left = (plot_center_x.saturating_sub(widest / 2))
+                .min((outer_max.x + 1).saturating_sub(widest))
+                .max(outer_min.x);
+            left + widest / 2
         };
 
         // the x name below the tick labels, first line on top
         let x_name_top = x_labels_top.saturating_sub(text_h + name_gap);
-        let x_name: Vec<PlacedText> = (x_name_lines.iter().enumerate())
-            .map(|(i, line)| {
+        let x_name_widths: Vec<u32> = x_name_lines.iter().map(|l| width(l, size)).collect();
+        let x_name_center = block_center(&x_name_widths);
+        let x_name: Vec<PlacedText> = (x_name_lines.iter().zip(&x_name_widths).enumerate())
+            .map(|(i, (line, &w))| {
                 let top = x_name_top.saturating_sub(i as u32 * pitch(size));
-                place(line, size, centered(width(line, size)), top)
+                place(line, size, x_name_center.saturating_sub(w / 2), top)
             })
             .collect();
         // where matplotlib puts it: under the right end of the x axis, on the x name's first
@@ -746,10 +751,12 @@ impl TerminalCanvas {
             place(&text, size, left, band_start + offset_gap + text_h - 1)
         });
         let title_top = band_start + title_lift + title_block.saturating_sub(1);
-        let title: Vec<PlacedText> = (title_lines.iter().enumerate())
-            .map(|(i, line)| {
+        let title_widths: Vec<u32> = title_lines.iter().map(|l| width(l, title_size)).collect();
+        let title_center = block_center(&title_widths);
+        let title: Vec<PlacedText> = (title_lines.iter().zip(&title_widths).enumerate())
+            .map(|(i, (line, &w))| {
                 let top = title_top.saturating_sub(i as u32 * pitch(title_size));
-                place(line, title_size, centered(width(line, title_size)), top)
+                place(line, title_size, title_center.saturating_sub(w / 2), top)
             })
             .collect();
 
@@ -1295,6 +1302,24 @@ mod tests {
     }
 
     #[test]
+    fn wrapped_lines_share_one_center() {
+        // the y name moves the plot's center right, so a full-width title has to shift left:
+        // all its lines shift together and stay centered on each other
+        let words = "the quick brown fox jumps over the lazy dog ".repeat(12);
+        let graph = plain_graph()
+            .with_title(words)
+            .with_y_label("a y axis name");
+        let layout = layout_of(&graph, (400, 300), 14);
+        let centers: Vec<f64> = (layout.title.iter())
+            .map(|line| line.left as f64 + line.coverage.width as f64 / 2.0)
+            .collect();
+        assert_eq!(centers.len(), 3);
+        for c in &centers {
+            assert!((c - centers[0]).abs() <= 1.0, "line centers {centers:?}");
+        }
+    }
+
+    #[test]
     fn the_y_name_reads_upwards_beside_the_tick_labels() {
         let layout = layout_of(
             &plain_graph().with_y_label("Amplitude (µV)"),
@@ -1399,6 +1424,35 @@ mod tests {
         let layout = layout_of(&graph, (800, 600), 14);
         assert!(layout.x_name.is_empty());
         assert_eq!(layout.y_name.len(), 1);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn titles_and_names_stay_inside_the_canvas(
+            title in "\\PC{0,80}",
+            x_label in "\\PC{0,80}",
+            y_label in "\\PC{0,80}",
+            w in 150u32..900,
+            h in 120u32..700,
+            font_size in 6u32..40,
+        ) {
+            let graph = plain_graph()
+                .with_title(title)
+                .with_x_label(x_label)
+                .with_y_label(y_label);
+            let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+                .with_buffer(BufferType::Uniform(8))
+                .with_font_size(font_size)
+                .with_graph(graph.clone());
+            // a canvas too small for the text is an error, which is fine
+            if let Ok(layout) = canvas.layout(&graph, &graph.view_limits().unwrap()) {
+                for text in layout.title.iter().chain(&layout.x_name).chain(&layout.y_name) {
+                    if let Some(b) = text.bounds() {
+                        proptest::prop_assert!(b.max().x < w && b.max().y < h, "{b:?} outside {w}x{h}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]
