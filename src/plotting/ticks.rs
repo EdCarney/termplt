@@ -49,25 +49,36 @@ fn nice_step(min: f64, max: f64, max_count: usize) -> Option<f64> {
     None
 }
 
-/// Formats tick values with a consistent number of decimal places for the given step. Uses
-/// scientific notation for very large magnitudes or very small steps.
+/// Formats tick values with a consistent number of decimal places for the given step. Very
+/// large magnitudes and very small steps use scientific notation, unless plain decimals are
+/// shorter (e.g. timestamps like `1700000050`, where the mantissa would need many digits).
 pub fn format_ticks(values: &[f64], step: f64) -> Vec<String> {
     let magnitude = values.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
-    let scientific = magnitude >= 1e6 || step < 1e-4;
+    let plain = format_all(values, |v| format!("{:.*}", decimals_for(step), v));
+    if magnitude < 1e6 && step >= 1e-4 {
+        return plain;
+    }
+    // enough mantissa digits to distinguish neighbouring ticks (f64 has about 15 significant
+    // digits; beyond that the ticks can't be told apart anyway)
+    let digits = (magnitude.log10().floor() - step.log10().floor()).clamp(0.0, 15.0) as usize;
+    let scientific = format_all(values, |v| format!("{v:.digits$e}"));
+    let longest = |labels: &[String]| labels.iter().map(String::len).max().unwrap_or(0);
+    if longest(&plain) < longest(&scientific) {
+        plain
+    } else {
+        scientific
+    }
+}
 
+fn format_all(values: &[f64], format: impl Fn(f64) -> String) -> Vec<String> {
     values
         .iter()
         .map(|&v| {
-            let label = if v == 0.0 {
+            if v == 0.0 {
                 "0".to_string()
-            } else if scientific {
-                // enough mantissa digits to distinguish neighbouring ticks
-                let digits = (magnitude.log10().floor() - step.log10().floor()).clamp(0.0, 6.0);
-                format!("{:.*e}", digits as usize, v)
             } else {
-                format!("{:.*}", decimals_for(step), v)
-            };
-            normalize_negative_zero(label)
+                normalize_negative_zero(format(v))
+            }
         })
         .collect()
 }
@@ -90,13 +101,13 @@ fn normalize_negative_zero(label: String) -> String {
 }
 
 /// Chooses the densest ticks (at most [`MAX_TICKS`]) for an axis `length_px` pixels long such
-/// that `fits(labels, spacing_px)` holds, where `spacing_px` is the pixel distance between
-/// neighbouring ticks. Falls back to the sparsest candidate if none fit.
+/// that the labels are distinct and `fits(ticks, spacing_px)` holds, where `spacing_px` is the
+/// pixel distance between neighbouring ticks. Falls back to the sparsest candidate if none fit.
 pub fn fit_ticks(
     min: f64,
     max: f64,
     length_px: f64,
-    fits: impl Fn(&[String], f64) -> bool,
+    fits: impl Fn(&AxisTicks, f64) -> bool,
 ) -> AxisTicks {
     let mut sparsest = AxisTicks::default();
     for max_count in (2..=MAX_TICKS).rev() {
@@ -106,7 +117,9 @@ pub fn fit_ticks(
         let labels = format_ticks(&values, step);
         let spacing_px = length_px * step / (max - min);
         let ticks = AxisTicks { values, labels };
-        if fits(&ticks.labels, spacing_px) {
+        // identical labels (a span too small for the digits shown) would be misleading
+        let distinct = ticks.labels.windows(2).all(|w| w[0] != w[1]);
+        if distinct && fits(&ticks, spacing_px) {
             return ticks;
         }
         sparsest = ticks;
@@ -210,5 +223,38 @@ mod tests {
     fn fit_ticks_falls_back_to_sparsest() {
         let fitted = fit_ticks(0.0, 10.0, 10.0, |_, _| false);
         assert!(!fitted.values.is_empty() && fitted.values.len() <= 2);
+    }
+
+    #[test]
+    fn large_offsets_get_distinct_plain_labels() {
+        let (values, step) = nice_ticks(1_700_000_000.0, 1_700_000_100.0, 3).unwrap();
+        assert_eq!(
+            format_ticks(&values, step),
+            ["1700000000", "1700000050", "1700000100"]
+        );
+    }
+
+    #[test]
+    fn scientific_notation_keeps_enough_digits() {
+        // plain would be longer here, so the mantissa must carry the difference
+        let labels = format_ticks(&[1.0e20, 1.00000001e20], 1e12);
+        assert_eq!(labels, ["1.00000000e20", "1.00000001e20"]);
+        assert_eq!(format_ticks(&[2e6, 4e6], 2e6), ["2e6", "4e6"]);
+    }
+
+    #[test]
+    fn duplicate_labels_never_fit() {
+        let fitted = fit_ticks(0.0, 10.0, 1000.0, |ticks, _| {
+            ticks.labels.windows(2).all(|w| w[0] != w[1])
+        });
+        assert!(fitted.values.len() > 2);
+        // a fits check that accepts everything still can't get duplicates past fit_ticks
+        let big = 1e17;
+        let fitted = fit_ticks(big, big + 64.0, 1000.0, |_, _| true);
+        assert!(
+            fitted.labels.windows(2).all(|w| w[0] != w[1]),
+            "{:?}",
+            fitted.labels
+        );
     }
 }
