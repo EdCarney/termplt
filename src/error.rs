@@ -45,7 +45,7 @@ pub enum Error {
     TmuxPassthroughDisabled,
     /// The terminal size could not be determined.
     WindowSize(Box<Error>),
-    /// The terminal reported a size of zero.
+    /// The terminal reported a size of zero, or fewer pixels than cells.
     InvalidWindowSize {
         /// Reported rows.
         rows: u32,

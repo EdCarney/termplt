@@ -10,12 +10,15 @@ use crate::common::Result;
 /// Number of sections [`GridLines::get_mask`] divides the area into.
 pub const NUM_GRID_SECTIONS: u32 = 10;
 
-/// Which grid lines to draw, and their line style.
+/// Which grid lines to draw, and their line style. Like [`AxesPositioning`], the variant names
+/// the axis the lines run parallel to.
+///
+/// [`AxesPositioning`]: crate::plotting::axes::AxesPositioning
 #[derive(Debug, Clone)]
 pub enum GridLines {
-    /// Vertical lines at the x ticks.
+    /// Horizontal lines (parallel to the x axis), at the y ticks.
     XOnly(LineStyle),
-    /// Horizontal lines at the y ticks.
+    /// Vertical lines (parallel to the y axis), at the x ticks.
     YOnly(LineStyle),
     /// Both.
     XY(LineStyle),
@@ -34,8 +37,8 @@ impl GridLines {
         self.get_mask_at(&limits, &xs, &ys)
     }
 
-    /// Draws grid lines spanning `limits`: vertical lines at the `xs` positions and horizontal
-    /// lines at the `ys` positions (as selected by the variant). Positions are in the same
+    /// Draws grid lines spanning `limits`: horizontal lines at the `ys` positions and vertical
+    /// lines at the `xs` positions, as selected by the variant. Positions are in the same
     /// coordinates as `limits`.
     pub fn get_mask_at(
         &self,
@@ -86,6 +89,28 @@ impl GridLines {
 mod tests {
     use super::*;
     use crate::plotting::colors;
+
+    #[test]
+    fn variants_name_the_axis_the_lines_are_parallel_to() {
+        let limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 50.0));
+        let style = LineStyle::solid(colors::WHITE, 0);
+        let points = |grid: GridLines| -> Vec<Point<u32>> {
+            (grid
+                .get_mask_at(&limits, &[10.0], &[25.0])
+                .unwrap()
+                .into_iter())
+            .flat_map(|m| m.points)
+            .collect()
+        };
+        let horizontal = points(GridLines::XOnly(style));
+        assert!(!horizontal.is_empty() && horizontal.iter().all(|p| p.y == 25));
+        let vertical = points(GridLines::YOnly(style));
+        assert!(!vertical.is_empty() && vertical.iter().all(|p| p.x == 10));
+        assert_eq!(
+            points(GridLines::XY(style)).len(),
+            horizontal.len() + vertical.len()
+        );
+    }
 
     #[test]
     fn grid_lines_are_drawn_at_given_positions() {

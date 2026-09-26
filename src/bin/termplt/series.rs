@@ -120,7 +120,13 @@ pub fn parse_spec(spec: &str) -> Result<SeriesSpec> {
         let value = value.trim().to_string();
         let number = |v: &str| {
             v.parse::<u32>()
-                .map_err(|_| format!("series key '{key}' needs a non-negative integer, got '{v}'"))
+                .ok()
+                .filter(|n| *n <= MAX_STYLE_PX)
+                .ok_or_else(|| {
+                    format!(
+                        "series key '{key}' needs an integer from 0 to {MAX_STYLE_PX}, got '{v}'"
+                    )
+                })
         };
         match key.as_str() {
             "file" | "data" => {
@@ -224,6 +230,10 @@ enum Marker {
     FilledSquare,
     HollowSquare,
 }
+
+/// Largest marker size or line thickness the CLI accepts, in pixels. Larger values could only
+/// fill the canvas (or overflow the layout).
+pub const MAX_STYLE_PX: u32 = 100;
 
 /// Marker style names accepted on the command line (separators and case are ignored).
 pub const MARKER_NAMES: &[(&str, &str)] = &[

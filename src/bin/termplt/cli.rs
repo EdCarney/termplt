@@ -83,7 +83,13 @@ pub struct Cli {
     pub marker: Option<String>,
 
     /// Marker radius in pixels [default: 2]
-    #[arg(long, value_name = "PX", alias = "marker_size", help_heading = "Style")]
+    #[arg(
+        long,
+        value_name = "PX",
+        value_parser = clap::value_parser!(u32).range(..=i64::from(crate::series::MAX_STYLE_PX)),
+        alias = "marker_size",
+        help_heading = "Style"
+    )]
     pub marker_size: Option<u32>,
 
     /// Marker color (overrides --color)
@@ -124,6 +130,7 @@ pub struct Cli {
     #[arg(
         long,
         value_name = "PX",
+        value_parser = clap::value_parser!(u32).range(..=i64::from(crate::series::MAX_STYLE_PX)),
         alias = "line_thickness",
         help_heading = "Style"
     )]

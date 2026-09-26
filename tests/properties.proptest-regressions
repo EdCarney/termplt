@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc d6996e7cf5666901fecac0e0a3e0740f2693226423828063b6051253368569e7 # shrinks to series = [Series { data: [Point { x: 2.2250738585072014e-308, y: 0.0 }], marker_style: FilledSquare { size: 1, color: Rgb { r: 255, g: 0, b: 0 } }, line_style: None }], width = 32, height = 32, buffer = 0, with_axes = false, with_grid = false, x_limits = None, y_limits = None
+cc 9b1a12bc6529e2559d8fc87d7121fb87e8969576354cf1985e1a0cba9f749e20 # shrinks to series = [Series { data: [Point { x: 0.0, y: 0.0 }], marker_style: FilledSquare { size: 4294967295, color: Rgb { r: 255, g: 0, b: 0 } }, line_style: None }], width = 1, height = 1, buffer = Uniform(0), with_axes = true, axis_thickness = 0, text_scale = 0, text_padding = 0, with_grid = false, x_limits = None, y_limits = None

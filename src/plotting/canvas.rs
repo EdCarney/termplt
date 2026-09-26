@@ -310,10 +310,15 @@ impl TerminalCanvas {
         let axes = graph.axes().cloned();
         let (axes_inset, show_x_labels, show_y_labels) =
             match axes.as_ref().map(|a| a.positioning()) {
-                Some(AxesPositioning::XOnly(line)) => ((0, 2 * line.thickness()), true, false),
-                Some(AxesPositioning::YOnly(line)) => ((2 * line.thickness(), 0), false, true),
+                Some(AxesPositioning::XOnly(line)) => {
+                    ((0, line.thickness().saturating_mul(2)), true, false)
+                }
+                Some(AxesPositioning::YOnly(line)) => {
+                    ((line.thickness().saturating_mul(2), 0), false, true)
+                }
                 Some(AxesPositioning::XY(line)) => {
-                    ((2 * line.thickness(), 2 * line.thickness()), true, true)
+                    let inset = line.thickness().saturating_mul(2);
+                    ((inset, inset), true, true)
                 }
                 None => ((0, 0), false, false),
             };
@@ -328,8 +333,9 @@ impl TerminalCanvas {
         // x labels sit in a band along the bottom; the top y label needs half a line above
         let bottom = if show_x_labels { text_h + LABEL_GAP } else { 0 };
         let top = if show_y_labels { text_h / 2 } else { 0 };
-        let plot_min_y = outer_min.y + bottom + inset_y;
-        let plot_max_y = outer_max.y.saturating_sub(top + inset_y);
+        // saturating: huge markers, lines or buffers must end in CanvasTooSmall, not overflow
+        let plot_min_y = outer_min.y.saturating_add(bottom).saturating_add(inset_y);
+        let plot_max_y = outer_max.y.saturating_sub(top.saturating_add(inset_y));
         check_area(
             &Point::new(outer_min.x, plot_min_y),
             &Point::new(outer_max.x, plot_max_y),
@@ -379,7 +385,7 @@ impl TerminalCanvas {
         } else {
             0
         };
-        let plot_min_x = outer_min.x + left + inset_x;
+        let plot_min_x = outer_min.x.saturating_add(left).saturating_add(inset_x);
         let plot_max_x = outer_max.x.saturating_sub(inset_x);
         let plot_min = Point::new(plot_min_x, plot_min_y);
         let plot_max = Point::new(plot_max_x, plot_max_y);

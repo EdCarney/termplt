@@ -63,10 +63,14 @@ impl TextChar {
         let mut points = Vec::new();
         for i in 0..self.height() {
             for j in 0..self.width() {
-                if self.bitmap[i][j] {
-                    let shift = Point::new(j as i32, i as i32);
-                    let point = lower_left.convert_to_i32() + shift;
-                    points.push(point.convert_to_u32());
+                // pixels past u32::MAX can't be on any canvas
+                if self.bitmap[i][j]
+                    && let (Some(x), Some(y)) = (
+                        lower_left.x.checked_add(j as u32),
+                        lower_left.y.checked_add(i as u32),
+                    )
+                {
+                    points.push(Point::new(x, y));
                 }
             }
         }
@@ -93,18 +97,25 @@ impl Default for TextStyle {
     }
 }
 
+/// Largest glyph scale [`TextStyle::new`] accepts (320-pixel-wide digits).
+pub const MAX_TEXT_SCALE: usize = 32;
+
+/// Largest padding [`TextStyle::new`] accepts, in pixels.
+pub const MAX_TEXT_PADDING: usize = 64;
+
 impl TextStyle {
-    /// Creates a text style. `scale` is the pixel multiplier for each glyph and is clamped to at
-    /// least 1.
+    /// Creates a text style. `scale` is the pixel multiplier for each glyph, clamped to
+    /// `1..=`[`MAX_TEXT_SCALE`]; `padding` is the empty border around the text in pixels,
+    /// clamped to [`MAX_TEXT_PADDING`]. The limits keep the glyph bitmaps small.
     pub fn new(color: RGB8, scale: usize, padding: usize) -> TextStyle {
         TextStyle {
             color,
-            scale: scale.max(1),
-            padding,
+            scale: scale.clamp(1, MAX_TEXT_SCALE),
+            padding: padding.min(MAX_TEXT_PADDING),
         }
     }
 
-    /// White-on-nothing text of scale 1 without padding, in `color`.
+    /// Text in `color` at scale 1 with a 1-pixel padding.
     pub fn with_color(color: RGB8) -> TextStyle {
         TextStyle {
             color,
@@ -267,14 +278,21 @@ impl Label {
                     center.x.saturating_sub(shift_floor.x),
                     center.y.saturating_sub(shift_floor.y),
                 );
-                let max = *center + shift_ceil;
+                // saturating: a label near u32::MAX is clipped rather than overflowing
+                let max = Point::new(
+                    center.x.saturating_add(shift_ceil.x),
+                    center.y.saturating_add(shift_ceil.y),
+                );
                 Limits::new(min, max)
             }
             TextPositioning::LeftAligned(left) => {
                 let shift_floor = (self.txt.height as f64 / 2.).floor() as u32;
                 let shift_ceil = (self.txt.height as f64 / 2.).ceil() as u32;
                 let min = Point::new(left.x, left.y.saturating_sub(shift_floor));
-                let max = Point::new(left.x + self.txt.width as u32, left.y + shift_ceil);
+                let max = Point::new(
+                    left.x.saturating_add(self.txt.width as u32),
+                    left.y.saturating_add(shift_ceil),
+                );
                 Limits::new(min, max)
             }
         }
@@ -296,7 +314,11 @@ impl Drawable for Label {
 
         let mut masks = Vec::new();
         for c in &self.txt.chars {
-            let char_lower_left = anchor.convert_to_i32() + Point::new(x_offset, -height_shift);
+            let anchor = anchor.convert_to_i32();
+            let char_lower_left = Point::new(
+                anchor.x.saturating_add(x_offset),
+                anchor.y.saturating_sub(height_shift),
+            );
             masks.extend(c.get_mask(char_lower_left.convert_to_u32(), self.txt.style.clone())?);
             x_offset = x_offset.saturating_add(i32::try_from(c.width()).unwrap_or(i32::MAX));
         }
@@ -420,5 +442,17 @@ mod test {
         let num_str = num_to_str(number, sig_figs);
 
         assert_eq!(num_str, "0.2");
+    }
+
+    #[test]
+    fn labels_near_the_coordinate_limit_do_not_overflow() {
+        for pos in [
+            TextPositioning::Centered(Point::new(u32::MAX - 1, u32::MAX - 1)),
+            TextPositioning::LeftAligned(Point::new(u32::MAX - 1, u32::MAX - 1)),
+        ] {
+            let label = Label::new(Text::new("12", TextStyle::default()), pos);
+            assert_eq!(label.limits().max().x, u32::MAX);
+            label.get_mask().unwrap();
+        }
     }
 }
