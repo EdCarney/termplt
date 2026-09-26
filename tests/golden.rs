@@ -12,6 +12,7 @@ use termplt::plotting::{
     colors,
     graph::Graph,
     grid_lines::GridLines,
+    legend::LegendLocation,
     line::LineStyle,
     marker::MarkerStyle,
     point::Point,
@@ -363,4 +364,138 @@ fn light_background_text() {
                 .with_y_label("x³"),
         );
     check("light_background_text", w, h, canvas);
+}
+
+#[test]
+fn legend_best() {
+    // every series rises from the lower left, so the upper left is the first free location
+    let (w, h) = (320, 240);
+    let square = Series::new(&curve(21, 0.0, 0.5, |x| x * x / 10.0))
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::solid(colors::DODGER_BLUE, 0))
+        .with_label("x²/10");
+    let linear = Series::new(&curve(11, 0.0, 1.0, |x| x))
+        .with_marker_style(MarkerStyle::FilledCircle {
+            size: 2,
+            color: colors::ORANGE,
+        })
+        .with_label("x");
+    let half = Series::new(&curve(11, 0.0, 1.0, |x| x / 2.0))
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::dashed(colors::LIME, 0))
+        .with_label("x/2");
+    let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(
+            Graph::new()
+                .with_series(square)
+                .with_series(linear)
+                .with_series(half)
+                .with_axes(axes())
+                .with_grid_lines(grid()),
+        );
+    check("legend_best", w, h, canvas);
+}
+
+#[test]
+fn legend_fixed_location() {
+    // the upper left is busy: the data shows through the 80% opaque frame
+    let (w, h) = (320, 240);
+    let solid = Series::new(&curve(21, 0.0, 0.5, |x| 10.0 - x))
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::solid(colors::DODGER_BLUE, 1))
+        .with_label("solid");
+    let dashed = Series::new(&curve(21, 0.0, 0.5, |x| 9.0 - x * 0.8))
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::dashed(colors::ORANGE, 0))
+        .with_label("dashed");
+    let markers = Series::new(&curve(11, 0.0, 1.0, |x| 8.0 - x * 0.6))
+        .with_marker_style(MarkerStyle::HollowSquare {
+            size: 3,
+            color: colors::LIME,
+        })
+        .with_label("markers");
+    let both = Series::new(&curve(11, 0.0, 1.0, |x| 7.0 - x * 0.4))
+        .with_marker_style(MarkerStyle::FilledCircle {
+            size: 2,
+            color: colors::MAGENTA,
+        })
+        .with_line_style(LineStyle::solid(colors::MAGENTA, 0))
+        .with_label("line and markers");
+    let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(
+            Graph::new()
+                .with_series(solid)
+                .with_series(dashed)
+                .with_series(markers)
+                .with_series(both)
+                .with_axes(axes())
+                .with_grid_lines(grid())
+                .with_legend_location(LegendLocation::UpperLeft),
+        );
+    check("legend_fixed_location", w, h, canvas);
+}
+
+#[test]
+fn legend_overflow() {
+    // long names wrap onto 2 lines and end with "…"; the series that don't fit are counted
+    let (w, h) = (320, 200);
+    let palette = [
+        colors::DODGER_BLUE,
+        colors::ORANGE,
+        colors::LIME,
+        colors::MAGENTA,
+        colors::CYAN,
+        colors::RED,
+    ];
+    let mut graph = Graph::new().with_axes(axes()).with_grid_lines(grid());
+    for (i, color) in palette.into_iter().enumerate() {
+        let slope = (i + 1) as f64 / 6.0;
+        let series = Series::new(&curve(11, 0.0, 1.0, move |x| x * slope))
+            .with_marker_style(MarkerStyle::None)
+            .with_line_style(LineStyle::solid(color, 0))
+            .with_label(format!(
+                "series number {} has a name much longer than this legend can show",
+                i + 1
+            ));
+        graph = graph.with_series(series);
+    }
+    let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(graph);
+    check("legend_overflow", w, h, canvas);
+}
+
+#[test]
+fn legend_light_background() {
+    // the frame on white: a #cccccc edge, and "best" finds the free middle
+    let (w, h) = (320, 240);
+    let up = Series::new(&curve(9, -2.0, 0.5, |x| x * x))
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::solid(colors::RED, 1))
+        .with_label("x²");
+    let down = Series::new(&curve(9, -2.0, 0.5, |x| 4.0 - x * x))
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::solid(colors::BLUE, 1))
+        .with_label("4 − x²");
+    let canvas = TerminalCanvas::new(w, h, colors::WHITE)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(
+            Graph::new()
+                .with_series(up)
+                .with_series(down)
+                .with_axes(Axes::new(
+                    AxesPositioning::XY(LineStyle::Solid {
+                        color: colors::BLACK,
+                        thickness: 1,
+                    }),
+                    TextStyle::with_color(colors::BLACK),
+                ))
+                .with_grid_lines(GridLines::XY(LineStyle::Solid {
+                    color: colors::LIGHT_GRAY,
+                    thickness: 0,
+                })),
+        );
+    check("legend_light_background", w, h, canvas);
 }

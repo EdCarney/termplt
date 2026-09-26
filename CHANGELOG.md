@@ -24,6 +24,12 @@ see "Changed" and "Removed".
 - CLI: `--title`, `--xlabel`, `--ylabel`, `--font` and `--font-size`. Axes are named from CSV
   headers when every series has the same one (`--xlabel ""` removes a name). In a terminal the
   text matches the terminal's own size; with `--output` it is 14 px.
+- Legends: `Series::with_label` names a series, and a graph with named series shows a legend
+  inside the plot, framed and 80% opaque as in matplotlib, at the fixed location that covers
+  the least data (matplotlib's `loc="best"`). `Graph::with_legend(false)` / `Plot::legend(false)`
+  hide it; `Graph::with_legend_location` / `Plot::legend_location` pick one of matplotlib's ten
+  locations (`plotting::legend::LegendLocation`, also in the prelude). Long names wrap onto 2
+  lines, and series that don't fit are counted in a `+N more` row.
 
 ### Changed
 - All text, tick labels included, is drawn with an embedded, trimmed copy of the Go font

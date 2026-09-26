@@ -9,6 +9,7 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 - **One call to plot** — `Plot::new().line((&xs, &ys)).show()?` sizes itself to the terminal; `.save_png(path)` writes a file
 - **Any numeric data** — `i32`, `i64`, `u64`, `usize`, `f32`, `f64`, ... given as `(xs, ys)`, `(x, y)` tuples or points
 - **Multiple series** — overlay multiple data series on a single graph with independent styling
+- **Legends** — name a series with `Series::with_label` and a legend appears inside the plot, in the emptiest spot as matplotlib's `loc="best"` picks it
 - **Marker styles** — filled/hollow circles and squares with configurable size and color
 - **Line drawing** — optional solid or dashed connecting lines of any thickness
 - **Axes and grid lines** — round tick values, with label space laid out automatically
@@ -184,9 +185,9 @@ fn main() -> termplt::Result<()> {
     let cos: Vec<f64> = xs.iter().map(|x| x.cos()).collect();
 
     Plot::new()
-        .line((&xs, &sin)) // a line in the first palette color
-        .line_points((&xs, &cos)) // a line with markers in the next one
-        .scatter(vec![(2, 0.5), (7, -0.5)]) // any numeric types
+        .line(Series::from((&xs, &sin)).with_label("sin")) // named series get a legend
+        .line_points(Series::from((&xs, &cos)).with_label("cos")) // a line with markers
+        .scatter(vec![(2, 0.5), (7, -0.5)]) // any numeric types; unnamed, so not in the legend
         .title("Waves")
         .x_label("x")
         .show()?; // sized to fit the terminal
@@ -200,7 +201,7 @@ fn main() -> termplt::Result<()> {
 }
 ```
 
-`Plot` draws axes with tick labels and a grid, picks colors from `colors::PALETTE`, and adapts the axes to light backgrounds (`.background(colors::WHITE)`). Other options: `.x_limits(min, max)`, `.y_limits(min, max)`, `.grid(false)`, `.title(..)`, `.x_label(..)`, `.y_label(..)`, `.font(Font::from_bytes(..)?)`, `.font_size(px)`, and `.series(s)` for a series with your own styles.
+`Plot` draws axes with tick labels and a grid, picks colors from `colors::PALETTE`, and adapts the axes to light backgrounds (`.background(colors::WHITE)`). Other options: `.x_limits(min, max)`, `.y_limits(min, max)`, `.grid(false)`, `.title(..)`, `.x_label(..)`, `.y_label(..)`, `.font(Font::from_bytes(..)?)`, `.font_size(px)`, `.legend(false)`, `.legend_location(LegendLocation::UpperLeft)`, and `.series(s)` for a series with your own styles.
 
 ### Full control
 
@@ -272,6 +273,7 @@ Key abstractions:
 | `prelude` | The types most plots need |
 | `plotting::series` | `Series`: data points with marker and line styles, built from any numeric input |
 | `plotting::graph` | `Graph`: series, axes, grid lines and limits |
+| `plotting::legend` | `LegendLocation`: where the legend goes (`Best` by default) |
 | `plotting::canvas` | `TerminalCanvas`: layout (ticks, labels, margins) and rendering to RGB pixels |
 | `plotting::font` | `Font`: the built-in Go font or your own; text is rasterized with `ab_glyph` |
 | `terminal` | `Terminal` (support check, size, tmux handling, display) and `Image` (Kitty protocol) |
