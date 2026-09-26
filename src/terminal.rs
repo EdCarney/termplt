@@ -1,6 +1,7 @@
 //! Showing images in the terminal: checking that it can, finding its size, and placing images.
 //!
-//! [`Terminal::connect`] runs the checks once; the returned [`Terminal`] then displays images.
+//! [`Terminal::connect`] runs the checks once; the returned [`Terminal`] then displays images,
+//! either once ([`Terminal::show`]) or as a [`Placement`] whose image can be replaced in place.
 //!
 //! ```no_run
 //! use termplt::terminal::Terminal;
@@ -12,8 +13,18 @@
 //! # Ok::<(), termplt::Error>(())
 //! ```
 
-use crate::{Error, Result, plotting::text::MAX_FONT_SIZE};
-use std::io::{self, IsTerminal, Write};
+use crate::{
+    Error, Result,
+    plotting::text::MAX_FONT_SIZE,
+    terminal_commands::{csi_cmds, images::delete_image_command},
+};
+use std::{
+    io::{self, IsTerminal, Write},
+    sync::{
+        LazyLock,
+        atomic::{AtomicU32, Ordering},
+    },
+};
 
 pub use crate::{
     kitty_graphics::ctrl_seq::{PixelFormat, Transmission},
@@ -199,6 +210,217 @@ impl Terminal {
     pub fn show_rgb(&self, rgb: &[u8], width: u32, height: u32) -> Result<()> {
         self.show(&Image::png_from_rgb(rgb, width, height)?)
     }
+
+    /// Shows `image` at the start of the cursor's line and returns a handle for replacing it in
+    /// place, for example with the frames of a live plot.
+    ///
+    /// The image covers [`Placement::rows`] lines from the cursor's line down (the window
+    /// scrolls if needed), and the cursor is left at the start of the line below it, as after
+    /// every [`Placement::replace`]. Frames are drawn relative to the cursor, so nothing else may
+    /// be written to the terminal while the image is being replaced. Images wider than the
+    /// window are cut off on the right.
+    ///
+    /// Fails with [`Error::ImageTooTall`] when the image doesn't fit in the window with a line
+    /// to spare for the cursor.
+    ///
+    /// ```no_run
+    /// use termplt::terminal::{Image, Terminal};
+    ///
+    /// let terminal = Terminal::connect()?;
+    /// let (width, height) = (300, 200);
+    /// let mut rgb = vec![0u8; (width * height * 3) as usize];
+    /// let mut placement = terminal.place(&Image::png_from_rgb(&rgb, width, height)?)?;
+    /// for shade in 1..=255 {
+    ///     rgb.fill(shade); // fades from black to white
+    ///     placement.replace_rgb(&rgb, width, height)?;
+    /// }
+    /// # Ok::<(), termplt::Error>(())
+    /// ```
+    pub fn place(&self, image: &Image) -> Result<Placement> {
+        Placement::new(*self, image, Sink::Stdout)
+    }
+}
+
+/// An image shown by [`Terminal::place`], which can be replaced in place.
+///
+/// Each frame reaches the terminal in one write: the new image is sent under a new id while the
+/// old one stays on screen, then shown over it, and then the old one is deleted, so nothing
+/// flickers, even over a slow link. Dropping the handle sends nothing: the last frame stays on
+/// screen with the cursor below it.
+#[derive(Debug)]
+pub struct Placement {
+    terminal: Terminal,
+    rows: u32,
+    width: u32,
+    height: u32,
+    /// The high bits of this placement's image ids, from [`next_block`].
+    block: u32,
+    /// The number of the frame on screen, from 1.
+    frame: u32,
+    sink: Sink,
+}
+
+impl Placement {
+    fn new(terminal: Terminal, image: &Image, mut sink: Sink) -> Result<Placement> {
+        let rows = rows_covered(image.height(), &terminal.window);
+        let screen_rows = terminal.window.rows;
+        // the image must fit on the screen below the cursor's line, with a line left for the
+        // cursor, or moving up to redraw it would stop at the top of the screen
+        if rows > screen_rows.saturating_sub(1) {
+            return Err(Error::ImageTooTall { rows, screen_rows });
+        }
+        let block = next_block();
+        let first = frame_id(block, 1);
+        sink.send(&frame_bytes(image, first, None, rows, terminal.passthrough))?;
+        Ok(Placement {
+            terminal,
+            rows,
+            width: image.width(),
+            height: image.height(),
+            block,
+            frame: 1,
+            sink,
+        })
+    }
+
+    /// Replaces the image with `image`, which must have the same size in pixels (else
+    /// [`Error::PlacementSize`]). Write errors, such as a closed terminal, are [`Error::Io`].
+    pub fn replace(&mut self, image: &Image) -> Result<()> {
+        self.check_size(image.width(), image.height())?;
+        let next = self.frame.wrapping_add(1);
+        let bytes = frame_bytes(
+            image,
+            frame_id(self.block, next),
+            Some(frame_id(self.block, self.frame)),
+            self.rows,
+            self.terminal.passthrough,
+        );
+        self.sink.send(&bytes)?;
+        // only once it was sent, so the next frame deletes the image that is on screen
+        self.frame = next;
+        Ok(())
+    }
+
+    /// PNG-encodes RGB8 pixels (`width * height * 3` bytes) and replaces the image with them,
+    /// like [`Placement::replace`].
+    pub fn replace_rgb(&mut self, rgb: &[u8], width: u32, height: u32) -> Result<()> {
+        // before encoding, which is most of the work
+        self.check_size(width, height)?;
+        self.replace(&Image::png_from_rgb(rgb, width, height)?)
+    }
+
+    /// The image size in pixels, as (width, height).
+    pub fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    /// The number of terminal lines the image covers.
+    pub fn rows(&self) -> u32 {
+        self.rows
+    }
+
+    fn check_size(&self, width: u32, height: u32) -> Result<()> {
+        if (width, height) == self.size() {
+            Ok(())
+        } else {
+            Err(Error::PlacementSize {
+                expected: self.size(),
+                got: (width, height),
+            })
+        }
+    }
+}
+
+/// Where a [`Placement`] writes its frames.
+#[derive(Debug)]
+enum Sink {
+    Stdout,
+    /// Keeps the bytes, for tests.
+    #[cfg(test)]
+    Buffer(Vec<u8>),
+    /// Fails every write, as a closed terminal does.
+    #[cfg(test)]
+    Closed,
+}
+
+impl Sink {
+    /// Writes one frame with a single `write_all`, then flushes it.
+    fn send(&mut self, frame: &[u8]) -> io::Result<()> {
+        match self {
+            Sink::Stdout => {
+                let mut stdout = io::stdout().lock();
+                stdout.write_all(frame)?;
+                stdout.flush()
+            }
+            #[cfg(test)]
+            Sink::Buffer(buffer) => {
+                buffer.extend_from_slice(frame);
+                Ok(())
+            }
+            #[cfg(test)]
+            Sink::Closed => Err(io::ErrorKind::BrokenPipe.into()),
+        }
+    }
+}
+
+/// The bytes of one frame of a [`Placement`] covering `rows` lines, which shows `image` under
+/// `id` and leaves the cursor at the start of the line below it. Only the graphics commands are
+/// wrapped for `passthrough`; the newlines and cursor moves are written plainly, so tmux keeps
+/// track of the cursor.
+///
+/// The first frame (no `previous` id) starts on the cursor's line: it reserves the lines below
+/// it, scrolling if needed, and goes back up to show the image with its top-left corner at the
+/// start of that line. A later frame starts below the image it replaces: the new image is sent
+/// while the old one stays on screen, shown over it, and then the old one (`previous`) is
+/// deleted with its data.
+fn frame_bytes(
+    image: &Image,
+    id: u32,
+    previous: Option<u32>,
+    rows: u32,
+    passthrough: Passthrough,
+) -> Vec<u8> {
+    let transmit = image.transmit_command(id, passthrough).into_bytes();
+    let mut bytes = Vec::with_capacity(transmit.len() + 256);
+    match previous {
+        None => {
+            bytes.push(b'\r');
+            bytes.extend(std::iter::repeat_n(b'\n', rows as usize));
+            bytes.extend(csi_cmds::cursor_up(rows));
+            bytes.extend(transmit);
+        }
+        Some(_) => {
+            bytes.extend(transmit);
+            bytes.extend(csi_cmds::cursor_up(rows));
+        }
+    }
+    bytes.extend(image.put_command(id, passthrough).into_bytes());
+    if let Some(previous) = previous {
+        bytes.extend(delete_image_command(previous, true, passthrough).into_bytes());
+    }
+    bytes.extend(csi_cmds::cursor_down(rows));
+    bytes
+}
+
+/// Counts placements; seeded from the process id, so that two programs drawing in one terminal
+/// (such as tmux panes) seldom use the same image ids.
+static PLACEMENTS: LazyLock<AtomicU32> = LazyLock::new(|| AtomicU32::new(std::process::id()));
+
+/// The id block (1 to 255) of a new placement.
+fn next_block() -> u32 {
+    id_block(PLACEMENTS.fetch_add(1, Ordering::Relaxed))
+}
+
+fn id_block(count: u32) -> u32 {
+    1 + count % 255
+}
+
+/// The image id of frame `frame` (from 1) of the placement with id block `block`: the block
+/// above the low 16 bits, which hold the frame number and wrap after 65535 frames. Ids are
+/// never 0, stay below 2^24 (the most that Unicode placeholders can name), and rise from frame
+/// to frame, so a new frame is on top for the instant that both frames are on screen.
+fn frame_id(block: u32, frame: u32) -> u32 {
+    (block << 16) | (frame % 0x1_0000)
 }
 
 fn default_plot_size(window: &WindowSize) -> (u32, u32) {
@@ -293,6 +515,22 @@ impl Terminal {
         Terminal {
             window,
             passthrough: Passthrough::None,
+        }
+    }
+
+    /// Like [`Terminal::place`], keeping what would be written; see [`Placement::written`].
+    pub(crate) fn place_in_buffer(&self, image: &Image) -> Result<Placement> {
+        Placement::new(*self, image, Sink::Buffer(Vec::new()))
+    }
+}
+
+#[cfg(test)]
+impl Placement {
+    /// Everything written so far by a placement from [`Terminal::place_in_buffer`].
+    pub(crate) fn written(&self) -> &[u8] {
+        match &self.sink {
+            Sink::Buffer(buffer) => buffer,
+            _ => panic!("the placement writes to {:?}", self.sink),
         }
     }
 }
@@ -565,6 +803,281 @@ mod tests {
         assert_eq!(size(500, 1000), (490, 600));
         // tiny terminal: minimum size
         assert_eq!(size(100, 100), MIN_PLOT_SIZE);
+    }
+
+    // -- placements --
+
+    /// A raw RGB image, whose commands are easy to write out: 1x1 is one chunk (`AAAA`).
+    fn rgb_image(width: u32, height: u32) -> Image {
+        Image::new(
+            PixelFormat::Rgb { width, height },
+            Transmission::Direct(vec![0; (width * height * 3) as usize]),
+        )
+        .unwrap()
+    }
+
+    /// Wraps one escape sequence in a tmux passthrough, doubling its escapes.
+    fn tmux_wrapped(seq: &[u8]) -> Vec<u8> {
+        let mut out = b"\x1bPtmux;".to_vec();
+        for &b in seq {
+            if b == 0x1b {
+                out.push(0x1b);
+            }
+            out.push(b);
+        }
+        out.extend_from_slice(b"\x1b\\");
+        out
+    }
+
+    fn count(haystack: &[u8], needle: &[u8]) -> usize {
+        haystack
+            .windows(needle.len())
+            .filter(|w| w == &needle)
+            .count()
+    }
+
+    #[test]
+    fn the_first_frame_reserves_the_lines_and_shows_the_image_at_their_start() {
+        let bytes = frame_bytes(&rgb_image(1, 1), 65537, None, 3, Passthrough::None);
+        assert_eq!(
+            bytes,
+            b"\r\n\n\n\x1b[3A\
+              \x1b_Ga=t,f=24,s=1,v=1,t=d,i=65537,q=2,m=0;AAAA\x1b\\\
+              \x1b_Ga=p,i=65537,C=1,q=2\x1b\\\
+              \x1b[3B"
+        );
+    }
+
+    #[test]
+    fn a_later_frame_is_sent_first_and_deletes_the_one_it_covers() {
+        let bytes = frame_bytes(&rgb_image(1, 1), 65538, Some(65537), 3, Passthrough::None);
+        assert_eq!(
+            bytes,
+            b"\x1b_Ga=t,f=24,s=1,v=1,t=d,i=65538,q=2,m=0;AAAA\x1b\\\
+              \x1b[3A\
+              \x1b_Ga=p,i=65538,C=1,q=2\x1b\\\
+              \x1b_Ga=d,d=I,i=65537,q=2\x1b\\\
+              \x1b[3B"
+        );
+    }
+
+    #[test]
+    fn frames_in_tmux_wrap_only_the_graphics_commands() {
+        let image = rgb_image(1, 1);
+        let transmit = |id| {
+            tmux_wrapped(format!("\x1b_Ga=t,f=24,s=1,v=1,t=d,i={id},q=2,m=0;AAAA\x1b\\").as_bytes())
+        };
+        let put = |id| tmux_wrapped(format!("\x1b_Ga=p,i={id},C=1,q=2\x1b\\").as_bytes());
+
+        let mut first = b"\r\n\n\x1b[2A".to_vec();
+        first.extend(transmit(65537));
+        first.extend(put(65537));
+        first.extend(b"\x1b[2B");
+        assert_eq!(
+            frame_bytes(&image, 65537, None, 2, Passthrough::Tmux),
+            first
+        );
+
+        let mut next = transmit(65538);
+        next.extend(b"\x1b[2A");
+        next.extend(put(65538));
+        next.extend(tmux_wrapped(b"\x1b_Ga=d,d=I,i=65537,q=2\x1b\\"));
+        next.extend(b"\x1b[2B");
+        assert_eq!(
+            frame_bytes(&image, 65538, Some(65537), 2, Passthrough::Tmux),
+            next
+        );
+    }
+
+    #[test]
+    fn frames_send_every_chunk_of_a_large_image() {
+        // 2049 * 3 bytes are 8196 base64 characters: chunks of 4096, 4096 and 4
+        let image = rgb_image(2049, 1);
+        for passthrough in [Passthrough::None, Passthrough::Tmux] {
+            let transmit = image.transmit_command(9, passthrough).into_bytes();
+            assert_eq!(count(&transmit, b"m=1;"), 2);
+            assert_eq!(count(&transmit, b"m=0;"), 1);
+            let wrapped = match passthrough {
+                Passthrough::None => 0,
+                Passthrough::Tmux => 3,
+            };
+            assert_eq!(count(&transmit, b"\x1bPtmux;"), wrapped);
+
+            let put = image.put_command(9, passthrough).into_bytes();
+            let mut first = b"\r\n\n\n\n\x1b[4A".to_vec();
+            first.extend(&transmit);
+            first.extend(&put);
+            first.extend(b"\x1b[4B");
+            assert_eq!(frame_bytes(&image, 9, None, 4, passthrough), first);
+
+            let mut next = transmit.clone();
+            next.extend(b"\x1b[4A");
+            next.extend(&put);
+            next.extend(delete_image_command(8, true, passthrough).into_bytes());
+            next.extend(b"\x1b[4B");
+            assert_eq!(frame_bytes(&image, 9, Some(8), 4, passthrough), next);
+        }
+    }
+
+    #[test]
+    fn id_blocks_come_from_the_counter() {
+        assert_eq!(id_block(0), 1);
+        assert_eq!(id_block(254), 255);
+        assert_eq!(id_block(255), 1);
+        assert_eq!(id_block(u32::MAX), 1); // a multiple of 255
+        // other tests take blocks too, but far fewer than 255 in between
+        let (a, b) = (next_block(), next_block());
+        assert!((1..=255).contains(&a) && (1..=255).contains(&b));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn frame_ids_are_non_zero_below_2_pow_24_and_rise() {
+        for block in [1, 2, 128, 255] {
+            for frame in [0, 1, 2, 65535, 65536, 65537, u32::MAX] {
+                let id = frame_id(block, frame);
+                assert!(id != 0 && id < 1 << 24, "block {block} frame {frame}: {id}");
+                assert_eq!(id >> 16, block);
+            }
+            assert!((1..65535).all(|k| frame_id(block, k) < frame_id(block, k + 1)));
+            // after 65535 frames they wrap
+            assert!(frame_id(block, 65536) < frame_id(block, 65535));
+            assert_eq!(frame_id(block, 65537), frame_id(block, 1));
+        }
+        assert_eq!(frame_id(255, 65535), (1 << 24) - 1);
+    }
+
+    #[test]
+    fn a_placement_shows_the_image_then_replaces_it() {
+        let terminal = Terminal::with_window(window());
+        let image = rgb_image(30, 45); // 3 rows of 20 px
+        let mut placement = terminal.place_in_buffer(&image).unwrap();
+        assert_eq!(placement.size(), (30, 45));
+        assert_eq!(placement.rows(), rows_covered(45, terminal.window()));
+        assert_eq!(placement.rows(), 3);
+        let first = frame_id(placement.block, 1);
+        assert_eq!(
+            placement.written(),
+            frame_bytes(&image, first, None, 3, Passthrough::None)
+        );
+
+        placement.replace(&image).unwrap();
+        placement.replace(&image).unwrap();
+        let mut expected = frame_bytes(&image, first, None, 3, Passthrough::None);
+        expected.extend(frame_bytes(
+            &image,
+            first + 1,
+            Some(first),
+            3,
+            Passthrough::None,
+        ));
+        expected.extend(frame_bytes(
+            &image,
+            first + 2,
+            Some(first + 1),
+            3,
+            Passthrough::None,
+        ));
+        assert_eq!(placement.written(), expected);
+        assert_eq!(count(placement.written(), b"a=t,"), 3);
+        assert_eq!(count(placement.written(), b"a=d,"), 2);
+    }
+
+    #[test]
+    fn replace_rgb_sends_a_png() {
+        let terminal = Terminal::with_window(window());
+        let mut placement = terminal.place_in_buffer(&rgb_image(4, 2)).unwrap();
+        placement.replace_rgb(&[255; 4 * 2 * 3], 4, 2).unwrap();
+        let id = frame_id(placement.block, 2);
+        let png = Image::png_from_rgb(&[255; 4 * 2 * 3], 4, 2).unwrap();
+        assert!(placement.written().ends_with(&frame_bytes(
+            &png,
+            id,
+            Some(id - 1),
+            1,
+            Passthrough::None
+        )));
+    }
+
+    #[test]
+    fn frame_ids_wrap_in_a_long_running_placement() {
+        let terminal = Terminal::with_window(window());
+        let image = rgb_image(1, 1);
+        let mut placement = terminal.place_in_buffer(&image).unwrap();
+        placement.frame = 65535;
+        placement.replace(&image).unwrap();
+        let block = placement.block << 16;
+        assert!(placement.written().ends_with(&frame_bytes(
+            &image,
+            block,
+            Some(block | 65535),
+            1,
+            Passthrough::None
+        )));
+    }
+
+    #[test]
+    fn a_replacement_of_another_size_is_an_error() {
+        let terminal = Terminal::with_window(window());
+        let mut placement = terminal.place_in_buffer(&rgb_image(30, 45)).unwrap();
+        let written = placement.written().len();
+        let err = placement.replace(&rgb_image(30, 46)).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::PlacementSize {
+                expected: (30, 45),
+                got: (30, 46)
+            }
+        ));
+        assert_eq!(
+            err.to_string(),
+            "the new image is 30x46 pixels, but the image it replaces is 30x45; every frame \
+             must have the same size"
+        );
+        // checked before the pixels are looked at
+        let err = placement.replace_rgb(&[], 31, 45).unwrap_err();
+        assert!(matches!(err, Error::PlacementSize { got: (31, 45), .. }));
+        assert_eq!(placement.written().len(), written);
+        assert_eq!(placement.frame, 1);
+    }
+
+    #[test]
+    fn an_image_needs_a_line_to_spare_for_the_cursor() {
+        // 50 rows of 20 px: 49 rows fit
+        let terminal = Terminal::with_window(window());
+        assert_eq!(
+            terminal.place_in_buffer(&rgb_image(1, 980)).unwrap().rows(),
+            49
+        );
+        let err = terminal.place_in_buffer(&rgb_image(1, 981)).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::ImageTooTall {
+                rows: 50,
+                screen_rows: 50
+            }
+        ));
+        assert!(err.to_string().contains("50 lines tall"), "{err}");
+    }
+
+    #[test]
+    fn write_errors_are_io_errors_and_keep_the_frame() {
+        let terminal = Terminal::with_window(window());
+        let image = rgb_image(1, 1);
+        let err = Placement::new(terminal, &image, Sink::Closed).unwrap_err();
+        assert!(matches!(err, Error::Io(ref e) if e.kind() == io::ErrorKind::BrokenPipe));
+
+        let mut placement = terminal.place_in_buffer(&image).unwrap();
+        placement.sink = Sink::Closed;
+        assert!(matches!(placement.replace(&image), Err(Error::Io(_))));
+        // the next frame still deletes the image on screen
+        assert_eq!(placement.frame, 1);
+    }
+
+    #[test]
+    fn placements_are_send_and_sync() {
+        fn check<T: Send + Sync + 'static>() {}
+        check::<Placement>();
     }
 
     #[test]

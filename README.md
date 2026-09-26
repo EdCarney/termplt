@@ -16,6 +16,7 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 - **Axis limits** — optionally constrain x/y ranges with automatic point clipping
 - **Configurable canvas** — set dimensions, background color, and buffer padding
 - **TrueType text** — an embedded, anti-aliased Go font covering Latin-1, Greek and common math symbols; load your own font for other scripts
+- **Live plots** — `plot.show_live()?` returns a handle whose `update(&plot)` redraws the plot in place, without flicker, as its data changes
 - **Typed errors** — match on `termplt::Error` (no data, canvas too small, terminal unsupported, ...)
 - **Fast** — a million points render in about 0.1-0.3 s
 
@@ -213,6 +214,31 @@ fn main() -> termplt::Result<()> {
 
 `Plot` draws axes with tick labels and a grid, picks colors from `colors::PALETTE`, and adapts the axes to light backgrounds (`.background(colors::WHITE)`). Other options: `.x_limits(min, max)`, `.y_limits(min, max)`, `.grid(false)`, `.title(..)`, `.x_label(..)`, `.y_label(..)`, `.font(Font::from_bytes(..)?)`, `.font_size(px)`, `.legend(false)`, `.legend_location(LegendLocation::UpperLeft)`, and `.series(s)` for a series with your own styles.
 
+### Live plots
+
+`show_live` draws the plot and returns a `LivePlot`; after changing the data in place with `series_mut`, `update` redraws it over the previous frame:
+
+```rust,no_run
+use std::{thread, time::Duration};
+use termplt::prelude::*;
+
+fn main() -> termplt::Result<()> {
+    let mut plot = Plot::new().line(Series::from(vec![(0.0, 0.0)]).with_label("sin"));
+    let mut live = plot.show_live()?; // the first frame, sized to the terminal
+    for i in 1..=200 {
+        let t = f64::from(i) * 0.05;
+        let sin = &mut plot.series_mut()[0];
+        sin.push(t, t.sin()); // also: extend, clear, data_mut
+        sin.keep_last(100); // a sliding window
+        live.update(&plot)?;
+        thread::sleep(Duration::from_millis(50));
+    }
+    Ok(()) // the last frame stays, with the cursor below it
+}
+```
+
+Every frame has the size and text size of the first. The axes follow the data (a point outside them rescales the axes, ticks and grid) unless you set limits; change those, or the title, with the builders between frames (`plot = plot.x_limits(0.0, 10.0)`). The library never waits between frames, so pacing is up to you. Frames are drawn relative to the cursor, so **nothing else may be written to the terminal while a plot is live**. Each frame is sent under a new image id and drawn over the previous one, which is then deleted: only the base protocol is needed, so it works in Kitty, Ghostty, WezTerm and Konsole, and through tmux. `cargo run --example live` shows it; `Terminal::place` does the same for your own images.
+
 ### Full control
 
 `Plot` is built on lower-level types that you can use directly: `Series` (points and styles), `Graph` (series, axes, grid, limits) and `TerminalCanvas` (pixel size, background, margins).
@@ -279,14 +305,14 @@ Key abstractions:
 
 | Module | Purpose |
 |---|---|
-| `Plot` | One-call builder: series, limits, size, background; `show`, `save_png`, `render` |
+| `Plot` | One-call builder: series, limits, size, background; `show`, `show_live`, `save_png`, `render` |
 | `prelude` | The types most plots need |
 | `plotting::series` | `Series`: data points with marker and line styles, built from any numeric input |
 | `plotting::graph` | `Graph`: series, axes, grid lines and limits |
 | `plotting::legend` | `LegendLocation`: where the legend goes (`Best` by default) |
 | `plotting::canvas` | `TerminalCanvas`: layout (ticks, labels, margins) and rendering to RGB pixels |
 | `plotting::font` | `Font`: the built-in Go font or your own; text is rasterized with `ab_glyph` |
-| `terminal` | `Terminal` (support check, size, tmux handling, display) and `Image` (Kitty protocol) |
+| `terminal` | `Terminal` (support check, size, tmux handling, display), `Placement` (an image replaced in place) and `Image` (Kitty protocol) |
 | `Error` | Everything that can go wrong |
 
 ## Building and Testing

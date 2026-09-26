@@ -1,7 +1,7 @@
 //! The types most plots need: `use termplt::prelude::*;`.
 
 pub use crate::{
-    Error, Plot, Result,
+    Error, LivePlot, Plot, Result,
     plotting::{
         axes::{Axes, AxesPositioning},
         canvas::{BufferType, TerminalCanvas},

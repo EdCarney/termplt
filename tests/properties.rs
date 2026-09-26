@@ -1,6 +1,7 @@
 //! Property tests: rendering must never panic, and scaled data must land inside the plot area.
 
 use proptest::prelude::*;
+use termplt::Plot;
 use termplt::plotting::{
     axes::{Axes, AxesPositioning},
     canvas::{BufferType, TerminalCanvas},
@@ -146,6 +147,24 @@ fn location() -> impl Strategy<Value = LegendLocation> {
     ])
 }
 
+/// A change to a series' data between two frames of a live plot.
+#[derive(Debug, Clone)]
+enum Change {
+    Push(f64, f64),
+    Extend(Vec<(f64, f64)>),
+    KeepLast(usize),
+    Clear,
+}
+
+fn change() -> impl Strategy<Value = Change> {
+    prop_oneof![
+        4 => (any_coord(), any_coord()).prop_map(|(x, y)| Change::Push(x, y)),
+        2 => prop::collection::vec((any_coord(), any_coord()), 0..20).prop_map(Change::Extend),
+        2 => prop_oneof![4 => 0usize..40, 1 => any::<usize>()].prop_map(Change::KeepLast),
+        1 => Just(Change::Clear),
+    ]
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
@@ -276,6 +295,37 @@ proptest! {
                     plot.contains(&Point::new(x, y)),
                     "pixel ({}, {}) changed outside the plot area {:?}", x, y, plot
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn every_frame_of_a_changing_plot_is_drawn_whole(
+        series in prop::collection::vec((series(), prop::option::of(label())), 1..4),
+        changes in prop::collection::vec((any::<prop::sample::Index>(), change()), 0..16),
+        width in 0u32..300,
+        height in 0u32..300,
+        font_size in 1u32..40,
+    ) {
+        let mut plot = Plot::new().font_size(font_size);
+        for (s, label) in series {
+            plot = plot.series(match label {
+                Some(label) => s.with_label(label),
+                None => s,
+            });
+        }
+        for (index, change) in changes {
+            let series = plot.series_mut();
+            let series = &mut series[index.index(series.len())];
+            match change {
+                Change::Push(x, y) => series.push(x, y),
+                Change::Extend(points) => series.extend(points),
+                Change::KeepLast(n) => series.keep_last(n),
+                Change::Clear => series.clear(),
+            }
+            // an error (no data, a canvas too small) is fine; a panic or a short frame is not
+            if let Ok(rgb) = plot.render(width, height) {
+                prop_assert_eq!(rgb.len(), width as usize * height as usize * 3);
             }
         }
     }

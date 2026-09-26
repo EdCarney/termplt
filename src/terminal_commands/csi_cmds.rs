@@ -58,16 +58,12 @@ pub fn set_cursor_pos(row: u32, col: u32) -> Result<()> {
 
 /// The bytes that move the cursor up `rows` rows (`CSI n A`), staying in its column; empty for
 /// zero rows, since most terminals treat `CSI 0 A` as one row.
-// used by live plots (#51)
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn cursor_up(rows: u32) -> Vec<u8> {
     cursor_move(rows, b'A')
 }
 
 /// The bytes that move the cursor down `rows` rows (`CSI n B`), staying in its column; empty
 /// for zero rows, since most terminals treat `CSI 0 B` as one row.
-// used by live plots (#51)
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn cursor_down(rows: u32) -> Vec<u8> {
     cursor_move(rows, b'B')
 }
