@@ -4,7 +4,10 @@ use super::{
     common::FloatConvertable,
     font::{Coverage, Font},
     graph::Graph,
+    legend::{self, Entry, LegendLocation, TextSize},
     limits::Limits,
+    line::{LineStamp, draw_segment},
+    marker::{draw_marker, marker_stamp},
     point::Point,
     srgb,
     text::{DEFAULT_FONT_SIZE, Label, MAX_FONT_SIZE, TextPositioning, wrap},
@@ -382,6 +385,8 @@ impl TerminalCanvas {
             for series in scaled_graph.data() {
                 series.draw_into(&mut self.canvas)?;
             }
+            // the legend goes over the series, and its text is drawn with the rest
+            texts.extend(self.draw_legend(&graph, &scaled_graph, &layout.plot)?);
             texts.extend(layout.into_texts());
         }
 
@@ -440,6 +445,108 @@ impl TerminalCanvas {
             style.color()
         };
         (color, style.size().unwrap_or(self.font_size))
+    }
+
+    /// Draws the legend's frame and samples, and returns its text for drawing with the rest.
+    /// Nothing is drawn when the legend is hidden, no series has a label, or it doesn't fit.
+    /// `scaled` is `graph` in canvas pixels.
+    fn draw_legend(
+        &mut self,
+        graph: &Graph,
+        scaled: &Graph,
+        plot: &Limits<u32>,
+    ) -> Result<Vec<PlacedText>> {
+        let entries = Entry::from_series(graph.data());
+        if !graph.legend_visible() || entries.is_empty() {
+            return Ok(Vec::new());
+        }
+        // the legend's text looks like the tick labels
+        let (color, size) = self.label_style(graph.axes());
+        let font = self.font.clone();
+        let metrics = font.metrics(size);
+        let text = TextSize {
+            size,
+            line_height: metrics.height(),
+            digit_center: (metrics.ascent - metrics.digit_height / 2.0).round() as u32,
+        };
+        let (plot_w, plot_h) = (
+            plot.max().x - plot.min().x + 1,
+            plot.max().y - plot.min().y + 1,
+        );
+        let Some(legend) = legend::build(&entries, text, |s| font.width(s, size), plot_w, plot_h)
+        else {
+            return Ok(Vec::new());
+        };
+
+        let pad = legend::em(legend::BORDER_AXES_PAD, size);
+        let place = |location| legend::candidate(location, plot, legend.width, legend.height, pad);
+        let bbox = match graph.legend_location() {
+            LegendLocation::Best => {
+                let candidates = LegendLocation::FIXED.map(&place);
+                candidates[legend::best(&candidates, scaled.data())].clone()
+            }
+            location => place(location),
+        };
+        let (left, top) = (bbox.min().x, bbox.max().y);
+
+        // the frame: the background with a light edge, 80% opaque over the data
+        let frame = legend::frame(
+            legend.width,
+            legend.height,
+            legend::em(legend::CORNER_RADIUS, size),
+        );
+        let edge = legend::edge_color(self.background, color);
+        for row in 0..legend.height {
+            for col in 0..legend.width {
+                let i = (row * legend.width + col) as usize;
+                let (x, y) = (left + col, top - row);
+                self.canvas
+                    .blend(x, y, self.background, legend::alpha(frame.fill[i]));
+                self.canvas.blend(x, y, edge, legend::alpha(frame.edge[i]));
+            }
+        }
+
+        // samples drawn like their series (markers, then the line), then the text
+        let sample_left = left + legend.sample_left;
+        let sample_right = sample_left + legend.sample_width - 1;
+        let text_left = left + legend.text_left;
+        let mut texts = Vec::new();
+        for row in &legend.rows {
+            if let Some(sample) = &row.sample {
+                let y = top - sample.center;
+                if let Some(marker_color) = sample.marker.color() {
+                    let stamp = marker_stamp(&sample.marker)?;
+                    let center = Point::new(sample_left + (legend.sample_width - 1) / 2, y);
+                    draw_marker(&mut self.canvas, center, &stamp, marker_color);
+                }
+                if let Some(line) = &sample.line {
+                    // the line's whole stamp stays inside the sample column
+                    let t = line.thickness();
+                    let ends = (
+                        Point::new(sample_left + t, y),
+                        Point::new(sample_right - t, y),
+                    );
+                    draw_segment(
+                        &mut self.canvas,
+                        ends,
+                        line,
+                        &LineStamp::new(line),
+                        &mut None,
+                    );
+                }
+            }
+            for (line, line_top) in &row.text {
+                texts.push(PlacedText::new(
+                    &font,
+                    line,
+                    size,
+                    color,
+                    text_left,
+                    top - line_top,
+                ));
+            }
+        }
+        Ok(texts)
     }
 
     /// Lays out the graph. Text that normally shares a line (the title and the y offset, the x
@@ -848,7 +955,102 @@ fn horizontal_gap(a: &Limits<u32>, b: &Limits<u32>) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plotting::{colors, marker::MarkerStyle, series::Series, text::TextStyle};
+    use crate::plotting::{
+        colors, legend::LegendLocation, marker::MarkerStyle, series::Series, text::TextStyle,
+    };
+
+    #[test]
+    fn a_hidden_legend_draws_nothing() {
+        let data = vec![(0.0, 0.0), (1.0, 2.0), (2.0, 1.0)];
+        let draw = |graph: Graph| {
+            TerminalCanvas::new(300, 200, colors::BLACK)
+                .with_graph(graph)
+                .draw()
+                .unwrap()
+                .into_bytes()
+        };
+        let plain = draw(Graph::new().with_series(Series::from(data.clone())));
+        let labeled = Graph::new().with_series(Series::from(data).with_label("data"));
+        assert_ne!(draw(labeled.clone()), plain);
+        assert_eq!(draw(labeled.with_legend(false)), plain);
+    }
+
+    #[test]
+    fn the_legend_leaves_the_plot_area_alone() {
+        let data = vec![(0.0, 0.0), (1.0, 2.0), (2.0, 1.0)];
+        let area = |series: Series| {
+            TerminalCanvas::new(300, 200, colors::BLACK)
+                .with_graph(Graph::new().with_series(series))
+                .get_drawable_limits()
+                .unwrap()
+        };
+        assert_eq!(
+            area(Series::from(data.clone()).with_label("data")),
+            area(Series::from(data))
+        );
+    }
+
+    #[test]
+    fn a_fixed_location_puts_the_frame_there() {
+        // white on white, no axes: only the legend shows
+        let series = Series::from(vec![(0.0, 0.0), (9.0, 0.5), (10.0, 1.0)]).with_label("data");
+        let graph = Graph::new()
+            .with_series(series)
+            .with_legend_location(LegendLocation::UpperLeft);
+        let canvas = TerminalCanvas::new(400, 300, colors::WHITE).with_graph(graph);
+        let plot = canvas.get_drawable_limits().unwrap();
+        let bytes = canvas.draw().unwrap().into_bytes();
+        let pixel = |x: u32, y: u32| {
+            let i = (((299 - y) * 400 + x) * 3) as usize;
+            [bytes[i], bytes[i + 1], bytes[i + 2]]
+        };
+        // 0.5 em (7 px) in from the plot's upper left corner
+        let (left, top) = (plot.min().x + 7, plot.max().y - 7);
+        // the top edge, past the rounded corner: #cccccc at 80% over white
+        assert_eq!(pixel(left + 10, top), [srgb::blend(255, 204, 204); 3]);
+        // just outside the frame
+        assert_eq!(pixel(left + 10, top + 1), [255; 3]);
+        assert_eq!(pixel(left - 1, top - 10), [255; 3]);
+    }
+
+    #[test]
+    fn best_matches_the_location_it_picks() {
+        // points up the right edge: the upper right is taken, the upper left is free
+        let points: Vec<(f64, f64)> = (0..=10)
+            .map(|i| (10.0, f64::from(i)))
+            .chain([(0.0, 0.0)])
+            .collect();
+        let draw = |location| {
+            let series = Series::from(points.clone()).with_label("data");
+            TerminalCanvas::new(400, 300, colors::BLACK)
+                .with_graph(
+                    Graph::new()
+                        .with_series(series)
+                        .with_legend_location(location),
+                )
+                .draw()
+                .unwrap()
+                .into_bytes()
+        };
+        let best = draw(LegendLocation::Best);
+        assert_eq!(best, draw(LegendLocation::UpperLeft));
+        assert_ne!(best, draw(LegendLocation::UpperRight));
+    }
+
+    #[test]
+    fn legend_text_is_drawn_over_the_frame() {
+        // a labeled series that draws nothing: only the legend's text can be dark; under the
+        // 80% white frame it would be light gray
+        let series = Series::from(vec![(0.0, 0.0), (10.0, 1.0)])
+            .with_marker_style(MarkerStyle::None)
+            .with_label("text");
+        let bytes = TerminalCanvas::new(400, 300, colors::WHITE)
+            .with_graph(Graph::new().with_series(series))
+            .draw()
+            .unwrap()
+            .into_bytes();
+        assert!(bytes.iter().any(|&b| b < 64));
+    }
 
     #[test]
     fn blend_mixes_into_one_pixel() {
