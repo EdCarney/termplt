@@ -136,11 +136,79 @@ fn is_missing(token: &str) -> bool {
     MISSING.iter().any(|m| token.eq_ignore_ascii_case(m))
 }
 
+/// A data row: its 1-based line number and its fields.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Row {
+    pub line: usize,
+    pub fields: Vec<String>,
+}
+
+/// Reads a delimited table one line at a time, with the rules of `Table::parse`.
+#[derive(Debug, Default)]
+pub struct TableReader {
+    header: Option<Vec<String>>,
+    /// The field count of the header or the first data row; `None` until one has been read.
+    width: Option<usize>,
+    /// The number of lines read so far.
+    lines: usize,
+}
+
+impl TableReader {
+    pub fn new() -> TableReader {
+        TableReader::default()
+    }
+
+    /// Feeds one line (without its terminator). Returns the data row it holds, or `None` for a
+    /// blank line, a `#` comment, or the header.
+    pub fn push_line(&mut self, line: &str) -> Option<Row> {
+        self.lines += 1;
+        // spreadsheet exports often start with a BOM, which would make the first row look
+        // like a header
+        let line = match self.lines {
+            1 => line.strip_prefix('\u{feff}').unwrap_or(line),
+            _ => line,
+        };
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            return None;
+        }
+        let fields = split_fields(trimmed);
+        if self.width.is_none() {
+            self.width = Some(fields.len());
+            // the first row is a header if any of its fields is neither a number nor a
+            // missing value
+            if fields
+                .iter()
+                .any(|f| !is_missing(f) && f.parse::<f64>().is_err())
+            {
+                self.header = Some(fields);
+                return None;
+            }
+        }
+        Some(Row {
+            line: self.lines,
+            fields,
+        })
+    }
+
+    /// The header, once the first non-blank, non-comment line has been seen and was one.
+    pub fn header(&self) -> Option<&[String]> {
+        self.header.as_deref()
+    }
+
+    /// The field count of the header, or of the first data row (for the single-column rule).
+    // `Table` keeps its widest-row width, so until `--follow` (#52) only tests call this
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn width(&self) -> Option<usize> {
+        self.width
+    }
+}
+
 /// A delimited table: an optional header and the data rows with their 1-based line numbers.
 #[derive(Debug)]
 pub struct Table {
     pub header: Option<Vec<String>>,
-    pub rows: Vec<(usize, Vec<String>)>,
+    pub rows: Vec<Row>,
 }
 
 impl Table {
@@ -148,147 +216,183 @@ impl Table {
     /// is skipped, and blank lines and lines starting with '#' are ignored. The first row is a
     /// header if any of its fields is neither a number nor a missing value.
     pub fn parse(content: &str) -> Table {
-        // spreadsheet exports often start with a BOM, which would make the first row look
-        // like a header
-        let content = content.strip_prefix('\u{feff}').unwrap_or(content);
-        let mut rows: Vec<(usize, Vec<String>)> = content
+        let mut reader = TableReader::new();
+        let rows = content
             .lines()
-            .enumerate()
-            .filter(|(_, line)| {
-                let line = line.trim();
-                !line.is_empty() && !line.starts_with('#')
-            })
-            .map(|(i, line)| (i + 1, split_fields(line)))
+            .filter_map(|line| reader.push_line(line))
             .collect();
-
-        let has_header = rows.first().is_some_and(|(_, fields)| {
-            fields
-                .iter()
-                .any(|f| !is_missing(f) && f.parse::<f64>().is_err())
-        });
-        let header = if has_header {
-            Some(rows.remove(0).1)
-        } else {
-            None
-        };
-        Table { header, rows }
+        Table {
+            header: reader.header().map(<[String]>::to_vec),
+            rows,
+        }
     }
 
+    /// The field count of the widest data row.
+    ///
+    /// This is the one rule a stream cannot follow: `TableReader::width` knows only the header
+    /// or the first data row. The two differ only for ragged tables (a two-field header over
+    /// one-field rows, or a one-field first row followed by wider ones), where they can disagree
+    /// about the single-column rule. A whole table keeps the widest row so that its output does
+    /// not change.
     fn width(&self) -> usize {
-        self.rows.iter().map(|(_, r)| r.len()).max().unwrap_or(0)
-    }
-
-    fn resolve(&self, column: &Column, source: &str) -> Result<Column> {
-        match column {
-            Column::Name(name) => {
-                let Some(header) = &self.header else {
-                    return Err(format!(
-                        "{source} has no header row, so column '{name}' cannot be found; use a \
-                         1-based column number instead"
-                    )
-                    .into());
-                };
-                header
-                    .iter()
-                    .position(|h| h.eq_ignore_ascii_case(name))
-                    .map(Column::Index)
-                    .ok_or_else(|| {
-                        format!(
-                            "{source} has no column '{name}'; available columns: {}",
-                            header.join(", ")
-                        )
-                        .into()
-                    })
-            }
-            other => Ok(other.clone()),
-        }
-    }
-
-    /// The header text of a resolved column; `None` for the row number, a table without a
-    /// header, or an empty header cell.
-    fn header_name(&self, column: &Column) -> Option<String> {
-        let Column::Index(i) = column else {
-            return None;
-        };
-        let name = self.header.as_ref()?.get(*i)?.trim();
-        (!name.is_empty()).then(|| name.to_string())
-    }
-
-    fn column_label(&self, column: &Column) -> String {
-        match column {
-            Column::Index(i) => match self.header.as_ref().and_then(|h| h.get(*i)) {
-                Some(name) => format!("'{name}'"),
-                None => format!("{}", i + 1),
-            },
-            Column::Name(name) => format!("'{name}'"),
-            Column::RowNumber => "index".to_string(),
-        }
+        self.rows.iter().map(|r| r.fields.len()).max().unwrap_or(0)
     }
 
     /// Extracts (x, y) points. Without an x column, a single-column table is plotted against
     /// the row number and wider tables use column 1 for x (and column 2 for y by default).
     pub fn points(&self, x: Option<&Column>, y: Option<&Column>, source: &str) -> Result<Parsed> {
-        let single_column = self.width() == 1;
-        let x = match x {
-            Some(x) => self.resolve(x, source)?,
-            // the only column is y, whether chosen or not
-            None if single_column => Column::RowNumber,
-            None => Column::Index(0),
-        };
-        let y = match y {
-            Some(y) => self.resolve(y, source)?,
-            None if single_column => Column::Index(0),
-            None => Column::Index(1),
-        };
-        if y == Column::RowNumber {
-            return Err("the y column cannot be 'index'".into());
-        }
-        let Column::Index(y_index) = &y else {
-            unreachable!("names are resolved to indices")
-        };
-        let y_column = y_index + 1;
-
+        let columns = Columns::resolve(self.header.as_deref(), self.width(), x, y, source)?;
         let mut parsed = Parsed {
-            names: ColumnNames {
-                x: self.header_name(&x),
-                y: self.header_name(&y),
-            },
-            y_column,
+            names: columns.names.clone(),
+            y_column: columns.y_column,
             ..Parsed::default()
         };
-        for (row_number, (line, fields)) in self.rows.iter().enumerate() {
-            let value = |column: &Column, axis: &str| -> Result<Option<f64>> {
-                let token = match column {
-                    Column::RowNumber => return Ok(Some(row_number as f64)),
-                    Column::Index(i) => fields.get(*i).ok_or_else(|| {
-                        format!(
-                            "{source}:{line}: {axis} column {} is missing (the row has {} \
-                             field(s))",
-                            self.column_label(column),
-                            fields.len()
-                        )
-                    })?,
-                    Column::Name(_) => unreachable!("names are resolved to indices"),
-                };
-                if is_missing(token) {
-                    return Ok(None);
-                }
-                token.parse::<f64>().map(Some).map_err(|_| {
-                    format!(
-                        "{source}:{line}: cannot parse {axis} value '{token}' (column {}) as a \
-                         number",
-                        self.column_label(column)
-                    )
-                    .into()
-                })
-            };
-            match (value(&x, "x")?, value(&y, "y")?) {
-                (Some(x), Some(y)) => parsed.points.push(Point::new(x, y)),
-                _ => parsed.skipped_missing += 1,
+        for (row_number, row) in self.rows.iter().enumerate() {
+            match columns.point(row_number, row, source)? {
+                Some(point) => parsed.points.push(point),
+                None => parsed.skipped_missing += 1,
             }
         }
         Ok(parsed)
     }
+}
+
+/// A resolved table column: its field index and how error messages name it.
+#[derive(Debug, Clone, PartialEq)]
+struct Field {
+    /// Zero-based field index.
+    index: usize,
+    /// The quoted header name, or the 1-based index when the header has none.
+    label: String,
+}
+
+impl Field {
+    fn new(header: Option<&[String]>, index: usize) -> Field {
+        let label = match header.and_then(|h| h.get(index)) {
+            Some(name) => format!("'{name}'"),
+            None => format!("{}", index + 1),
+        };
+        Field { index, label }
+    }
+
+    /// The field's value in `row`: `None` for a missing value, an error for a missing field or
+    /// a value that is not a number.
+    fn value(&self, row: &Row, axis: &str, source: &str) -> Result<Option<f64>> {
+        let line = row.line;
+        let Some(token) = row.fields.get(self.index) else {
+            return Err(format!(
+                "{source}:{line}: {axis} column {} is missing (the row has {} field(s))",
+                self.label,
+                row.fields.len()
+            )
+            .into());
+        };
+        if is_missing(token) {
+            return Ok(None);
+        }
+        token.parse::<f64>().map(Some).map_err(|_| {
+            format!(
+                "{source}:{line}: cannot parse {axis} value '{token}' (column {}) as a number",
+                self.label
+            )
+            .into()
+        })
+    }
+}
+
+/// Resolved x and y columns of a source, with the names they take from the header.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Columns {
+    /// The x column, or `None` for the row number.
+    x: Option<Field>,
+    y: Field,
+    pub names: ColumnNames,
+    /// The y column's 1-based index.
+    pub y_column: usize,
+}
+
+impl Columns {
+    /// Resolves the requested columns against a header (if any) and the table width. Without an
+    /// x column, a single-column table is plotted against the row number and wider tables use
+    /// column 1 for x (and column 2 for y by default).
+    pub fn resolve(
+        header: Option<&[String]>,
+        width: usize,
+        x: Option<&Column>,
+        y: Option<&Column>,
+        source: &str,
+    ) -> Result<Columns> {
+        let single_column = width == 1;
+        let x = match x {
+            Some(x) => field_index(header, x, source)?,
+            // the only column is y, whether chosen or not
+            None if single_column => None,
+            None => Some(0),
+        };
+        let y = match y {
+            Some(y) => field_index(header, y, source)?,
+            None if single_column => Some(0),
+            None => Some(1),
+        };
+        let Some(y) = y else {
+            return Err("the y column cannot be 'index'".into());
+        };
+        Ok(Columns {
+            x: x.map(|x| Field::new(header, x)),
+            y: Field::new(header, y),
+            names: ColumnNames {
+                x: x.and_then(|x| header_name(header, x)),
+                y: header_name(header, y),
+            },
+            y_column: y + 1,
+        })
+    }
+
+    /// One row's point: `Ok(None)` when x or y is a missing value (the caller counts it), and
+    /// an error naming the source and line for a missing field or a value that is not a number.
+    /// `row_number` is the zero-based index of the data row, the x value of `Column::RowNumber`.
+    pub fn point(&self, row_number: usize, row: &Row, source: &str) -> Result<Option<Point<f64>>> {
+        let x = match &self.x {
+            Some(x) => x.value(row, "x", source)?,
+            None => Some(row_number as f64),
+        };
+        let y = self.y.value(row, "y", source)?;
+        Ok(x.zip(y).map(|(x, y)| Point::new(x, y)))
+    }
+}
+
+/// The zero-based field index of a column, or `None` for the row number.
+fn field_index(header: Option<&[String]>, column: &Column, source: &str) -> Result<Option<usize>> {
+    match column {
+        Column::Index(i) => Ok(Some(*i)),
+        Column::RowNumber => Ok(None),
+        Column::Name(name) => {
+            let Some(header) = header else {
+                return Err(format!(
+                    "{source} has no header row, so column '{name}' cannot be found; use a \
+                     1-based column number instead"
+                )
+                .into());
+            };
+            header
+                .iter()
+                .position(|h| h.eq_ignore_ascii_case(name))
+                .map(Some)
+                .ok_or_else(|| {
+                    format!(
+                        "{source} has no column '{name}'; available columns: {}",
+                        header.join(", ")
+                    )
+                    .into()
+                })
+        }
+    }
+}
+
+/// The header text of a column; `None` without a header or for an empty header cell.
+fn header_name(header: Option<&[String]>, index: usize) -> Option<String> {
+    let name = header?.get(index)?.trim();
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 /// Splits a line on commas, else tabs, else runs of whitespace. Empty fields are kept for
@@ -589,5 +693,438 @@ mod tests {
             .points(None, Some(&Column::Index(0)), "t.csv")
             .unwrap();
         assert_eq!(parsed.points, pts(&[(0.0, 5.0), (1.0, 7.0), (2.0, 9.0)]));
+    }
+
+    #[test]
+    fn a_whole_table_takes_its_width_from_the_widest_data_row() {
+        // the header has two fields but every data row one, so the single-column rule applies
+        // (a stream, knowing only the header, would read two columns here)
+        let parsed = table_points("a,b\n5\n7\n", None, None).unwrap();
+        assert_eq!(parsed.points, pts(&[(0.0, 5.0), (1.0, 7.0)]));
+    }
+
+    // -- line reader --
+
+    fn strings(fields: &[&str]) -> Vec<String> {
+        fields.iter().map(|f| f.to_string()).collect()
+    }
+
+    fn row(line: usize, fields: &[&str]) -> Row {
+        Row {
+            line,
+            fields: strings(fields),
+        }
+    }
+
+    /// Feeds `lines` to a new reader, returning it and what each line gave.
+    fn read_lines(lines: &[&str]) -> (TableReader, Vec<Option<Row>>) {
+        let mut reader = TableReader::new();
+        let rows = lines.iter().map(|line| reader.push_line(line)).collect();
+        (reader, rows)
+    }
+
+    #[test]
+    fn reader_skips_a_byte_order_mark_on_the_first_line() {
+        let (reader, rows) = read_lines(&["\u{feff}1,2", "3,4"]);
+        assert_eq!(reader.header(), None);
+        assert_eq!(rows, [Some(row(1, &["1", "2"])), Some(row(2, &["3", "4"]))]);
+
+        let (reader, rows) = read_lines(&["\u{feff}time,temp", "0,20"]);
+        assert_eq!(reader.header(), Some(&strings(&["time", "temp"])[..]));
+        assert_eq!(rows, [None, Some(row(2, &["0", "20"]))]);
+
+        // a BOM on a blank first line is skipped too, and the header comes on line 2
+        let (reader, rows) = read_lines(&["\u{feff}", "time,temp"]);
+        assert_eq!(reader.header(), Some(&strings(&["time", "temp"])[..]));
+        assert_eq!(rows, [None, None]);
+    }
+
+    #[test]
+    fn reader_keeps_a_byte_order_mark_after_the_first_line() {
+        let (_, rows) = read_lines(&["1,2", "\u{feff}3,4"]);
+        assert_eq!(rows[1], Some(row(2, &["\u{feff}3", "4"])));
+    }
+
+    #[test]
+    fn reader_ignores_blank_and_comment_lines_but_counts_them() {
+        let (reader, rows) = read_lines(&[
+            "# comment",
+            "",
+            "   ",
+            "x,y",
+            "  # indented comment",
+            "1,2",
+            "\t",
+            "3,4",
+        ]);
+        assert_eq!(reader.header(), Some(&strings(&["x", "y"])[..]));
+        let data: Vec<Row> = rows.into_iter().flatten().collect();
+        assert_eq!(data, [row(6, &["1", "2"]), row(8, &["3", "4"])]);
+    }
+
+    #[test]
+    fn reader_takes_a_numeric_first_row_as_data() {
+        for (line, fields) in [
+            ("1,2", &["1", "2"][..]),
+            ("1e3, -2.5, inf, NaN", &["1e3", "-2.5", "inf", "NaN"]),
+        ] {
+            let (reader, rows) = read_lines(&[line]);
+            assert_eq!(reader.header(), None, "{line}");
+            assert_eq!(rows, [Some(row(1, fields))], "{line}");
+        }
+    }
+
+    #[test]
+    fn reader_takes_a_first_row_of_missing_values_as_data() {
+        let (reader, rows) = read_lines(&["NA,-,?", "1,2,3"]);
+        assert_eq!(reader.header(), None);
+        assert_eq!(
+            rows,
+            [
+                Some(row(1, &["NA", "-", "?"])),
+                Some(row(2, &["1", "2", "3"]))
+            ]
+        );
+        let (reader, _) = read_lines(&[",n/a"]);
+        assert_eq!(reader.header(), None);
+    }
+
+    #[test]
+    fn reader_takes_a_first_row_with_any_text_as_the_header() {
+        let (reader, rows) = read_lines(&["1,temp,NA", "0,20,5"]);
+        assert_eq!(reader.header(), Some(&strings(&["1", "temp", "NA"])[..]));
+        assert_eq!(rows, [None, Some(row(2, &["0", "20", "5"]))]);
+    }
+
+    #[test]
+    fn reader_looks_for_a_header_only_in_the_first_row() {
+        let (reader, rows) = read_lines(&["1,2", "x,y"]);
+        assert_eq!(reader.header(), None);
+        assert_eq!(rows[1], Some(row(2, &["x", "y"])));
+    }
+
+    #[test]
+    fn reader_width_is_the_header_or_first_data_row_width() {
+        let (reader, _) = read_lines(&[]);
+        assert_eq!(reader.width(), None);
+        let (reader, _) = read_lines(&["", "# only comments"]);
+        assert_eq!(reader.width(), None);
+        // later rows, wider or narrower, do not change it
+        let (reader, _) = read_lines(&["a,b,c", "1,2", "1,2,3,4"]);
+        assert_eq!(reader.width(), Some(3));
+        let (reader, _) = read_lines(&["# data", "5", "6,7"]);
+        assert_eq!(reader.width(), Some(1));
+        let (reader, _) = read_lines(&["1,2", "3"]);
+        assert_eq!(reader.width(), Some(2));
+    }
+
+    #[test]
+    fn reader_splits_fields_on_the_first_delimiter_found() {
+        let cases: &[(&str, &[&str])] = &[
+            // commas win over everything else
+            ("1,2;3\t4 5", &["1", "2;3\t4 5"]),
+            // then semicolons
+            ("1;2\t3 4", &["1", "2\t3 4"]),
+            // then tabs
+            ("1\t2 3", &["1", "2 3"]),
+            // then runs of whitespace
+            ("  1   2 3  ", &["1", "2", "3"]),
+            // empty fields keep their place with commas, semicolons and tabs
+            ("1,,3", &["1", "", "3"]),
+            ("1;;3", &["1", "", "3"]),
+            ("1\t\t3", &["1", "", "3"]),
+            // fields are trimmed
+            (" 1 , 2 ", &["1", "2"]),
+        ];
+        for &(line, fields) in cases {
+            // after a first row, every line is data, numbers or not
+            let (_, rows) = read_lines(&["0", line]);
+            assert_eq!(rows[1], Some(row(2, fields)), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn reader_strips_surrounding_quotes() {
+        let (reader, rows) = read_lines(&["\"time (s)\" , \"temp\",\"\"", "\"0\",\"20\",\"\""]);
+        assert_eq!(
+            reader.header(),
+            Some(&strings(&["time (s)", "temp", ""])[..])
+        );
+        assert_eq!(rows[1], Some(row(2, &["0", "20", ""])));
+    }
+
+    // -- column resolution --
+
+    fn resolve(
+        header: Option<&[&str]>,
+        width: usize,
+        x: Option<&str>,
+        y: Option<&str>,
+    ) -> Result<Columns> {
+        let header = header.map(strings);
+        let x = x.map(|c| Column::parse(c).unwrap());
+        let y = y.map(|c| Column::parse(c).unwrap());
+        Columns::resolve(header.as_deref(), width, x.as_ref(), y.as_ref(), "t")
+    }
+
+    fn point_of(columns: &Columns, row_number: usize, fields: &[&str]) -> Option<(f64, f64)> {
+        columns
+            .point(row_number, &row(1, fields), "t")
+            .unwrap()
+            .map(|p| (p.x, p.y))
+    }
+
+    #[test]
+    fn columns_default_to_the_first_two() {
+        let columns = resolve(None, 3, None, None).unwrap();
+        assert_eq!(point_of(&columns, 0, &["1", "2", "3"]), Some((1.0, 2.0)));
+        assert_eq!(columns.y_column, 2);
+        assert_eq!(columns.names, ColumnNames::default());
+
+        let columns = resolve(Some(&["a", "b", "c"]), 3, None, None).unwrap();
+        assert_eq!(columns.names, names(Some("a"), Some("b")));
+    }
+
+    #[test]
+    fn a_single_column_is_y_against_the_row_number() {
+        let columns = resolve(None, 1, None, None).unwrap();
+        assert_eq!(point_of(&columns, 4, &["7"]), Some((4.0, 7.0)));
+        assert_eq!(columns.y_column, 1);
+        assert_eq!(columns.names, ColumnNames::default());
+
+        let columns = resolve(Some(&["temp"]), 1, None, None).unwrap();
+        assert_eq!(columns.names, names(None, Some("temp")));
+        // an explicit y does not change the x default
+        let columns = resolve(None, 1, None, Some("1")).unwrap();
+        assert_eq!(point_of(&columns, 2, &["9"]), Some((2.0, 9.0)));
+    }
+
+    #[test]
+    fn columns_are_found_by_name_ignoring_case() {
+        let columns = resolve(Some(&["Time", "Temp", "RH"]), 3, Some("time"), Some("rh")).unwrap();
+        assert_eq!(columns.names, names(Some("Time"), Some("RH")));
+        assert_eq!(columns.y_column, 3);
+        assert_eq!(point_of(&columns, 0, &["0", "20", "50"]), Some((0.0, 50.0)));
+    }
+
+    #[test]
+    fn columns_by_index_take_header_names() {
+        let columns = resolve(Some(&["a", "", "c"]), 3, Some("3"), Some("2")).unwrap();
+        // an empty header cell gives no name
+        assert_eq!(columns.names, names(Some("c"), None));
+        assert_eq!(point_of(&columns, 0, &["1", "2", "3"]), Some((3.0, 2.0)));
+    }
+
+    #[test]
+    fn unknown_column_names_are_an_error() {
+        let err = resolve(Some(&["a", "b"]), 2, None, Some("c"))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "t has no column 'c'; available columns: a, b");
+        let err = resolve(Some(&["a", "b"]), 2, Some("z"), None)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "t has no column 'z'; available columns: a, b");
+    }
+
+    #[test]
+    fn column_names_without_a_header_are_an_error() {
+        let err = resolve(None, 2, None, Some("temp"))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "t has no header row, so column 'temp' cannot be found; use a 1-based column number \
+             instead"
+        );
+    }
+
+    #[test]
+    fn the_y_column_cannot_be_the_row_number() {
+        for width in [1, 2] {
+            let err = resolve(None, width, None, Some("index"))
+                .unwrap_err()
+                .to_string();
+            assert_eq!(err, "the y column cannot be 'index'");
+        }
+    }
+
+    // -- points --
+
+    #[test]
+    fn the_row_number_can_be_x() {
+        let columns = resolve(Some(&["a", "b"]), 2, Some("index"), None).unwrap();
+        assert_eq!(columns.names, names(None, Some("b")));
+        assert_eq!(point_of(&columns, 0, &["1", "10"]), Some((0.0, 10.0)));
+        assert_eq!(point_of(&columns, 5, &["2", "20"]), Some((5.0, 20.0)));
+    }
+
+    #[test]
+    fn missing_values_give_no_point() {
+        let columns = resolve(None, 2, None, None).unwrap();
+        for fields in [
+            &["NA", "2"][..],
+            &["1", ""],
+            &["?", "-"],
+            &["null", "1"],
+            &["1", "None"],
+        ] {
+            assert_eq!(point_of(&columns, 0, fields), None, "{fields:?}");
+        }
+    }
+
+    #[test]
+    fn a_missing_field_is_an_error_naming_the_line() {
+        let columns = resolve(Some(&["x", "y"]), 2, None, None).unwrap();
+        let err = columns
+            .point(0, &row(7, &["1"]), "t")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "t:7: y column 'y' is missing (the row has 1 field(s))");
+
+        let columns = resolve(None, 3, Some("3"), None).unwrap();
+        let err = columns
+            .point(0, &row(2, &["1", "2"]), "t")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "t:2: x column 3 is missing (the row has 2 field(s))");
+    }
+
+    #[test]
+    fn an_unparsable_value_is_an_error_naming_the_line() {
+        let columns = resolve(Some(&["x", "y"]), 2, None, None).unwrap();
+        let err = columns
+            .point(0, &row(3, &["foo", "3"]), "t")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "t:3: cannot parse x value 'foo' (column 'x') as a number"
+        );
+        let columns = resolve(None, 2, None, None).unwrap();
+        let err = columns
+            .point(0, &row(4, &["1", "bar"]), "t")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "t:4: cannot parse y value 'bar' (column 2) as a number"
+        );
+        // a missing x value does not hide a bad y value
+        let err = columns
+            .point(0, &row(5, &["NA", "bar"]), "t")
+            .unwrap_err()
+            .to_string();
+        assert!(err.starts_with("t:5: cannot parse y value 'bar'"), "{err}");
+    }
+
+    // -- streaming matches whole tables --
+
+    /// Reads `content` as a stream would: the columns are resolved as soon as the reader knows
+    /// the width, and each row is converted when it arrives.
+    fn stream_points(
+        content: &str,
+        x: Option<&Column>,
+        y: Option<&Column>,
+        source: &str,
+    ) -> Result<Parsed> {
+        let mut reader = TableReader::new();
+        let mut columns = None;
+        let mut parsed = Parsed::default();
+        let mut row_number = 0;
+        for line in content.lines() {
+            let row = reader.push_line(line);
+            if columns.is_none()
+                && let Some(width) = reader.width()
+            {
+                columns = Some(Columns::resolve(reader.header(), width, x, y, source)?);
+            }
+            if let Some(row) = row {
+                let columns = columns.as_ref().expect("resolved by the first data row");
+                match columns.point(row_number, &row, source)? {
+                    Some(point) => parsed.points.push(point),
+                    None => parsed.skipped_missing += 1,
+                }
+                row_number += 1;
+            }
+        }
+        let columns = match columns {
+            Some(columns) => columns,
+            // nothing but blank lines and comments
+            None => Columns::resolve(None, 0, x, y, source)?,
+        };
+        parsed.names = columns.names;
+        parsed.y_column = columns.y_column;
+        Ok(parsed)
+    }
+
+    #[test]
+    fn streaming_gives_the_same_points_as_a_whole_table() {
+        let cases: &[(&str, Option<&str>, Option<&str>)] = &[
+            ("a,b,c\n1,2,3\n", None, None),
+            ("a,b,c\n1,2,3\n", None, Some("c")),
+            ("5\n6\n", None, None),
+            ("time,temp,humidity\n0,20,50\n1,21,51\n", None, None),
+            ("time,temp,humidity\n0,20,50\n1,21,51\n", Some("3"), None),
+            (
+                "time,temp,humidity\n0,20,50\n1,21,51\n",
+                None,
+                Some("HUMIDITY"),
+            ),
+            (
+                "time,temp,humidity\n0,20,50\n1,21,51\n",
+                Some("index"),
+                None,
+            ),
+            ("0,20\n1,21\n", None, None),
+            ("temp\n20\n21\n", None, None),
+            ("time,\n0,20\n", None, None),
+            ("\"time (s)\" , temp\n0,20\n", None, None),
+            ("1,2\n3,4\n", None, None),
+            ("# comment\nx,y\n\n1,2\n# more\n3,4\n", None, None),
+            ("1\t2\n3\t4\n", None, None),
+            ("1   2\n  3 4  \n", None, None),
+            (
+                "time,temp,\"humidity\"\n0,20,50\n1,21,55\n",
+                Some("time"),
+                Some("HUMIDITY"),
+            ),
+            (
+                "time,temp,\"humidity\"\n0,20,50\n1,21,55\n",
+                Some("1"),
+                Some("3"),
+            ),
+            ("a,b\n1,2\n", None, Some("c")),
+            ("1,2\n", None, Some("temp")),
+            ("value\n5\n7\n9\n", None, None),
+            ("1,10\n2,20\n", Some("index"), Some("2")),
+            ("x,y\n1,2\n2,\n3,NA\n4,n/a\n,5\n6,7\n", None, None),
+            ("a,b,c\n1,,3\n4,5,6\n", Some("1"), Some("3")),
+            ("x,y\n1,2\nfoo,3\n", None, None),
+            ("1,2\n3\n", None, None),
+            ("1,2\n", None, Some("index")),
+            ("\u{feff}1,2\n3,4\n5,6\n", None, None),
+            ("\u{feff}time,temp\n0,20\n", None, None),
+            ("x;y\n1;2\n3;4\n", None, None),
+            ("5\n7\n9\n", None, Some("1")),
+            ("t,a,b\n1,2,3\n", None, Some("b")),
+            ("x,y\n1,2\n3,4\n", None, None),
+            // CRLF line endings, and no lines at all
+            ("x,y\r\n1,2\r\n3,4\r\n", None, None),
+            ("", None, None),
+            ("# nothing\n\n", None, Some("temp")),
+        ];
+        for &(content, x, y) in cases {
+            let x = x.map(|c| Column::parse(c).unwrap());
+            let y = y.map(|c| Column::parse(c).unwrap());
+            let summary = |parsed: Result<Parsed>| {
+                parsed
+                    .map(|p| (p.points, p.names, p.y_column, p.skipped_missing))
+                    .map_err(|e| e.to_string())
+            };
+            let whole = summary(Table::parse(content).points(x.as_ref(), y.as_ref(), "data.csv"));
+            let streamed = summary(stream_points(content, x.as_ref(), y.as_ref(), "data.csv"));
+            assert_eq!(streamed, whole, "{content:?} x={x:?} y={y:?}");
+        }
     }
 }
