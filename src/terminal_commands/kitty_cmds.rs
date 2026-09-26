@@ -107,6 +107,26 @@ impl KittyCommand {
 
         KittyCommand { cmd }
     }
+
+    /// Builds a command that carries only control data (`ESC _G <ctrl> ESC \`), such as a put or
+    /// a delete. Unlike [`KittyCommand::with_passthrough`] it has no payload, no `;` and no `m`
+    /// key, which only belong to transmissions.
+    pub(crate) fn control_only(ctrl_data: &[String], passthrough: Passthrough) -> KittyCommand {
+        let mut seq = Vec::from(CMD_START);
+        seq.extend_from_slice(ctrl_data.join(",").as_bytes());
+        seq.extend_from_slice(CMD_END);
+
+        let mut cmd = Vec::new();
+        passthrough.wrap(&seq, &mut cmd);
+        KittyCommand { cmd }
+    }
+
+    /// The bytes of the command, e.g. to send several commands in one write.
+    // used by live plots (#51)
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn into_bytes(self) -> Vec<u8> {
+        self.cmd
+    }
 }
 
 /// Asks the terminal whether it supports the Kitty graphics protocol, by sending a query for a
@@ -188,6 +208,33 @@ mod tests {
         let req = cmd.get_request();
         let wrapped = req.windows(TMUX_START.len()).filter(|w| *w == TMUX_START);
         assert_eq!(wrapped.count(), 2);
+    }
+
+    #[test]
+    fn control_only_command_has_no_payload_or_more_data_key() {
+        let cmd =
+            KittyCommand::control_only(&ctrl(&["a=p", "i=5", "C=1", "q=2"]), Passthrough::None);
+        assert_eq!(cmd.get_request(), b"\x1b_Ga=p,i=5,C=1,q=2\x1b\\");
+    }
+
+    #[test]
+    fn control_only_command_in_tmux_is_wrapped_once_with_doubled_escapes() {
+        let cmd =
+            KittyCommand::control_only(&ctrl(&["a=p", "i=5", "C=1", "q=2"]), Passthrough::Tmux);
+        assert_eq!(
+            cmd.get_request(),
+            b"\x1bPtmux;\x1b\x1b_Ga=p,i=5,C=1,q=2\x1b\x1b\\\x1b\\"
+        );
+    }
+
+    #[test]
+    fn into_bytes_returns_the_request() {
+        let cmd = KittyCommand::with_passthrough(&[0; 3075], &ctrl(&["a=t"]), Passthrough::Tmux);
+        let request = cmd.get_request().to_vec();
+        assert_eq!(cmd.into_bytes(), request);
+
+        let cmd = KittyCommand::control_only(&ctrl(&["a=d", "d=I", "i=5"]), Passthrough::None);
+        assert_eq!(cmd.into_bytes(), b"\x1b_Ga=d,d=I,i=5\x1b\\");
     }
 
     #[test]

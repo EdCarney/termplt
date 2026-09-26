@@ -2,7 +2,11 @@ use crate::{
     Error,
     common::Result,
     kitty_graphics::ctrl_seq::*,
-    terminal_commands::{csi_cmds, kitty_cmds::KittyCommand, responses::TermCommand},
+    terminal_commands::{
+        csi_cmds,
+        kitty_cmds::{KittyCommand, Passthrough},
+        responses::TermCommand,
+    },
     window_ctrl::{self, WindowSize},
 };
 use image::{
@@ -100,12 +104,49 @@ impl Image {
     /// The number of bytes of image data sent to the terminal (before base64 encoding), or the
     /// length of the path/name for other transmission media.
     pub fn payload_len(&self) -> usize {
+        self.payload().len()
+    }
+
+    /// The payload of a transmission: the image data for direct transmission; for every other
+    /// medium, the path or name of the object holding the image data.
+    fn payload(&self) -> &[u8] {
         match &self.transmission {
-            Transmission::Direct(bytes) => bytes.len(),
+            Transmission::Direct(bytes) => bytes,
             Transmission::File(name)
             | Transmission::TempFile(name)
-            | Transmission::SharedMemory(name) => name.len(),
+            | Transmission::SharedMemory(name) => name.as_bytes(),
         }
+    }
+
+    /// The command that stores the image under `id` without displaying it (`a=t`), for
+    /// [`Image::put_command`] to display later.
+    // used by live plots (#51)
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn transmit_command(&self, id: u32, passthrough: Passthrough) -> KittyCommand {
+        let attributes = [
+            Action::Transmit.get_ctrl_seq(),
+            self.format.get_ctrl_seq(),
+            self.transmission.get_ctrl_seq(),
+            Metadata::Id(id).get_ctrl_seq(),
+            // nothing reads the replies
+            Metadata::Quiet(2).get_ctrl_seq(),
+        ];
+        KittyCommand::with_passthrough(self.payload(), &attributes, passthrough)
+    }
+
+    /// The command that displays the image stored under `id` at the cursor (`a=p`), leaving the
+    /// cursor where it is.
+    // used by live plots (#51)
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn put_command(&self, id: u32, passthrough: Passthrough) -> KittyCommand {
+        let mut ctrl = vec![Action::Put.get_ctrl_seq(), Metadata::Id(id).get_ctrl_seq()];
+        // the cell bounds are display keys, which the transmit command doesn't keep
+        if let PixelFormat::PngBounded { rows, cols } = self.format {
+            ctrl.push(format!("c={cols},r={rows}"));
+        }
+        ctrl.push(Metadata::NoCursorMovement.get_ctrl_seq());
+        ctrl.push(Metadata::Quiet(2).get_ctrl_seq());
+        KittyCommand::control_only(&ctrl, passthrough)
     }
 
     /// Displays the image at the cursor. The terminal moves the cursor below the image.
@@ -162,17 +203,7 @@ impl Image {
     }
 
     fn display_with_attributes(&self, attributes: &[String]) -> Result<()> {
-        // for every medium other than direct transmission, the payload is the path or name of
-        // the object holding the image data
-        let cmd = match self.transmission {
-            Transmission::Direct(ref bytes) => KittyCommand::new(bytes, attributes),
-            Transmission::File(ref name)
-            | Transmission::TempFile(ref name)
-            | Transmission::SharedMemory(ref name) => {
-                KittyCommand::new(name.as_bytes(), attributes)
-            }
-        };
-        cmd.execute()
+        KittyCommand::new(self.payload(), attributes).execute()
     }
 
     fn get_positioning_details(
@@ -196,6 +227,24 @@ impl Image {
             })
         }
     }
+}
+
+/// The command that deletes every placement of the image stored under `id` (`a=d`), and with
+/// `free_data` also the stored image data.
+// used by live plots (#51)
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn delete_image_command(
+    id: u32,
+    free_data: bool,
+    passthrough: Passthrough,
+) -> KittyCommand {
+    let ctrl = [
+        Action::Delete.get_ctrl_seq(),
+        DeleteTarget::Image { id, free_data }.get_ctrl_seq(),
+        // nothing reads the replies
+        Metadata::Quiet(2).get_ctrl_seq(),
+    ];
+    KittyCommand::control_only(&ctrl, passthrough)
 }
 
 /// Kitty requires absolute paths for file transmission (relative paths would be resolved against
@@ -257,5 +306,130 @@ mod tests {
         let attributes = image.base_attributes();
         assert!(attributes.contains(&String::from("q=2")));
         assert!(attributes.contains(&String::from("a=T")));
+    }
+
+    fn rgb_image(width: u32, height: u32) -> Image {
+        Image::new(
+            PixelFormat::Rgb { width, height },
+            Transmission::Direct(vec![0; (width * height * 3) as usize]),
+        )
+        .unwrap()
+    }
+
+    /// Wraps one APC sequence in a tmux passthrough, doubling its escapes.
+    fn tmux_wrapped(seq: &[u8]) -> Vec<u8> {
+        let mut out = b"\x1bPtmux;".to_vec();
+        for &b in seq {
+            if b == 0x1b {
+                out.push(0x1b);
+            }
+            out.push(b);
+        }
+        out.extend_from_slice(b"\x1b\\");
+        out
+    }
+
+    #[test]
+    fn transmit_command_stores_the_image_under_an_id() {
+        let cmd = rgb_image(1, 1).transmit_command(7, Passthrough::None);
+        assert_eq!(
+            cmd.into_bytes(),
+            b"\x1b_Ga=t,f=24,s=1,v=1,t=d,i=7,q=2,m=0;AAAA\x1b\\"
+        );
+    }
+
+    #[test]
+    fn transmit_command_sends_png_data_directly() {
+        let image = Image::png_from_rgb(&[0, 0, 0], 1, 1).unwrap();
+        let bytes = image.transmit_command(3, Passthrough::None).into_bytes();
+        assert!(bytes.starts_with(b"\x1b_Ga=t,f=100,t=d,i=3,q=2,m=0;"));
+        assert!(bytes.ends_with(b"\x1b\\"));
+    }
+
+    #[test]
+    fn transmit_command_puts_the_keys_on_the_first_chunk_only() {
+        // 3075 bytes encode to 4100 base64 characters: a full chunk of 4096, then 4
+        let cmd = rgb_image(1025, 1).transmit_command(7, Passthrough::None);
+        let mut expected = b"\x1b_Ga=t,f=24,s=1025,v=1,t=d,i=7,q=2,m=1;".to_vec();
+        expected.extend_from_slice(&[b'A'; 4096]);
+        expected.extend_from_slice(b"\x1b\\\x1b_Gm=0;AAAA\x1b\\");
+        assert_eq!(cmd.into_bytes(), expected);
+    }
+
+    #[test]
+    fn transmit_command_in_tmux_wraps_each_chunk() {
+        let image = rgb_image(1025, 1);
+        let plain = image.transmit_command(7, Passthrough::None).into_bytes();
+        let tmux = image.transmit_command(7, Passthrough::Tmux).into_bytes();
+
+        // neither the keys nor base64 contain a backslash, so each sequence ends at one
+        let chunks: Vec<&[u8]> = plain.split_inclusive(|&b| b == b'\\').collect();
+        assert_eq!(chunks.len(), 2);
+        let expected: Vec<u8> = chunks.into_iter().flat_map(tmux_wrapped).collect();
+        assert_eq!(tmux, expected);
+    }
+
+    #[test]
+    fn transmit_command_sends_the_name_for_other_media() {
+        let image = Image::new(
+            PixelFormat::Rgb {
+                width: 1,
+                height: 1,
+            },
+            Transmission::SharedMemory(String::from("termplt-frame")),
+        )
+        .unwrap();
+        assert_eq!(
+            image.transmit_command(4, Passthrough::None).into_bytes(),
+            b"\x1b_Ga=t,f=24,s=1,v=1,t=s,i=4,q=2,m=0;dGVybXBsdC1mcmFtZQ==\x1b\\"
+        );
+    }
+
+    #[test]
+    fn put_command_displays_a_stored_image_without_moving_the_cursor() {
+        for image in [
+            rgb_image(1, 1),
+            Image::png_from_rgb(&[0, 0, 0], 1, 1).unwrap(),
+        ] {
+            assert_eq!(
+                image.put_command(5, Passthrough::None).into_bytes(),
+                b"\x1b_Ga=p,i=5,C=1,q=2\x1b\\"
+            );
+            assert_eq!(
+                image.put_command(5, Passthrough::Tmux).into_bytes(),
+                tmux_wrapped(b"\x1b_Ga=p,i=5,C=1,q=2\x1b\\")
+            );
+        }
+    }
+
+    #[test]
+    fn put_command_keeps_the_cell_bounds() {
+        // built directly: `Image::new` asks the terminal for its size for bounded PNGs
+        let image = Image {
+            format: PixelFormat::PngBounded { rows: 3, cols: 10 },
+            transmission: Transmission::Direct(Vec::new()),
+            width_pix: 90,
+            height_pix: 54,
+        };
+        assert_eq!(
+            image.put_command(5, Passthrough::None).into_bytes(),
+            b"\x1b_Ga=p,i=5,c=10,r=3,C=1,q=2\x1b\\"
+        );
+    }
+
+    #[test]
+    fn delete_image_command_frees_the_data_on_request() {
+        assert_eq!(
+            delete_image_command(5, true, Passthrough::None).into_bytes(),
+            b"\x1b_Ga=d,d=I,i=5,q=2\x1b\\"
+        );
+        assert_eq!(
+            delete_image_command(5, false, Passthrough::None).into_bytes(),
+            b"\x1b_Ga=d,d=i,i=5,q=2\x1b\\"
+        );
+        assert_eq!(
+            delete_image_command(5, true, Passthrough::Tmux).into_bytes(),
+            b"\x1bPtmux;\x1b\x1b_Ga=d,d=I,i=5,q=2\x1b\x1b\\\x1b\\"
+        );
     }
 }

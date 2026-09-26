@@ -56,6 +56,32 @@ pub fn set_cursor_pos(row: u32, col: u32) -> Result<()> {
     CsiCommand::new(&cmd, "").execute()
 }
 
+/// The bytes that move the cursor up `rows` rows (`CSI n A`), staying in its column; empty for
+/// zero rows, since most terminals treat `CSI 0 A` as one row.
+// used by live plots (#51)
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn cursor_up(rows: u32) -> Vec<u8> {
+    cursor_move(rows, b'A')
+}
+
+/// The bytes that move the cursor down `rows` rows (`CSI n B`), staying in its column; empty
+/// for zero rows, since most terminals treat `CSI 0 B` as one row.
+// used by live plots (#51)
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn cursor_down(rows: u32) -> Vec<u8> {
+    cursor_move(rows, b'B')
+}
+
+fn cursor_move(rows: u32, direction: u8) -> Vec<u8> {
+    if rows == 0 {
+        return Vec::new();
+    }
+    let mut cmd = Vec::from(CMD_START);
+    cmd.extend_from_slice(rows.to_string().as_bytes());
+    cmd.push(direction);
+    cmd
+}
+
 /// Query terminal text area size in pixels using xterm CSI 14 t.
 /// Returns (width_px, height_px).
 pub fn get_text_area_size_pixels() -> Result<(u32, u32)> {
@@ -127,5 +153,20 @@ mod tests {
     fn check_prefix_mismatch_errors() {
         assert!(check_prefix(&[8, 1, 2], 4, "8;1;2").is_err());
         assert!(check_prefix(&[4, 1, 2], 4, "4;1;2").is_ok());
+    }
+
+    #[test]
+    fn cursor_moves() {
+        assert_eq!(cursor_up(30), b"\x1b[30A");
+        assert_eq!(cursor_up(1), b"\x1b[1A");
+        assert_eq!(cursor_down(30), b"\x1b[30B");
+        assert_eq!(cursor_down(1), b"\x1b[1B");
+    }
+
+    #[test]
+    fn cursor_moves_by_zero_rows_are_empty() {
+        // most terminals treat CSI 0 A like CSI 1 A
+        assert!(cursor_up(0).is_empty());
+        assert!(cursor_down(0).is_empty());
     }
 }
