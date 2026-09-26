@@ -42,13 +42,13 @@ impl Graph {
         self
     }
 
-    /// Fixes the x range; points outside it are not drawn. Without it, the range fits the data.
+    /// Fixes the x range; points outside it are not drawn, and lines break where they were. Without it, the range fits the data.
     pub fn with_x_limits<T: Graphable>(mut self, min: T, max: T) -> Self {
         self.x_limits = Some((min.to_f64(), max.to_f64()));
         self
     }
 
-    /// Fixes the y range; points outside it are not drawn. Without it, the range fits the data.
+    /// Fixes the y range; points outside it are not drawn, and lines break where they were. Without it, the range fits the data.
     pub fn with_y_limits<T: Graphable>(mut self, min: T, max: T) -> Self {
         self.y_limits = Some((min.to_f64(), max.to_f64()));
         self
@@ -134,7 +134,9 @@ impl Graph {
     }
 
     /// Returns a copy of the graph containing only the points that will be drawn: finite points
-    /// that lie within the explicit limits (if any). Series left empty are kept.
+    /// that lie within the explicit limits (if any). Where points were removed, a single
+    /// non-finite gap point is left in their place, so lines break there instead of joining
+    /// the neighbours of the removed points. Series left empty are kept.
     fn visible(&self) -> Result<Graph> {
         let limits = self.limits()?;
         let clip = self.has_explicit_limits();
@@ -143,11 +145,18 @@ impl Graph {
             .iter()
             .map(|series| {
                 series.map_points(|points| {
-                    points
-                        .iter()
-                        .copied()
-                        .filter(|p| is_finite_point(p) && (!clip || limits.contains(p)))
-                        .collect()
+                    let mut kept = Vec::with_capacity(points.len());
+                    for &p in points {
+                        if is_finite_point(&p) && (!clip || limits.contains(&p)) {
+                            kept.push(p);
+                        } else if kept.last().is_some_and(is_finite_point) {
+                            kept.push(GAP);
+                        }
+                    }
+                    if kept.last().is_some_and(|p| !is_finite_point(p)) {
+                        kept.pop();
+                    }
+                    kept
                 })
             })
             .collect();
@@ -248,6 +257,12 @@ impl Graph {
 /// Fraction of the data span added on each side of axes without explicit limits.
 pub const DATA_MARGIN: f64 = 0.05;
 
+/// Marks where [`Graph::visible`] removed points; drawing skips it and the segments touching it.
+const GAP: Point<f64> = Point {
+    x: f64::NAN,
+    y: f64::NAN,
+};
+
 fn is_finite_point(p: &Point<f64>) -> bool {
     p.x.is_finite() && p.y.is_finite()
 }
@@ -298,6 +313,29 @@ impl Drawable for Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removed_points_leave_one_gap() {
+        let points = [
+            (0.0, 0.0),
+            (1.0, 50.0),
+            (2.0, 60.0),
+            (3.0, 1.0),
+            (4.0, 99.0),
+        ];
+        let graph = Graph::new()
+            .with_series(Series::from_iter(points))
+            .with_y_limits(0.0, 10.0);
+        let visible = graph.visible().unwrap();
+        let data = visible.data()[0].data();
+        // consecutive removed points collapse into one gap, and a trailing gap is dropped
+        assert_eq!(data.len(), 3);
+        assert_eq!(data[0], Point::new(0.0, 0.0));
+        assert!(data[1].x.is_nan());
+        assert_eq!(data[2], Point::new(3.0, 1.0));
+        // gaps don't count towards the limits
+        assert_eq!(visible.limits().unwrap().max().x, 3.0);
+    }
 
     #[test]
     fn empty_graph() {

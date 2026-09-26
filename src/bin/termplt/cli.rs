@@ -129,11 +129,11 @@ pub struct Cli {
     )]
     pub line_thickness: Option<u32>,
 
-    /// X axis limits; points outside are not drawn
+    /// X axis limits; points outside are not drawn (lines break there)
     #[arg(long, value_name = "MIN,MAX", allow_hyphen_values = true, value_parser = parse_range, help_heading = "Plot")]
     pub xlim: Option<(f64, f64)>,
 
-    /// Y axis limits; points outside are not drawn
+    /// Y axis limits; points outside are not drawn (lines break there)
     #[arg(long, value_name = "MIN,MAX", allow_hyphen_values = true, value_parser = parse_range, help_heading = "Plot")]
     pub ylim: Option<(f64, f64)>,
 

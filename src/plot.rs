@@ -109,13 +109,13 @@ impl Plot {
         self
     }
 
-    /// Fixes the x range; points outside it are not drawn.
+    /// Fixes the x range; points outside it are not drawn, and lines break where they were.
     pub fn x_limits(mut self, min: f64, max: f64) -> Self {
         self.x_limits = Some((min, max));
         self
     }
 
-    /// Fixes the y range; points outside it are not drawn.
+    /// Fixes the y range; points outside it are not drawn, and lines break where they were.
     pub fn y_limits(mut self, min: f64, max: f64) -> Self {
         self.y_limits = Some((min, max));
         self

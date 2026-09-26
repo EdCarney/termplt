@@ -82,7 +82,7 @@ _The screenshots above are from an earlier version; axes now use round tick valu
 | `--marker-size <PX>` / `--marker-color <COLOR>` | Marker radius (default: 2) and color |
 | `--line <STYLE>` | `solid` (default), `dashed`, or `none` (scatter plot) |
 | `--line-thickness <PX>` / `--line-color <COLOR>` | Line thickness (default: 0) and color |
-| `--xlim <MIN,MAX>` / `--ylim <MIN,MAX>` | Axis limits; points outside are not drawn |
+| `--xlim <MIN,MAX>` / `--ylim <MIN,MAX>` | Axis limits; points outside are not drawn (lines break there) |
 | `--width <PX>` / `--height <PX>` | Image size (default: fits the terminal, or 800x600 with `--output`) |
 | `--bg <COLOR>` | Background color (default: black) |
 | `--no-grid` | Hide grid lines |
