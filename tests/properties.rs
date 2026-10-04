@@ -1,7 +1,6 @@
 //! Property tests: rendering must never panic, and scaled data must land inside the plot area.
 
 use proptest::prelude::*;
-use termplt::Plot;
 use termplt::plotting::{
     axes::{Axes, AxesPositioning},
     canvas::{BufferType, TerminalCanvas},
@@ -16,6 +15,7 @@ use termplt::plotting::{
     series::Series,
     text::TextStyle,
 };
+use termplt::{Figure, Plot};
 
 /// Any f64, weighted towards ordinary values but including NaN, infinities and extremes.
 fn any_coord() -> impl Strategy<Value = f64> + Clone {
@@ -327,6 +327,41 @@ proptest! {
             if let Ok(rgb) = plot.render(width, height) {
                 prop_assert_eq!(rgb.len(), width as usize * height as usize * 3);
             }
+        }
+    }
+
+    #[test]
+    fn figure_rendering_never_panics(
+        rows in 0usize..4,
+        cols in 0usize..4,
+        cells in prop::collection::vec((series(), (0usize..5, 0usize..5), (0usize..5, 0usize..5)), 0..5),
+        width in 0u32..400,
+        height in 0u32..400,
+        font_size in 1u32..40,
+    ) {
+        let mut fig = Figure::new(rows, cols).font_size(font_size);
+        for (s, (r0, r1), (c0, c1)) in cells {
+            fig = fig.plot(r0..r1, c0..c1, Plot::new().series(s));
+        }
+        // an error (an invalid grid, a cell too small) is fine; a panic or a short image is not
+        if let Ok(rgb) = fig.render(width, height) {
+            prop_assert_eq!(rgb.len(), width as usize * height as usize * 3);
+        }
+    }
+
+    #[test]
+    fn a_one_by_one_figure_renders_like_its_plot(
+        series in series(),
+        width in 0u32..300,
+        height in 0u32..300,
+        font_size in 1u32..40,
+    ) {
+        let plot = Plot::new().series(series).font_size(font_size);
+        let alone = plot.render(width, height);
+        let in_figure = Figure::new(1, 1).plot(0, 0, plot).render(width, height);
+        prop_assert_eq!(alone.is_ok(), in_figure.is_ok());
+        if let (Ok(a), Ok(b)) = (alone, in_figure) {
+            prop_assert!(a == b);
         }
     }
 }

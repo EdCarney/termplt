@@ -1,14 +1,31 @@
 //! Several plots drawn as one image, on a grid.
 
 use crate::{
-    Error, Plot, Result,
-    plotting::{colors, font::Font},
+    DEFAULT_PNG_SIZE, Error, Plot, Result,
+    plot::Defaults,
+    plotting::{colors, font::Font, text::DEFAULT_FONT_SIZE},
+    terminal::Terminal,
 };
 use rgb::RGB8;
-use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
+use std::{
+    ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive},
+    path::Path,
+};
 
 /// Several plots drawn as one image, on a grid of equal-size slots. A plot can cover one slot
 /// or a block of them.
+///
+/// ```
+/// use termplt::{Figure, Plot};
+///
+/// let points = vec![(0, 0), (1, 1), (2, 4)];
+/// let fig = Figure::new(2, 2)
+///     .plot(0, 0, Plot::new().line(points.clone()).title("line"))
+///     .plot(0, 1, Plot::new().scatter(points.clone()).title("scatter"))
+///     .plot(1, .., Plot::new().line_points(points).title("both"));
+/// let rgb = fig.render(400, 300).unwrap();
+/// assert_eq!(rgb.len(), 400 * 300 * 3);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Figure {
     rows: usize,
@@ -82,10 +99,84 @@ impl Figure {
         &mut self.plots
     }
 
+    /// Draws the figure and returns its RGB8 pixels (`width * height * 3` bytes, row-major, top
+    /// row first). The base text size is the figure's `font_size`, else [`DEFAULT_FONT_SIZE`].
+    ///
+    /// Fails if the grid is invalid, or if a plot's cell is too small to draw in.
+    pub fn render(&self, width: u32, height: u32) -> Result<Vec<u8>> {
+        self.render_at(width, height, self.font_size.unwrap_or(DEFAULT_FONT_SIZE))
+    }
+
+    /// Draws the figure and saves it as a PNG file, `size` pixels large or [`DEFAULT_PNG_SIZE`].
+    pub fn save_png(&self, path: impl AsRef<Path>) -> Result<()> {
+        let (width, height) = self.size.unwrap_or(DEFAULT_PNG_SIZE);
+        let rgb = self.render(width, height)?;
+        image::save_buffer_with_format(
+            path,
+            &rgb,
+            width,
+            height,
+            image::ColorType::Rgb8,
+            image::ImageFormat::Png,
+        )?;
+        Ok(())
+    }
+
+    /// Draws the figure in the terminal at the cursor, sized to fit the window unless a size
+    /// was set. See [`Terminal::connect`] for the checks this runs first.
+    pub fn show(&self) -> Result<()> {
+        let terminal = Terminal::connect()?;
+        self.show_in(&terminal)
+    }
+
+    /// Like [`Figure::show`], with a [`Terminal`] that was already connected.
+    pub fn show_in(&self, terminal: &Terminal) -> Result<()> {
+        let (width, height) = self.size_in(terminal);
+        let rgb = self.render_at(width, height, self.font_size_in(terminal))?;
+        terminal.show_rgb(&rgb, width, height)
+    }
+
+    /// Draws the figure with `font_size` as the base text size.
+    pub(crate) fn render_at(&self, width: u32, height: u32, font_size: u32) -> Result<Vec<u8>> {
+        self.validate()?;
+        let background = [self.background.r, self.background.g, self.background.b];
+        let stride = width as usize * 3;
+        let mut rgb: Vec<u8> = background
+            .iter()
+            .copied()
+            .cycle()
+            .take(stride * height as usize)
+            .collect();
+        let defaults = Defaults {
+            background: self.background,
+            font: &self.font,
+            font_size,
+        };
+        for (i, plot) in self.plots.iter().enumerate() {
+            let (left, top, w, h) = self.cell_rect(i, width, height);
+            let cell = plot.render_with(w, h, defaults)?;
+            let row_bytes = w as usize * 3;
+            for y in 0..h as usize {
+                let start = (top as usize + y) * stride + left as usize * 3;
+                rgb[start..start + row_bytes]
+                    .copy_from_slice(&cell[y * row_bytes..(y + 1) * row_bytes]);
+            }
+        }
+        Ok(rgb)
+    }
+
+    /// The image size: `size`, else the terminal's default plot size.
+    pub(crate) fn size_in(&self, terminal: &Terminal) -> (u32, u32) {
+        self.size.unwrap_or_else(|| terminal.default_plot_size())
+    }
+
+    /// The base text size: `font_size`, else the terminal's text size.
+    pub(crate) fn font_size_in(&self, terminal: &Terminal) -> u32 {
+        self.font_size.unwrap_or_else(|| terminal.text_size())
+    }
+
     /// Checks the grid: it has rows and columns, every plot covers slots inside it, and no two
     /// plots share a slot. Compares plots pairwise, so huge grids cost nothing per slot.
-    // Task 4 uses this when drawing.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn validate(&self) -> Result<()> {
         if self.rows == 0 || self.cols == 0 {
             return Err(Error::EmptyGrid {
@@ -121,8 +212,6 @@ impl Figure {
 
     /// (left, top, width, height) in pixels of plot `index`'s cell, rows counted from the top.
     /// Only for a validated figure.
-    // Task 4 uses this when drawing.
-    #[cfg_attr(not(test), expect(dead_code))]
     fn cell_rect(&self, index: usize, width: u32, height: u32) -> (u32, u32, u32, u32) {
         let (rows, cols) = &self.spans[index];
         let left = slot_start(cols.start, self.cols, width);
@@ -134,8 +223,6 @@ impl Figure {
 }
 
 /// Pixel where slot `index` of `count` slots across `length` pixels starts.
-// Task 4 uses this when drawing.
-#[cfg_attr(not(test), expect(dead_code))]
 fn slot_start(index: usize, count: usize, length: u32) -> u32 {
     let (base, extra) = (length as usize / count, length as usize % count);
     (index * base + index.min(extra)) as u32 // index <= count, so this is at most `length`
@@ -324,5 +411,135 @@ mod tests {
             .plot(0, 0, Plot::new())
             .plot(1.., 1.., Plot::new());
         assert!(fig.validate().is_ok());
+    }
+
+    use crate::{
+        plotting::colors,
+        terminal::{Terminal, WindowSize},
+    };
+
+    fn sine() -> Plot {
+        Plot::new().line(
+            (0..50)
+                .map(|i| (i, (f64::from(i) / 5.0).sin()))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// The `w` x `h` block at (`left`, `top`) of an RGB8 image `width` pixels wide.
+    fn block(rgb: &[u8], width: u32, (left, top, w, h): (u32, u32, u32, u32)) -> Vec<u8> {
+        (top..top + h)
+            .flat_map(|y| {
+                let start = ((y * width + left) * 3) as usize;
+                rgb[start..start + (w * 3) as usize].to_vec()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_one_by_one_figure_is_its_plot() {
+        let plot = sine().title("one");
+        let fig = Figure::new(1, 1).plot(0, 0, plot.clone());
+        assert!(fig.render(320, 240).unwrap() == plot.render(320, 240).unwrap());
+        let fig = fig.background(colors::WHITE).font_size(20);
+        let expected = plot.background(colors::WHITE).font_size(20);
+        assert!(fig.render(320, 240).unwrap() == expected.render(320, 240).unwrap());
+    }
+
+    #[test]
+    fn each_plot_is_drawn_in_its_cell() {
+        let left = sine().title("left");
+        let right = sine().title("right").background(colors::WHITE);
+        let fig = Figure::new(1, 3)
+            .plot(0, 0, left.clone())
+            .plot(0, 1..3, right.clone());
+        let rgb = fig.render(301, 200).unwrap(); // slots of 101, 100 and 100 pixels
+        assert!(block(&rgb, 301, (0, 0, 101, 200)) == left.render(101, 200).unwrap());
+        assert!(block(&rgb, 301, (101, 0, 200, 200)) == right.render(200, 200).unwrap());
+    }
+
+    #[test]
+    fn slots_without_a_plot_are_the_figure_background() {
+        // cells of 100 x 60: a plot needs more than 50 rows at the default text size
+        let rgb = Figure::new(2, 2)
+            .plot(0, 0, sine())
+            .background(colors::WHITE)
+            .render(200, 120)
+            .unwrap();
+        assert!(
+            block(&rgb, 200, (100, 0, 100, 60))
+                .iter()
+                .all(|&b| b == 255)
+        );
+        assert!(block(&rgb, 200, (0, 60, 200, 60)).iter().all(|&b| b == 255));
+        let empty = Figure::new(2, 3)
+            .background(colors::WHITE)
+            .render(30, 20)
+            .unwrap();
+        assert!(empty.len() == 30 * 20 * 3 && empty.iter().all(|&b| b == 255));
+    }
+
+    #[test]
+    fn a_plots_own_size_is_ignored_in_a_figure() {
+        let fig = Figure::new(1, 1).plot(0, 0, sine().size(50, 50));
+        assert!(fig.render(320, 240).unwrap() == sine().render(320, 240).unwrap());
+    }
+
+    #[test]
+    fn cells_without_pixels_fail_with_canvas_too_small() {
+        let fig = Figure::new(1, 5).plot(0, 4, sine());
+        assert!(matches!(
+            fig.render(3, 100),
+            Err(Error::CanvasTooSmall { .. })
+        ));
+        // a huge grid has 1-pixel slots: an error, not a hang or an allocation per slot
+        let huge = Figure::new(usize::MAX, usize::MAX).plot(0, 0, sine());
+        assert!(matches!(
+            huge.render(10, 10),
+            Err(Error::CanvasTooSmall { .. })
+        ));
+    }
+
+    #[test]
+    fn an_invalid_grid_draws_nothing() {
+        let fig = Figure::new(1, 1).plot(0, 1, sine());
+        assert!(matches!(
+            fig.render(100, 100),
+            Err(Error::InvalidCell { .. })
+        ));
+    }
+
+    #[test]
+    fn show_matches_the_terminal_unless_set() {
+        let terminal = Terminal::with_window(WindowSize {
+            rows: 50,
+            cols: 160,
+            x_pix: 1600,
+            y_pix: 1700,
+            pix_per_row: 34,
+            pix_per_col: 10,
+        });
+        let fig = Figure::new(1, 1);
+        assert_eq!(fig.size_in(&terminal), terminal.default_plot_size());
+        assert_eq!(fig.font_size_in(&terminal), 28);
+        let fig = fig.size(300, 200).font_size(12);
+        assert_eq!(
+            (fig.size_in(&terminal), fig.font_size_in(&terminal)),
+            ((300, 200), 12)
+        );
+    }
+
+    #[test]
+    fn save_png_writes_a_readable_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("figure.png");
+        Figure::new(1, 2)
+            .plot(0, 0, sine())
+            .plot(0, 1, sine())
+            .size(320, 240)
+            .save_png(&path)
+            .unwrap();
+        let img = image::open(&path).unwrap();
+        assert_eq!((img.width(), img.height()), (320, 240));
     }
 }

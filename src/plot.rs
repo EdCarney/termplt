@@ -62,8 +62,6 @@ pub struct Plot {
 }
 
 /// What a figure gives the plots in it: each plot uses its own setting where it has one.
-// Used by `Figure` (Task 4); remove the expect then.
-#[cfg_attr(not(test), expect(dead_code))]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Defaults<'a> {
     pub(crate) background: RGB8,
@@ -313,7 +311,6 @@ impl Plot {
 
     /// Draws the plot at `width` x `height` pixels, using `defaults` for the background, font
     /// and base text size where the plot has none of its own. A size set on the plot is ignored.
-    #[cfg_attr(not(test), expect(dead_code))] // used by `Figure` (Task 4); remove then
     pub(crate) fn render_with(
         &self,
         width: u32,
