@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
+## [Unreleased]
+
+### Changed
+- A plot without data now draws empty axes (0 to 1 on each axis without explicit limits, as
+  matplotlib draws empty axes) instead of failing with `Error::NoData`. Points all outside
+  explicit limits now draw the axes at those limits instead of failing with
+  `Error::NoVisibleData`, which is no longer returned. Live plots can start empty.
+
 ## [0.4.0] - 2026-09-26
 
 Live plots: a plot redrawn in place as its data changes, in the library (`Plot::show_live`) and

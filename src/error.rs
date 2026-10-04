@@ -10,9 +10,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
-    /// The graph has no finite data points (NaN and ±∞ are ignored).
+    /// The graph has no finite data points (NaN and ±∞ are ignored). Returned only by
+    /// `Graph::limits` and `Graph::get_mask`; drawing a plot doesn't need data.
     NoData,
-    /// Every data point lies outside the explicit axis limits.
+    /// Every data point lies outside the explicit axis limits. No longer returned: such a plot
+    /// draws its axes at the limits. Kept so code matching it still compiles.
     NoVisibleData,
     /// Explicit limits are non-finite or inverted (`min > max`).
     InvalidLimits {

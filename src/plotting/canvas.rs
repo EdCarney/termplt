@@ -587,7 +587,7 @@ impl TerminalCanvas {
                 s.marker_style().size().max(line_thickness)
             })
             .max()
-            .ok_or(Error::NoData)?;
+            .unwrap_or(0);
 
         // axes are drawn just outside the plot area, so leave room for their thickness
         let axes = graph.axes().cloned();
@@ -1065,11 +1065,12 @@ mod tests {
     }
 
     #[test]
-    fn empty_graph_returns_error() {
-        let result = TerminalCanvas::new(100, 100, colors::BLACK)
-            .with_graph(Graph::new())
-            .draw();
-        assert!(result.is_err());
+    fn an_empty_graph_draws_its_axes() {
+        let canvas = TerminalCanvas::new(100, 100, colors::BLACK)
+            .with_graph(Graph::new().with_axes(white_axes()));
+        assert!(canvas.get_drawable_limits().is_ok());
+        let bytes = canvas.draw().unwrap().into_bytes();
+        assert!(bytes.iter().any(|&b| b != 0));
     }
 
     #[test]

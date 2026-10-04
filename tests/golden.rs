@@ -499,3 +499,25 @@ fn legend_light_background() {
         );
     check("legend_light_background", w, h, canvas);
 }
+
+#[test]
+fn empty_plot() {
+    let (w, h) = (320, 240);
+    let waiting = Series::new::<f64>(&[])
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::Solid {
+            color: colors::DODGER_BLUE,
+            thickness: 0,
+        })
+        .with_label("waiting for data");
+    let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(
+            Graph::new()
+                .with_series(waiting)
+                .with_axes(axes())
+                .with_grid_lines(grid())
+                .with_title("No data yet"),
+        );
+    check("empty_plot", w, h, canvas);
+}

@@ -575,23 +575,38 @@ mod tests {
     #[test]
     fn a_frame_that_cannot_be_drawn_sends_nothing() {
         let terminal = live_terminal();
+        let inverted = Plot::new().line(vec![(0, 0), (1, 1)]).x_limits(1.0, 0.0);
         assert!(matches!(
-            Plot::new().show_live_with(&terminal, Terminal::place_in_buffer),
-            Err(crate::Error::NoData)
+            inverted.show_live_with(&terminal, Terminal::place_in_buffer),
+            Err(crate::Error::InvalidLimits { .. })
         ));
 
-        let mut plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let plot = Plot::new().line(vec![(0, 0), (1, 1)]);
         let mut live = plot
             .show_live_with(&terminal, Terminal::place_in_buffer)
             .unwrap();
         let written = live.placement.written().len();
-        plot.series_mut()[0].clear();
-        assert!(matches!(live.update(&plot), Err(crate::Error::NoData)));
+        assert!(matches!(
+            live.update(&inverted),
+            Err(crate::Error::InvalidLimits { .. })
+        ));
         assert_eq!(live.placement.written().len(), written);
-        // the next frame with data replaces the first one
-        plot.series_mut()[0].push(2, 2);
+        // the next frame that can be drawn replaces the first one
         live.update(&plot).unwrap();
         assert_eq!(count(live.placement.written(), b"a=d,"), 1);
+    }
+
+    #[test]
+    fn an_empty_live_plot_shows_empty_axes() {
+        let mut plot = Plot::new().line(Series::from(Vec::<(f64, f64)>::new()).with_label("v"));
+        let mut live = plot
+            .show_live_with(&live_terminal(), Terminal::place_in_buffer)
+            .unwrap();
+        plot.series_mut()[0].push(1, 1);
+        live.update(&plot).unwrap();
+        plot.series_mut()[0].clear();
+        live.update(&plot).unwrap();
+        assert_eq!(count(live.placement.written(), b"a=t,"), 3);
     }
 
     #[test]
@@ -681,11 +696,29 @@ mod tests {
     }
 
     #[test]
-    fn empty_plot_is_an_error() {
-        assert!(matches!(
-            Plot::new().render(100, 100),
-            Err(crate::Error::NoData)
-        ));
+    fn an_empty_plot_draws_empty_axes() {
+        for plot in [Plot::new(), Plot::new().line(Vec::<(f64, f64)>::new())] {
+            let rgb = plot.render(200, 150).unwrap();
+            assert!(rgb.iter().any(|&b| b != 0));
+        }
+    }
+
+    #[test]
+    fn an_empty_labeled_series_has_its_legend_upper_right() {
+        let series = Series::from(Vec::<(f64, f64)>::new()).with_label("waiting");
+        let (w, h) = (400usize, 300usize);
+        let with = Plot::new().line(series.clone()).render(400, 300).unwrap();
+        let without = Plot::new()
+            .line(series)
+            .legend(false)
+            .render(400, 300)
+            .unwrap();
+        let differing: Vec<(usize, usize)> = (0..w * h)
+            .filter(|i| with[i * 3..i * 3 + 3] != without[i * 3..i * 3 + 3])
+            .map(|i| (i % w, i / w)) // (column, row from the top)
+            .collect();
+        assert!(!differing.is_empty());
+        assert!(differing.iter().all(|&(x, y)| x > w / 2 && y < h / 2));
     }
 
     #[test]
