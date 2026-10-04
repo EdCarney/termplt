@@ -34,6 +34,7 @@ Releases (`.github/workflows/release.yml`): push a `v*` tag equal to the `Cargo.
 
 Public API layers, top-down:
 - `Plot` (`plot.rs`): one-call builder (`line`/`scatter`/`line_points`/`series`, limits, size, background, grid, `title`/`x_label`/`y_label`, `font`/`font_size` (terminal-matched in `show()`), `legend`/`legend_location`; `show`, `save_png`, `render`). The CLI uses it too. `series_mut` gives the series for in-place changes (`Series::push`/`extend`/`clear`/`keep_last`/`data_mut`), and `show_live` returns a `LivePlot` whose `update(&plot)` redraws in place at the first frame's size and text size (the same canvas as `show_in`).
+- `Figure` (`figure.rs`): several plots as one image on a `rows x cols` grid of equal slots. `plot(rows, cols, plot)` takes a `GridSpan` for each (an index, a range or `..`, resolved right away to a `Range`), so a plot can cover a block of slots. The figure's `background`, `font` and `font_size` apply to plots without their own (a plot's own size is ignored); it has the same `size`, `render`, `save_png`, `show` and `show_in` as `Plot`, and `plots`/`plots_mut` for the plots.
 - `plotting::{series::Series, graph::Graph, canvas::TerminalCanvas}` and the style types; `prelude` re-exports the common ones.
 - `terminal`: `Terminal` (support check, size, tmux handling, display, `place` returning a `Placement` whose image can be replaced) plus re-exported `WindowSize`, `get_window_size`, `Image`, `PixelFormat`, `Transmission`, `Passthrough`, `query_support`, `TerminalCommandError`.
 - `Error`/`Result` (`error.rs`): one `#[non_exhaustive]` enum for the whole crate.
@@ -98,6 +99,17 @@ Text uses an embedded Go Regular font, trimmed to `assets/fonts/charset.txt` by 
 
 Series with a label (`Series::with_label`) are listed in a legend drawn inside the plot, after the series and before the text. `legend::build` sizes it with matplotlib's defaults in em (border pad 0.4, label spacing 0.5, sample length 2.0, sample-to-text pad 0.8, 0.5 from the plot edges) under caps: at most half the plot wide, labels wrapped onto 2 lines with `…`, and a `+N more` row for entries that don't fit (no legend when not even one does). `LegendLocation::Best` scores matplotlib's ten fixed locations in order against the scaled series (points strictly inside, plus one for each line whose drawn path touches the box; `Legend._find_best_position`) and takes the first that scores 0, else the lowest. The frame (background fill, 1 px edge of 80% background and 20% text color, 0.2 em rounded corners) is blended at 80% with `Canvas::blend`; samples reuse the series' marker and line stamps. Plots without labels draw exactly as before.
 
+### Figures (`figure.rs`)
+
+`Figure::render` draws in five steps:
+1. Validate: no rows or columns is `EmptyGrid`; a plot whose range is empty or beyond the grid is `InvalidCell`; a slot covered twice is `CellsOverlap`. A figure without plots is valid and draws as its background.
+2. Slots: for width `w` and `cols` columns, `base = w / cols`, `extra = w % cols`; column `c` is `base + 1` wide when `c < extra`, else `base`, starting at `c * base + min(c, extra)`. Rows are the same. The slots cover the figure exactly, and a plot gets the rectangle from its first slot to its last.
+3. Render each cell with the single-plot path at the cell's size (`canvas_with_font_size` with the resolved background, font and text size, then `draw`); its edge buffer comes from the cell's size. Errors, such as `CanvasTooSmall` for a cell without pixels, are returned as is.
+4. Combine: start from a buffer of the figure background and copy each cell row into place.
+5. Output: `render` returns the buffer; `save_png` uses `size` or `DEFAULT_PNG_SIZE`; `show_in` uses `size` or the terminal's default plot size, and `font_size` or the terminal's text size.
+
+Drawing a figure does not change the layout in `canvas.rs`: every cell is an ordinary plot canvas, so plot areas do not line up across cells when their labels differ.
+
 ### CLI (`src/bin/termplt/`)
 
 - `cli.rs`: clap derive definition; `--completions <SHELL>` prints a `clap_complete` script (static: flags, `--marker`/`--line` possible values, color names via `ColorParser`, file-path hints). Style options (`--color`, `--marker`, `--line`, ...) are defaults for every series; old snake_case flags are hidden aliases.
@@ -110,9 +122,9 @@ Series with a label (`Series::with_label`) are listed in a legend drawn inside t
 
 ## Testing
 
-- Unit tests are co-located in modules (`#[cfg(test)] mod tests`).
-- `tests/golden.rs` renders fixed scenes and compares them with `tests/snapshots/*.png` (≤0.1% of pixels may differ). After an intentional visual change, regenerate with `TERMPLT_UPDATE_SNAPSHOTS=1` and inspect the PNGs before committing; mismatches are written to `target/snapshots/`.
-- `tests/properties.rs` (proptest) checks that drawing never panics for arbitrary data/styles/sizes (including NaN/∞/extremes) and that scaled points stay within the target limits. Run in debug mode too — release builds disable integer-overflow checks.
+- Unit tests are co-located in modules (`#[cfg(test)] mod tests`). `figure.rs` tests validation (empty grid, invalid cells, overlaps), the slot sizes and spans, each plot landing in its cell, empty slots, a plot's own size being ignored, cells without pixels, `show` sizes and `save_png`.
+- `tests/golden.rs` renders fixed scenes and compares them with `tests/snapshots/*.png` (≤0.1% of pixels may differ). After an intentional visual change, regenerate with `TERMPLT_UPDATE_SNAPSHOTS=1` and inspect the PNGs before committing; mismatches are written to `target/snapshots/`. New scenes cover figures (`figure_grid`: a 2x2 grid with differing labels; `figure_spanning`: a plot across the top row, on a white figure background) and a plot without data (`empty_plot`).
+- `tests/properties.rs` (proptest) checks that drawing never panics for arbitrary data/styles/sizes (including NaN/∞/extremes) and that scaled points stay within the target limits. Run in debug mode too — release builds disable integer-overflow checks. `figure_rendering_never_panics` draws arbitrary grids, spans and sizes, and `a_one_by_one_figure_renders_like_its_plot` checks that a 1x1 figure is its plot.
 - `tests/cli.rs` runs the CLI binary with piped stdio: PNG output from files and stdin, the not-a-terminal error, argument and data errors.
 - `tests/pty.rs` (Unix) runs the CLI on a pty (`openpty`, made the controlling terminal so `/dev/tty` works) and plays a fake terminal on the master side: it answers the graphics query, `CSI 14t`/`18t` and DA1 as configured, and the tests decode the transmitted PNG and check its size, the control keys (`a=T`, `f=100`, `q=2`, `C=1` in tmux), what follows the image, and the error text. tmux is simulated with `$TMUX` and a fake `tmux` script on `PATH`. `run_with(.., Stdin::Pipe(script))` feeds stdin from a pipe with timed writes (the pty stays the controlling terminal through stdout), `events` splits the output into graphics commands, cursor moves and text, `transmissions` joins chunked images, and the `--follow` tests compare `steps` (transmit/put/delete/up/down/text, with every command's keys checked) with the exact sequence of frames. The terminal-setup decisions are also unit-tested with a fake `Backend` in `src/terminal.rs`, and reply parsing with a fake `ByteSource` in `responses.rs`.
 - Use `tempfile` for files in tests, never fixed names in the shared temp directory.

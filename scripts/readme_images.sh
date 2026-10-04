@@ -25,5 +25,6 @@ mkdir -p "$out"
 
 "$termplt" test_data/sine.csv test_data/damped_sine.csv \
     -s "file=test_data/cosine.csv,label=cos(x)" -o "$out/legend.png"
+cargo run --release --quiet --example subplots -- "$out/subplots.png"
 
 echo "Wrote $(ls "$out" | wc -l | tr -d ' ') images to $out/"

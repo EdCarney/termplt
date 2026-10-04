@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `Figure`: several plots drawn as one image on a grid. `Figure::new(rows, cols)`, then
+  `plot(rows, cols, plot)` for each plot; a plot can cover one slot or a block of them, given as
+  an index or a range (`GridSpan`: `1`, `0..2`, `..`). `render`, `save_png`, `show` and `show_in`
+  work as for `Plot`, and the figure-wide `background`, `font` and `font_size` apply to plots
+  without their own. `examples/subplots.rs` shows it (`cargo run --example subplots`).
+- `Error::EmptyGrid`, `Error::InvalidCell` and `Error::CellsOverlap`, returned when a figure is
+  drawn with no rows or columns, a plot outside the grid, or two plots on the same slot.
+
 ### Changed
 - A plot without data now draws empty axes (0 to 1 on each axis without explicit limits, as
   matplotlib draws empty axes) instead of failing with `Error::NoData`. Points all outside
