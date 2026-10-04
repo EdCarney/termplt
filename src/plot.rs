@@ -436,13 +436,15 @@ impl sealed::Draw for Plot {
 
 impl Render for Plot {}
 
-/// A plot or figure shown in the terminal by [`Plot::show_live`] or [`Figure::show_live`](crate::Figure::show_live) that can be redrawn in place.
+/// A plot or figure shown in the terminal by [`Plot::show_live`] or
+/// [`Figure::show_live`](crate::Figure::show_live) that can be redrawn in place.
 ///
 /// Change the plot between frames, then pass it to [`LivePlot::update`]. The data changes in
 /// place through [`Plot::series_mut`]; anything else, such as the limits or the title, goes
 /// through the builders (`plot = plot.x_limits(0.0, 10.0)`), since the handle doesn't borrow
 /// the plot. The axes follow the data on every frame unless limits are set, and nothing waits
-/// between frames: pacing is up to the caller.
+/// between frames: pacing is up to the caller. For a figure, the data changes in place through
+/// [`Figure::plots_mut`](crate::Figure::plots_mut).
 ///
 /// ```no_run
 /// use std::{thread, time::Duration};
