@@ -104,7 +104,7 @@ Series with a label (`Series::with_label`) are listed in a legend drawn inside t
 `Figure::render` draws in five steps:
 1. Validate: no rows or columns is `EmptyGrid`; a plot whose range is empty or beyond the grid is `InvalidCell`; a slot covered twice is `CellsOverlap`. A figure without plots is valid and draws as its background.
 2. Slots: for width `w` and `cols` columns, `base = w / cols`, `extra = w % cols`; column `c` is `base + 1` wide when `c < extra`, else `base`, starting at `c * base + min(c, extra)`. Rows are the same. The slots cover the figure exactly, and a plot gets the rectangle from its first slot to its last.
-3. Render each cell with the single-plot path at the cell's size (`canvas_with_font_size` with the resolved background, font and text size, then `draw`); its edge buffer comes from the cell's size. Errors, such as `CanvasTooSmall` for a cell without pixels, are returned as is.
+3. Render each cell with the single-plot path at the cell's size (`Plot::render_with` builds the same canvas as a plot drawn alone, through `canvas_with`, with the resolved background, font and text size, then calls `draw`); its edge buffer comes from the cell's size. Errors, such as `CanvasTooSmall` for a cell without pixels, are returned as is.
 4. Combine: start from a buffer of the figure background and copy each cell row into place.
 5. Output: `render` returns the buffer; `save_png` uses `size` or `DEFAULT_PNG_SIZE`; `show_in` uses `size` or the terminal's default plot size, and `font_size` or the terminal's text size.
 

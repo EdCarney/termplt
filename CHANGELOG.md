@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format is based on
   matplotlib draws empty axes) instead of failing with `Error::NoData`. Points all outside
   explicit limits now draw the axes at those limits instead of failing with
   `Error::NoVisibleData`, which is no longer returned. Live plots can start empty.
+- A plot that sets the default background or font (`Plot::new().background(colors::BLACK)`,
+  `.font(Font::default())`) no longer compares equal to one that leaves them unset. They still
+  draw alike.
 
 ## [0.4.0] - 2026-09-26
 

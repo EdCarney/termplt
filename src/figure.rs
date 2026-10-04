@@ -141,12 +141,7 @@ impl Figure {
         self.validate()?;
         let background = [self.background.r, self.background.g, self.background.b];
         let stride = width as usize * 3;
-        let mut rgb: Vec<u8> = background
-            .iter()
-            .copied()
-            .cycle()
-            .take(stride * height as usize)
-            .collect();
+        let mut rgb = background.repeat(width as usize * height as usize);
         let defaults = Defaults {
             background: self.background,
             font: &self.font,
@@ -294,6 +289,7 @@ impl GridSpan for RangeFull {}
 #[cfg(test)]
 mod tests {
     use super::{sealed::Span, *};
+    use crate::terminal::{Terminal, WindowSize};
 
     #[test]
     fn spans_resolve_to_ranges() {
@@ -412,11 +408,6 @@ mod tests {
             .plot(1.., 1.., Plot::new());
         assert!(fig.validate().is_ok());
     }
-
-    use crate::{
-        plotting::colors,
-        terminal::{Terminal, WindowSize},
-    };
 
     fn sine() -> Plot {
         Plot::new().line(
