@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `Figure::show_live` and `show_live_in`, and `LivePlot::update` taking a plot or a figure
+  through the sealed `Render` trait. `examples/subplots_live.rs` shows it
+  (`cargo run --example subplots_live`). A reference that only coerced to `&Plot` (such as
+  `&Box<Plot>`) now needs `&*`.
 - `Figure`: several plots drawn as one image on a grid. `Figure::new(rows, cols)`, then
   `plot(rows, cols, plot)` for each plot; a plot can cover one slot or a block of them, given as
   an index or a range (`GridSpan`: `1`, `0..2`, `..`). `render`, `save_png`, `show` and `show_in`

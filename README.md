@@ -17,7 +17,7 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 - **Configurable canvas** — set dimensions, background color, and buffer padding
 - **TrueType text** — an embedded, anti-aliased Go font covering Latin-1, Greek and common math symbols; load your own font for other scripts
 - **Live plots** — `plot.show_live()?` returns a handle whose `update(&plot)` redraws the plot in place, without flicker, as its data changes; in the CLI, `tail -f data.csv | termplt --follow`
-- **Subplots** — `Figure::new(2, 2).plot(1, .., plot)` draws several plots as one image on a grid; a plot can span rows or columns
+- **Subplots** — `Figure::new(2, 2).plot(1, .., plot)` draws several plots as one image on a grid, static or live; a plot can span rows or columns
 - **Typed errors** — match on `termplt::Error` (invalid limits, canvas too small, terminal unsupported, ...)
 - **Fast** — a million points render in about 0.1-0.3 s
 
@@ -313,6 +313,8 @@ fig.show()?; // or fig.size(800, 600).save_png("subplots.png")?
 ```
 
 The figure's `background`, `font` and `font_size` apply to every plot that has none of its own; a plot's own size is ignored. The plot areas of neighbouring cells do not line up when their labels differ (a longer tick label or an extra axis name moves the area), which a later version may fix.
+
+A figure can be live like a plot: `let mut live = fig.show_live()?;` draws the first frame, and `live.update(&fig)?` redraws it in place after you change the data through `fig.plots_mut()`. `cargo run --example subplots_live` shows two panels updating.
 
 <img width="800" alt="A figure with a wide plot of sine and cosine across the top and a spiral and a parabola below" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/subplots.png" />
 

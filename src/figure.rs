@@ -1,10 +1,10 @@
 //! Several plots drawn as one image, on a grid.
 
 use crate::{
-    DEFAULT_PNG_SIZE, Error, Plot, Result,
-    plot::Defaults,
+    DEFAULT_PNG_SIZE, Error, LivePlot, Plot, Result,
+    plot::{self, Defaults, Render},
     plotting::{colors, font::Font, text::DEFAULT_FONT_SIZE},
-    terminal::Terminal,
+    terminal::{Image, Placement, Terminal},
 };
 use rgb::RGB8;
 use std::{
@@ -136,6 +136,38 @@ impl Figure {
         terminal.show_rgb(&rgb, width, height)
     }
 
+    /// Draws the figure in the terminal like [`Figure::show`] and returns a handle that redraws
+    /// it in place with [`LivePlot::update`], for data that changes over time.
+    ///
+    /// The figure starts at the beginning of the cursor's line, and the cursor is left below
+    /// it. Nothing else may be written to the terminal while the figure is live. Fails with
+    /// [`Error::ImageTooTall`] when the figure and a line for the cursor don't fit in the
+    /// window.
+    pub fn show_live(&self) -> Result<LivePlot> {
+        let terminal = Terminal::connect()?;
+        self.show_live_in(&terminal)
+    }
+
+    /// Like [`Figure::show_live`], with a [`Terminal`] that was already connected.
+    pub fn show_live_in(&self, terminal: &Terminal) -> Result<LivePlot> {
+        self.show_live_with(terminal, Terminal::place)
+    }
+
+    /// Draws the first frame and places it with `place`.
+    pub(crate) fn show_live_with(
+        &self,
+        terminal: &Terminal,
+        place: impl FnOnce(&Terminal, &Image) -> Result<Placement>,
+    ) -> Result<LivePlot> {
+        plot::start_live(
+            self,
+            self.size_in(terminal),
+            self.font_size_in(terminal),
+            terminal,
+            place,
+        )
+    }
+
     /// Draws the figure with `font_size` as the base text size.
     pub(crate) fn render_at(&self, width: u32, height: u32, font_size: u32) -> Result<Vec<u8>> {
         self.validate()?;
@@ -226,6 +258,14 @@ fn slot_start(index: usize, count: usize, length: u32) -> u32 {
 /// Rows or columns a plot covers in a [`Figure`]: one index (`1`) or a range (`0..2`, `0..=1`,
 /// `1..`, `..2`, `..`). Implemented for `usize` and the standard range types; sealed.
 pub trait GridSpan: sealed::Span {}
+
+impl plot::sealed::Draw for Figure {
+    fn render_rgb(&self, width: u32, height: u32, font_size: u32) -> Result<Vec<u8>> {
+        self.render_at(width, height, font_size)
+    }
+}
+
+impl Render for Figure {}
 
 mod sealed {
     use std::ops::Range;

@@ -14,4 +14,4 @@ mod window_ctrl;
 
 pub use error::{Error, Result};
 pub use figure::{Figure, GridSpan};
-pub use plot::{DEFAULT_PNG_SIZE, LivePlot, Plot};
+pub use plot::{DEFAULT_PNG_SIZE, LivePlot, Plot, Render};
