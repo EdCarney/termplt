@@ -50,15 +50,25 @@ pub struct Plot {
     x_limits: Option<(f64, f64)>,
     y_limits: Option<(f64, f64)>,
     size: Option<(u32, u32)>,
-    background: RGB8,
+    background: Option<RGB8>,
     grid: bool,
     title: Option<String>,
     x_label: Option<String>,
     y_label: Option<String>,
-    font: Font,
+    font: Option<Font>,
     font_size: Option<u32>,
     legend: bool,
     legend_location: LegendLocation,
+}
+
+/// What a figure gives the plots in it: each plot uses its own setting where it has one.
+// Used by `Figure` (Task 4); remove the expect then.
+#[cfg_attr(not(test), expect(dead_code))]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Defaults<'a> {
+    pub(crate) background: RGB8,
+    pub(crate) font: &'a Font,
+    pub(crate) font_size: u32,
 }
 
 impl Default for Plot {
@@ -68,12 +78,12 @@ impl Default for Plot {
             x_limits: None,
             y_limits: None,
             size: None,
-            background: colors::BLACK,
+            background: None,
             grid: true,
             title: None,
             x_label: None,
             y_label: None,
-            font: Font::default(),
+            font: None,
             font_size: None,
             legend: true,
             legend_location: LegendLocation::Best,
@@ -144,10 +154,11 @@ impl Plot {
         self
     }
 
-    /// Sets the background color. Axes, labels and the grid switch to dark colors on light
-    /// backgrounds.
+    /// Sets the background color (black by default). Axes, labels and the grid switch to dark
+    /// colors on light backgrounds. A figure's background applies to plots that don't set their
+    /// own.
     pub fn background(mut self, color: RGB8) -> Self {
-        self.background = color;
+        self.background = Some(color);
         self
     }
 
@@ -175,15 +186,17 @@ impl Plot {
         self
     }
 
-    /// Sets the font for all text; characters it lacks are drawn with the built-in Go font.
+    /// Sets the font for all text; characters it lacks are drawn with the built-in Go font. A
+    /// figure's font applies to plots that don't set their own.
     pub fn font(mut self, font: Font) -> Self {
-        self.font = font;
+        self.font = Some(font);
         self
     }
 
     /// Sets the base text size in pixels: tick labels and axis names use it, and the title is
     /// 1.2 times larger. By default [`Plot::show`] matches the terminal's text
-    /// ([`Terminal::text_size`]), and other output uses [`DEFAULT_FONT_SIZE`].
+    /// ([`Terminal::text_size`]), and other output uses [`DEFAULT_FONT_SIZE`]. A figure's text
+    /// size applies to plots that don't set their own.
     pub fn font_size(mut self, px: u32) -> Self {
         self.font_size = Some(px);
         self
@@ -223,7 +236,12 @@ impl Plot {
 
     /// The graph with axes, grid and limits applied.
     pub fn graph(&self) -> Graph {
-        let (foreground, grid_color) = if colors::luminance(self.background) > 127.5 {
+        self.graph_on(self.background.unwrap_or(colors::BLACK))
+    }
+
+    /// The graph with the foreground and grid colors chosen for `background`.
+    fn graph_on(&self, background: RGB8) -> Graph {
+        let (foreground, grid_color) = if colors::luminance(background) > 127.5 {
             (colors::BLACK, colors::LIGHT_GRAY)
         } else {
             (colors::WHITE, colors::GRAY)
@@ -266,14 +284,50 @@ impl Plot {
     }
 
     fn canvas_with_font_size(&self, width: u32, height: u32, font_size: u32) -> TerminalCanvas {
+        self.canvas_with(
+            width,
+            height,
+            font_size,
+            self.background.unwrap_or(colors::BLACK),
+            self.font.clone().unwrap_or_default(),
+        )
+    }
+
+    fn canvas_with(
+        &self,
+        width: u32,
+        height: u32,
+        font_size: u32,
+        background: RGB8,
+        font: Font,
+    ) -> TerminalCanvas {
         // tick labels are laid out inside the canvas automatically; the buffer is just
         // breathing room around the edges
         let buffer = (width.min(height) / 40).max(8);
-        TerminalCanvas::new(width, height, self.background)
+        TerminalCanvas::new(width, height, background)
             .with_buffer(BufferType::Uniform(buffer))
-            .with_font(self.font.clone())
+            .with_font(font)
             .with_font_size(font_size)
-            .with_graph(self.graph())
+            .with_graph(self.graph_on(background))
+    }
+
+    /// Draws the plot at `width` x `height` pixels, using `defaults` for the background, font
+    /// and base text size where the plot has none of its own. A size set on the plot is ignored.
+    #[cfg_attr(not(test), expect(dead_code))] // used by `Figure` (Task 4); remove then
+    pub(crate) fn render_with(
+        &self,
+        width: u32,
+        height: u32,
+        defaults: Defaults<'_>,
+    ) -> Result<Vec<u8>> {
+        let canvas = self.canvas_with(
+            width,
+            height,
+            self.font_size.unwrap_or(defaults.font_size),
+            self.background.unwrap_or(defaults.background),
+            self.font.clone().unwrap_or_else(|| defaults.font.clone()),
+        );
+        Ok(canvas.draw()?.into_bytes())
     }
 
     /// The base text size [`Plot::show_in`] uses: the one set, or the terminal's.
@@ -409,6 +463,46 @@ impl LivePlot {
 mod tests {
     use super::*;
     use crate::plotting::point::Point;
+
+    #[test]
+    fn figure_defaults_apply_where_the_plot_has_none() {
+        let plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let font = Font::default();
+        let defaults = Defaults {
+            background: colors::WHITE,
+            font: &font,
+            font_size: 20,
+        };
+        let expected = plot.clone().background(colors::WHITE).font_size(20);
+        // dark axes on the white background, as for a plot that set it
+        assert!(
+            plot.render_with(320, 240, defaults).unwrap() == expected.render(320, 240).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_plots_own_settings_win_over_figure_defaults() {
+        let plot = Plot::new()
+            .line(vec![(0, 0), (1, 1)])
+            .background(colors::BLACK)
+            .font_size(12)
+            .size(50, 50); // ignored: the size given wins
+        let font = Font::default();
+        let defaults = Defaults {
+            background: colors::WHITE,
+            font: &font,
+            font_size: 20,
+        };
+        assert!(plot.render_with(320, 240, defaults).unwrap() == plot.render(320, 240).unwrap());
+    }
+
+    #[test]
+    fn unset_and_default_settings_draw_alike() {
+        let plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let explicit = plot.clone().background(colors::BLACK).font(Font::default());
+        assert!(plot.render(320, 240).unwrap() == explicit.render(320, 240).unwrap());
+        assert_ne!(plot, explicit); // "set to the default" and "not set" differ now
+    }
 
     #[test]
     fn legend_settings_reach_the_graph() {
