@@ -2,6 +2,7 @@
 #![warn(missing_docs)]
 mod common;
 mod error;
+mod figure;
 mod kitty_graphics;
 mod plot;
 /// The building blocks: series, graphs, styles and the canvas they are drawn on.
@@ -12,4 +13,5 @@ mod terminal_commands;
 mod window_ctrl;
 
 pub use error::{Error, Result};
+pub use figure::{Figure, GridSpan};
 pub use plot::{DEFAULT_PNG_SIZE, LivePlot, Plot};
