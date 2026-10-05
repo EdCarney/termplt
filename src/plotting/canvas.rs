@@ -433,10 +433,7 @@ impl TerminalCanvas {
     fn label_style(&self, axes: Option<&Axes>) -> (RGB8, u32) {
         let style = axes.map(|a| *a.style()).unwrap_or_default();
         let color = if style.color() == self.background {
-            let luminance = 0.2126 * self.background.r as f64
-                + 0.7152 * self.background.g as f64
-                + 0.0722 * self.background.b as f64;
-            if luminance > 127.5 {
+            if colors::luminance(self.background) > 127.5 {
                 colors::BLACK
             } else {
                 colors::WHITE
