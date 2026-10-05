@@ -529,6 +529,7 @@ impl TerminalCanvas {
                         line,
                         &LineStamp::new(line),
                         &mut None,
+                        &mut 0,
                     );
                 }
             }

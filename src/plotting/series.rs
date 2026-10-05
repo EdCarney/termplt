@@ -1,7 +1,7 @@
 use super::{
     canvas::Canvas,
-    common::{Drawable, Graphable, MaskPoints, UIntConvertable},
-    line::{Line, LineStamp, LineStyle, draw_segment},
+    common::{Drawable, Graphable, IntConvertable, MaskPoints, UIntConvertable},
+    line::{Line, LineStamp, LineStyle, draw_segment, path_mask},
     line_positioning::LinePositioning,
     marker::{Marker, MarkerStyle, draw_marker, marker_stamp},
     point::Point,
@@ -148,7 +148,8 @@ impl Series {
 
 impl Series {
     /// Draws the series straight into `canvas`: the same pixels, in the same order, as
-    /// [`Drawable::get_mask`], without allocating per marker or segment.
+    /// [`Drawable::get_mask`], without allocating per marker or segment. The dash pattern runs
+    /// along the whole line, across its segments, and restarts after a gap (a non-finite point).
     pub(crate) fn draw_into(&self, canvas: &mut Canvas) -> Result<()> {
         if let Some(color) = self.marker_style.color() {
             let stamp = marker_stamp(&self.marker_style)?;
@@ -160,12 +161,14 @@ impl Series {
         if let Some(line_style) = &self.line_style {
             let stamp = LineStamp::new(line_style);
             let mut last = None;
+            let mut phase = 0;
             for pair in self.data.windows(2) {
                 if !is_finite(&pair[0]) || !is_finite(&pair[1]) {
+                    phase = 0;
                     continue;
                 }
                 let segment = (pair[0].convert_to_u32(), pair[1].convert_to_u32());
-                draw_segment(canvas, segment, line_style, &stamp, &mut last);
+                draw_segment(canvas, segment, line_style, &stamp, &mut last, &mut phase);
             }
         }
         Ok(())
@@ -278,16 +281,26 @@ impl Drawable for Series {
             mask_points.extend(Marker::new(p.convert_to_u32(), self.marker_style).get_mask()?);
         }
 
-        // add lines if line styling is present
+        // add lines if line styling is present: the pixels of consecutive segments are joined
+        // into one path (a segment starts at the previous one's last pixel, which is counted
+        // once) so that the dash pattern runs along the whole line, and a gap breaks the path
         if let Some(line_style) = &self.line_style {
+            let mut path: Vec<Point<u32>> = Vec::new();
             for pair in self.data.windows(2) {
                 if !is_finite(&pair[0]) || !is_finite(&pair[1]) {
+                    if !path.is_empty() {
+                        mask_points.push(path_mask(std::mem::take(&mut path), line_style));
+                    }
                     continue;
                 }
                 let (start, end) = (pair[0], pair[1]);
                 let pos = LinePositioning::BetweenPoints { start, end };
-                let line = Line::new(pos.convert_to_u32(), *line_style);
-                mask_points.extend(line.get_mask()?);
+                let line = Line::new(pos.convert_to_u32().convert_to_i32(), *line_style);
+                let segment = line.full_drawable_points();
+                path.extend(&segment[usize::from(!path.is_empty())..]);
+            }
+            if !path.is_empty() {
+                mask_points.push(path_mask(path, line_style));
             }
         };
 
@@ -519,6 +532,56 @@ mod tests {
         // row 10 from the bottom is row 9 from the top
         assert!(lit(5) && lit(35), "segments on both sides are drawn");
         assert!(!lit(20), "nothing is drawn across the gap");
+    }
+
+    /// Which pixels of row 10 (from the bottom) of a 40x20 canvas `series` lights.
+    fn lit_in_row_10(series: &Series) -> Vec<bool> {
+        use crate::plotting::{canvas::Canvas, colors};
+        let mut canvas = Canvas::new(40, 20, colors::BLACK);
+        series.draw_into(&mut canvas).unwrap();
+        let bytes = canvas.get_bytes();
+        // row 10 from the bottom is row 9 from the top
+        (0..40)
+            .map(|x| bytes[(9 * 40 + x) * 3..][..3] != [0, 0, 0])
+            .collect()
+    }
+
+    #[test]
+    fn dense_dashed_line_stays_dashed() {
+        use crate::plotting::colors;
+        // one point per pixel: every segment is shorter than a dash
+        let points: Vec<Point<f64>> = (0..40).map(|x| Point::new(x as f64, 10.0)).collect();
+        let series = Series::new(&points).with_marker_style(MarkerStyle::None);
+        let dashed = series
+            .clone()
+            .with_line_style(LineStyle::dashed(colors::LIME, 0));
+        let solid = series.with_line_style(LineStyle::solid(colors::LIME, 0));
+        let lit = lit_in_row_10(&dashed);
+        assert!(
+            lit.iter().any(|&on| !on),
+            "a dashed line leaves unlit pixels"
+        );
+        assert_ne!(lit, lit_in_row_10(&solid));
+        // the same dashes as one segment across the row
+        let expected: Vec<bool> = (0..40).map(|x| x % 10 < 6).collect();
+        assert_eq!(lit, expected);
+    }
+
+    #[test]
+    fn dash_pattern_restarts_after_a_gap() {
+        use crate::plotting::colors;
+        // 8 pixels, then a gap; a pattern carried across the gap would skip x = 20 and 21
+        let points: Vec<Point<f64>> = (0..8)
+            .map(|x| Point::new(x as f64, 10.0))
+            .chain([Point::new(f64::NAN, 10.0)])
+            .chain((20..26).map(|x| Point::new(x as f64, 10.0)))
+            .collect();
+        let series = Series::new(&points)
+            .with_marker_style(MarkerStyle::None)
+            .with_line_style(LineStyle::dashed(colors::LIME, 0));
+        let lit = lit_in_row_10(&series);
+        let expected: Vec<bool> = (0..40).map(|x| x < 6 || (20..26).contains(&x)).collect();
+        assert_eq!(lit, expected);
     }
 
     #[test]

@@ -89,7 +89,7 @@ In tmux it draws with `C=1` and prints the newlines itself.
 
 ### Line Drawing (`line.rs`)
 
-`BetweenPoints` lines use Bresenham's algorithm; thickness stamps a disc of radius `thickness` at each pixel (round joins). `Horizontal`/`Vertical` lines use range iteration; thickness shifts parallel copies. `LineStyle::Dashed` filters the ordered path with a 6-on/4-off pattern. `MarkerStyle::None` draws no marker.
+`BetweenPoints` lines use Bresenham's algorithm; thickness stamps a disc of radius `thickness` at each pixel (round joins). `Horizontal`/`Vertical` lines use range iteration; thickness shifts parallel copies. `LineStyle::Dashed` filters the ordered path with a 6-on/4-off pattern that runs along a series' whole line (`draw_segment` carries the phase from segment to segment, counting the shared pixel once, and `Series::get_mask` joins the segments' pixels before dashing them) and restarts after a gap, so dense data stays dashed. `MarkerStyle::None` draws no marker.
 
 ### Text Rendering (`font.rs`, `srgb.rs`, `text.rs`)
 
