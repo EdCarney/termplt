@@ -50,15 +50,23 @@ pub struct Plot {
     x_limits: Option<(f64, f64)>,
     y_limits: Option<(f64, f64)>,
     size: Option<(u32, u32)>,
-    background: RGB8,
+    background: Option<RGB8>,
     grid: bool,
     title: Option<String>,
     x_label: Option<String>,
     y_label: Option<String>,
-    font: Font,
+    font: Option<Font>,
     font_size: Option<u32>,
     legend: bool,
     legend_location: LegendLocation,
+}
+
+/// What a figure gives the plots in it: each plot uses its own setting where it has one.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Defaults<'a> {
+    pub(crate) background: RGB8,
+    pub(crate) font: &'a Font,
+    pub(crate) font_size: u32,
 }
 
 impl Default for Plot {
@@ -68,12 +76,12 @@ impl Default for Plot {
             x_limits: None,
             y_limits: None,
             size: None,
-            background: colors::BLACK,
+            background: None,
             grid: true,
             title: None,
             x_label: None,
             y_label: None,
-            font: Font::default(),
+            font: None,
             font_size: None,
             legend: true,
             legend_location: LegendLocation::Best,
@@ -144,10 +152,11 @@ impl Plot {
         self
     }
 
-    /// Sets the background color. Axes, labels and the grid switch to dark colors on light
-    /// backgrounds.
+    /// Sets the background color (black by default). Axes, labels and the grid switch to dark
+    /// colors on light backgrounds. A figure's background applies to plots that don't set their
+    /// own.
     pub fn background(mut self, color: RGB8) -> Self {
-        self.background = color;
+        self.background = Some(color);
         self
     }
 
@@ -175,15 +184,17 @@ impl Plot {
         self
     }
 
-    /// Sets the font for all text; characters it lacks are drawn with the built-in Go font.
+    /// Sets the font for all text; characters it lacks are drawn with the built-in Go font. A
+    /// figure's font applies to plots that don't set their own.
     pub fn font(mut self, font: Font) -> Self {
-        self.font = font;
+        self.font = Some(font);
         self
     }
 
     /// Sets the base text size in pixels: tick labels and axis names use it, and the title is
     /// 1.2 times larger. By default [`Plot::show`] matches the terminal's text
-    /// ([`Terminal::text_size`]), and other output uses [`DEFAULT_FONT_SIZE`].
+    /// ([`Terminal::text_size`]), and other output uses [`DEFAULT_FONT_SIZE`]. A figure's text
+    /// size applies to plots that don't set their own.
     pub fn font_size(mut self, px: u32) -> Self {
         self.font_size = Some(px);
         self
@@ -223,7 +234,12 @@ impl Plot {
 
     /// The graph with axes, grid and limits applied.
     pub fn graph(&self) -> Graph {
-        let (foreground, grid_color) = if colors::luminance(self.background) > 127.5 {
+        self.graph_on(self.background.unwrap_or(colors::BLACK))
+    }
+
+    /// The graph with the foreground and grid colors chosen for `background`.
+    fn graph_on(&self, background: RGB8) -> Graph {
+        let (foreground, grid_color) = if colors::luminance(background) > 127.5 {
             (colors::BLACK, colors::LIGHT_GRAY)
         } else {
             (colors::WHITE, colors::GRAY)
@@ -266,14 +282,49 @@ impl Plot {
     }
 
     fn canvas_with_font_size(&self, width: u32, height: u32, font_size: u32) -> TerminalCanvas {
+        self.canvas_with(
+            width,
+            height,
+            font_size,
+            self.background.unwrap_or(colors::BLACK),
+            self.font.clone().unwrap_or_default(),
+        )
+    }
+
+    fn canvas_with(
+        &self,
+        width: u32,
+        height: u32,
+        font_size: u32,
+        background: RGB8,
+        font: Font,
+    ) -> TerminalCanvas {
         // tick labels are laid out inside the canvas automatically; the buffer is just
         // breathing room around the edges
         let buffer = (width.min(height) / 40).max(8);
-        TerminalCanvas::new(width, height, self.background)
+        TerminalCanvas::new(width, height, background)
             .with_buffer(BufferType::Uniform(buffer))
-            .with_font(self.font.clone())
+            .with_font(font)
             .with_font_size(font_size)
-            .with_graph(self.graph())
+            .with_graph(self.graph_on(background))
+    }
+
+    /// Draws the plot at `width` x `height` pixels, using `defaults` for the background, font
+    /// and base text size where the plot has none of its own. A size set on the plot is ignored.
+    pub(crate) fn render_with(
+        &self,
+        width: u32,
+        height: u32,
+        defaults: Defaults<'_>,
+    ) -> Result<Vec<u8>> {
+        let canvas = self.canvas_with(
+            width,
+            height,
+            self.font_size.unwrap_or(defaults.font_size),
+            self.background.unwrap_or(defaults.background),
+            self.font.clone().unwrap_or_else(|| defaults.font.clone()),
+        );
+        Ok(canvas.draw()?.into_bytes())
     }
 
     /// The base text size [`Plot::show_in`] uses: the one set, or the terminal's.
@@ -342,27 +393,58 @@ impl Plot {
         terminal: &Terminal,
         place: impl FnOnce(&Terminal, &Image) -> Result<Placement>,
     ) -> Result<LivePlot> {
-        let (width, height) = self.size.unwrap_or_else(|| terminal.default_plot_size());
-        let font_size = self.font_size_in(terminal);
-        let rgb = self
-            .canvas_with_font_size(width, height, font_size)
-            .draw()?
-            .into_bytes();
-        let placement = place(terminal, &Image::png_from_rgb(&rgb, width, height)?)?;
-        Ok(LivePlot {
-            placement,
-            font_size,
-        })
+        let size = self.size.unwrap_or_else(|| terminal.default_plot_size());
+        start_live(self, size, self.font_size_in(terminal), terminal, place)
     }
 }
 
-/// A plot shown in the terminal by [`Plot::show_live`] that can be redrawn in place.
+/// Draws the first frame of `drawing` and places it with `place`.
+pub(crate) fn start_live(
+    drawing: &impl Render,
+    (width, height): (u32, u32),
+    font_size: u32,
+    terminal: &Terminal,
+    place: impl FnOnce(&Terminal, &Image) -> Result<Placement>,
+) -> Result<LivePlot> {
+    let rgb = drawing.render_rgb(width, height, font_size)?;
+    let placement = place(terminal, &Image::png_from_rgb(&rgb, width, height)?)?;
+    Ok(LivePlot {
+        placement,
+        font_size,
+    })
+}
+
+pub(crate) mod sealed {
+    pub trait Draw {
+        /// RGB8 pixels at `width` x `height` with `font_size` as the base text size.
+        fn render_rgb(&self, width: u32, height: u32, font_size: u32) -> crate::Result<Vec<u8>>;
+    }
+}
+
+/// What a [`LivePlot`] can draw: a [`Plot`] or a [`Figure`](crate::Figure). Sealed, so it
+/// can't be implemented outside this crate.
+pub trait Render: sealed::Draw {}
+
+impl sealed::Draw for Plot {
+    fn render_rgb(&self, width: u32, height: u32, font_size: u32) -> Result<Vec<u8>> {
+        Ok(self
+            .canvas_with_font_size(width, height, font_size)
+            .draw()?
+            .into_bytes())
+    }
+}
+
+impl<T: sealed::Draw> Render for T {}
+
+/// A plot or figure shown in the terminal by [`Plot::show_live`] or
+/// [`Figure::show_live`](crate::Figure::show_live) that can be redrawn in place.
 ///
 /// Change the plot between frames, then pass it to [`LivePlot::update`]. The data changes in
 /// place through [`Plot::series_mut`]; anything else, such as the limits or the title, goes
 /// through the builders (`plot = plot.x_limits(0.0, 10.0)`), since the handle doesn't borrow
 /// the plot. The axes follow the data on every frame unless limits are set, and nothing waits
-/// between frames: pacing is up to the caller.
+/// between frames: pacing is up to the caller. For a figure, the data changes in place through
+/// [`Figure::plots_mut`](crate::Figure::plots_mut).
 ///
 /// ```no_run
 /// use std::{thread, time::Duration};
@@ -388,14 +470,14 @@ pub struct LivePlot {
 }
 
 impl LivePlot {
-    /// Draws `plot` over the previous frame, at the size and text size of the first frame
-    /// (a size or text size set on `plot` since then is ignored).
-    pub fn update(&mut self, plot: &Plot) -> Result<()> {
+    /// Draws `drawing`, a [`Plot`] or a [`Figure`](crate::Figure), over the previous frame, at
+    /// the size and text size of the first frame. A size or text size set on the plot or figure
+    /// since then is ignored; text sizes set on a figure's plots still apply. The plot and the
+    /// figure may change shape between frames. If drawing fails, nothing is sent and the
+    /// previous frame stays.
+    pub fn update(&mut self, drawing: &impl Render) -> Result<()> {
         let (width, height) = self.placement.size();
-        let rgb = plot
-            .canvas_with_font_size(width, height, self.font_size)
-            .draw()?
-            .into_bytes();
+        let rgb = drawing.render_rgb(width, height, self.font_size)?;
         self.placement.replace_rgb(&rgb, width, height)
     }
 
@@ -408,7 +490,48 @@ impl LivePlot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plotting::point::Point;
+    use crate::{Figure, plotting::point::Point};
+    use sealed::Draw;
+
+    #[test]
+    fn figure_defaults_apply_where_the_plot_has_none() {
+        let plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let font = Font::default();
+        let defaults = Defaults {
+            background: colors::WHITE,
+            font: &font,
+            font_size: 20,
+        };
+        let expected = plot.clone().background(colors::WHITE).font_size(20);
+        // dark axes on the white background, as for a plot that set it
+        assert!(
+            plot.render_with(320, 240, defaults).unwrap() == expected.render(320, 240).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_plots_own_settings_win_over_figure_defaults() {
+        let plot = Plot::new()
+            .line(vec![(0, 0), (1, 1)])
+            .background(colors::BLACK)
+            .font_size(12)
+            .size(50, 50); // ignored: the size given wins
+        let font = Font::default();
+        let defaults = Defaults {
+            background: colors::WHITE,
+            font: &font,
+            font_size: 20,
+        };
+        assert!(plot.render_with(320, 240, defaults).unwrap() == plot.render(320, 240).unwrap());
+    }
+
+    #[test]
+    fn unset_and_default_settings_draw_alike() {
+        let plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let explicit = plot.clone().background(colors::BLACK).font(Font::default());
+        assert!(plot.render(320, 240).unwrap() == explicit.render(320, 240).unwrap());
+        assert_ne!(plot, explicit); // "set to the default" and "not set" differ now
+    }
 
     #[test]
     fn legend_settings_reach_the_graph() {
@@ -575,23 +698,38 @@ mod tests {
     #[test]
     fn a_frame_that_cannot_be_drawn_sends_nothing() {
         let terminal = live_terminal();
+        let inverted = Plot::new().line(vec![(0, 0), (1, 1)]).x_limits(1.0, 0.0);
         assert!(matches!(
-            Plot::new().show_live_with(&terminal, Terminal::place_in_buffer),
-            Err(crate::Error::NoData)
+            inverted.show_live_with(&terminal, Terminal::place_in_buffer),
+            Err(crate::Error::InvalidLimits { .. })
         ));
 
-        let mut plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let plot = Plot::new().line(vec![(0, 0), (1, 1)]);
         let mut live = plot
             .show_live_with(&terminal, Terminal::place_in_buffer)
             .unwrap();
         let written = live.placement.written().len();
-        plot.series_mut()[0].clear();
-        assert!(matches!(live.update(&plot), Err(crate::Error::NoData)));
+        assert!(matches!(
+            live.update(&inverted),
+            Err(crate::Error::InvalidLimits { .. })
+        ));
         assert_eq!(live.placement.written().len(), written);
-        // the next frame with data replaces the first one
-        plot.series_mut()[0].push(2, 2);
+        // the next frame that can be drawn replaces the first one
         live.update(&plot).unwrap();
         assert_eq!(count(live.placement.written(), b"a=d,"), 1);
+    }
+
+    #[test]
+    fn an_empty_live_plot_shows_empty_axes() {
+        let mut plot = Plot::new().line(Series::from(Vec::<(f64, f64)>::new()).with_label("v"));
+        let mut live = plot
+            .show_live_with(&live_terminal(), Terminal::place_in_buffer)
+            .unwrap();
+        plot.series_mut()[0].push(1, 1);
+        live.update(&plot).unwrap();
+        plot.series_mut()[0].clear();
+        live.update(&plot).unwrap();
+        assert_eq!(count(live.placement.written(), b"a=t,"), 3);
     }
 
     #[test]
@@ -681,11 +819,29 @@ mod tests {
     }
 
     #[test]
-    fn empty_plot_is_an_error() {
-        assert!(matches!(
-            Plot::new().render(100, 100),
-            Err(crate::Error::NoData)
-        ));
+    fn an_empty_plot_draws_empty_axes() {
+        for plot in [Plot::new(), Plot::new().line(Vec::<(f64, f64)>::new())] {
+            let rgb = plot.render(200, 150).unwrap();
+            assert!(rgb.iter().any(|&b| b != 0));
+        }
+    }
+
+    #[test]
+    fn an_empty_labeled_series_has_its_legend_upper_right() {
+        let series = Series::from(Vec::<(f64, f64)>::new()).with_label("waiting");
+        let (w, h) = (400usize, 300usize);
+        let with = Plot::new().line(series.clone()).render(400, 300).unwrap();
+        let without = Plot::new()
+            .line(series)
+            .legend(false)
+            .render(400, 300)
+            .unwrap();
+        let differing: Vec<(usize, usize)> = (0..w * h)
+            .filter(|i| with[i * 3..i * 3 + 3] != without[i * 3..i * 3 + 3])
+            .map(|i| (i % w, i / w)) // (column, row from the top)
+            .collect();
+        assert!(!differing.is_empty());
+        assert!(differing.iter().all(|&(x, y)| x > w / 2 && y < h / 2));
     }
 
     #[test]
@@ -699,5 +855,99 @@ mod tests {
             .unwrap();
         let img = image::open(&path).unwrap();
         assert_eq!((img.width(), img.height()), (320, 240));
+    }
+
+    #[test]
+    fn a_live_figure_is_redrawn_in_place() {
+        let terminal = live_terminal();
+        let empty = || Plot::new().line(Series::from(Vec::<(f64, f64)>::new()).with_label("v"));
+        let mut fig = Figure::new(2, 1).plot(0, 0, empty()).plot(1, 0, empty()); // panels start empty
+        let mut live = fig
+            .show_live_with(&terminal, Terminal::place_in_buffer)
+            .unwrap();
+        assert_eq!(live.size(), terminal.default_plot_size());
+        assert_eq!(live.font_size, terminal.text_size());
+        for t in 1..=3 {
+            for plot in fig.plots_mut() {
+                plot.series_mut()[0].push(t, t * t);
+            }
+            live.update(&fig).unwrap();
+        }
+        assert_eq!(count(live.placement.written(), b"a=t,"), 4);
+        assert_eq!(count(live.placement.written(), b"a=d,"), 3);
+    }
+
+    #[test]
+    fn a_figure_frame_that_cannot_be_drawn_sends_nothing() {
+        let terminal = live_terminal();
+        let fig = Figure::new(1, 2).plot(0, 0, Plot::new().line(vec![(0, 0), (1, 1)]));
+        let mut live = fig
+            .show_live_with(&terminal, Terminal::place_in_buffer)
+            .unwrap();
+        let written = live.placement.written().len();
+        let overlapping = fig.clone().plot(0, .., Plot::new());
+        assert!(matches!(
+            live.update(&overlapping),
+            Err(crate::Error::CellsOverlap {
+                first: 0,
+                second: 1
+            })
+        ));
+        assert_eq!(live.placement.written().len(), written);
+        live.update(&fig).unwrap();
+        assert_eq!(count(live.placement.written(), b"a=d,"), 1);
+    }
+
+    #[test]
+    fn one_live_plot_can_show_plots_and_figures_of_any_shape() {
+        let terminal = live_terminal();
+        let plot = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let mut live = plot
+            .show_live_with(&terminal, Terminal::place_in_buffer)
+            .unwrap();
+        live.update(
+            &Figure::new(1, 2)
+                .plot(0, 0, plot.clone())
+                .plot(0, 1, plot.clone()),
+        )
+        .unwrap();
+        live.update(&Figure::new(3, 1).plot(1.., 0, plot.clone()))
+            .unwrap();
+        live.update(&plot).unwrap();
+        assert_eq!(count(live.placement.written(), b"a=t,"), 4);
+        assert_eq!(live.size(), terminal.default_plot_size());
+    }
+
+    #[test]
+    fn a_live_figure_keeps_its_first_size_and_text_size() {
+        let fig = Figure::new(1, 1)
+            .plot(0, 0, Plot::new().line(vec![(0, 0), (1, 1)]))
+            .size(320, 240)
+            .font_size(11);
+        let mut live = fig
+            .show_live_with(&live_terminal(), Terminal::place_in_buffer)
+            .unwrap();
+        assert_eq!((live.size(), live.font_size), ((320, 240), 11));
+        live.update(&fig.clone().size(100, 100).font_size(30))
+            .unwrap();
+        assert_eq!((live.size(), live.font_size), ((320, 240), 11));
+    }
+
+    #[test]
+    fn frames_use_the_base_text_size_except_where_a_figures_plot_has_its_own() {
+        let own = Plot::new().line(vec![(0, 0), (1, 1)]).font_size(30);
+        // a plot drawn alone takes the frame's text size, as in 0.4.0
+        assert!(
+            own.render_rgb(320, 240, 20).unwrap()
+                == own.clone().font_size(20).render(320, 240).unwrap()
+        );
+        // a plot in a figure keeps its own
+        let fig = Figure::new(1, 1).plot(0, 0, own.clone()).font_size(11);
+        assert!(fig.render_rgb(320, 240, 20).unwrap() == own.render(320, 240).unwrap());
+        let plain = Plot::new().line(vec![(0, 0), (1, 1)]);
+        let fig = Figure::new(1, 1).plot(0, 0, plain.clone()).font_size(11);
+        assert!(
+            fig.render_rgb(320, 240, 20).unwrap() == plain.font_size(20).render(320, 240).unwrap()
+        );
     }
 }

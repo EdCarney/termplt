@@ -17,7 +17,8 @@ termplt uses the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graph
 - **Configurable canvas** — set dimensions, background color, and buffer padding
 - **TrueType text** — an embedded, anti-aliased Go font covering Latin-1, Greek and common math symbols; load your own font for other scripts
 - **Live plots** — `plot.show_live()?` returns a handle whose `update(&plot)` redraws the plot in place, without flicker, as its data changes; in the CLI, `tail -f data.csv | termplt --follow`
-- **Typed errors** — match on `termplt::Error` (no data, canvas too small, terminal unsupported, ...)
+- **Subplots** — `Figure::new(2, 2).plot(1, .., plot)` draws several plots as one image on a grid, static or live; a plot can span rows or columns
+- **Typed errors** — match on `termplt::Error` (invalid limits, canvas too small, terminal unsupported, ...)
 - **Fast** — a million points render in about 0.1-0.3 s
 
 ## CLI Usage
@@ -282,6 +283,40 @@ fn main() -> termplt::Result<()> {
 ```
 
 Every frame has the size and text size of the first. The axes follow the data (a point outside them rescales the axes, ticks and grid) unless you set limits; change those, or the title, with the builders between frames (`plot = plot.x_limits(0.0, 10.0)`). The library never waits between frames, so pacing is up to you. Frames are drawn relative to the cursor, so **nothing else may be written to the terminal while a plot is live**. Each frame is sent under a new image id and drawn over the previous one, which is then deleted: only the base protocol is needed, so it works in Kitty, Ghostty, WezTerm and Konsole, and through tmux. `cargo run --example live` shows it; `Terminal::place` does the same for your own images.
+
+### Subplots
+
+`Figure` draws several plots as one image on a grid of equal slots. `plot(rows, cols, plot)` takes one index or a range of each, counted from the top-left slot (`..` is every row or column), so a plot can span slots:
+
+```rust,no_run
+use termplt::prelude::*;
+
+let xs: Vec<f64> = (0..200).map(|i| f64::from(i) * 0.05).collect();
+let sin: Vec<(f64, f64)> = xs.iter().map(|&x| (x, x.sin())).collect();
+let cos: Vec<(f64, f64)> = xs.iter().map(|&x| (x, x.cos())).collect();
+let spiral: Vec<(f64, f64)> = xs.iter().map(|&x| (x * x.cos(), x * x.sin())).collect();
+let squares: Vec<(f64, f64)> = xs.iter().map(|&x| (x, x * x)).collect();
+
+let fig = Figure::new(2, 2)
+    .plot(
+        0,
+        ..,
+        Plot::new()
+            .line(Series::from(sin).with_label("sin"))
+            .line(Series::from(cos).with_label("cos"))
+            .title("Signals"),
+    )
+    .plot(1, 0, Plot::new().scatter(spiral).title("Spiral"))
+    .plot(1, 1, Plot::new().line_points(squares).title("Squares"));
+fig.show()?; // or fig.size(800, 600).save_png("subplots.png")?
+# Ok::<(), termplt::Error>(())
+```
+
+The figure's `background`, `font` and `font_size` apply to every plot that has none of its own; a plot's own size is ignored. The plot areas of neighbouring cells do not line up when their labels differ (a longer tick label or an extra axis name moves the area), which a later version may fix.
+
+A figure can be live like a plot: `let mut live = fig.show_live()?;` draws the first frame, and `live.update(&fig)?` redraws it in place after you change the data through `fig.plots_mut()`. `cargo run --example subplots_live` shows two panels updating.
+
+<img width="800" alt="A figure with a wide plot of sine and cosine across the top and a spiral and a parabola below" src="https://raw.githubusercontent.com/EdCarney/termplt/main/docs/images/subplots.png" />
 
 ### Full control
 

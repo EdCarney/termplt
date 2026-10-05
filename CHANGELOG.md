@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
+## [Unreleased]
+
+### Added
+- `Figure::show_live` and `show_live_in`, and `LivePlot::update` taking a plot or a figure
+  through the sealed `Render` trait. `examples/subplots_live.rs` shows it
+  (`cargo run --example subplots_live`). A reference that only coerced to `&Plot` (such as
+  `&Box<Plot>`) now needs `&*`.
+- `Figure`: several plots drawn as one image on a grid. `Figure::new(rows, cols)`, then
+  `plot(rows, cols, plot)` for each plot; a plot can cover one slot or a block of them, given as
+  an index or a range (`GridSpan`: `1`, `0..2`, `..`). `render`, `save_png`, `show` and `show_in`
+  work as for `Plot`, and the figure-wide `background`, `font` and `font_size` apply to plots
+  without their own. `examples/subplots.rs` shows it (`cargo run --example subplots`).
+- `Error::EmptyGrid`, `Error::InvalidCell` and `Error::CellsOverlap`, returned when a figure is
+  drawn with no rows or columns, a plot outside the grid, or two plots on the same slot.
+
+### Changed
+- A plot without data now draws empty axes (0 to 1 on each axis without explicit limits, as
+  matplotlib draws empty axes) instead of failing with `Error::NoData`. Points all outside
+  explicit limits now draw the axes at those limits; an axis without limits keeps the range of
+  all the data. They no longer fail with `Error::NoVisibleData`, which is no longer returned
+  and is now deprecated. Live plots can start empty.
+- The CLI now draws empty axes, with a warning on stderr, instead of failing when `--xlim` or
+  `--ylim` exclude every point.
+- A plot that sets the default background or font (`Plot::new().background(colors::BLACK)`,
+  `.font(Font::default())`) no longer compares equal to one that leaves them unset. They still
+  draw alike.
+
 ## [0.4.0] - 2026-09-26
 
 Live plots: a plot redrawn in place as its data changes, in the library (`Plot::show_live`) and

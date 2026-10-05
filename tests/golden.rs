@@ -19,13 +19,22 @@ use termplt::plotting::{
     series::Series,
     text::TextStyle,
 };
+use termplt::{Figure, Plot};
 
 /// Fraction of pixels allowed to differ, to absorb last-bit differences in platform math
 /// libraries (e.g. the trigonometry used for circle markers).
 const TOLERANCE: f64 = 0.001;
 
 fn check(name: &str, width: u32, height: u32, canvas: TerminalCanvas) {
-    let actual = canvas.draw().expect("scene should draw").get_bytes();
+    check_rgb(
+        name,
+        width,
+        height,
+        canvas.draw().expect("scene should draw").get_bytes(),
+    );
+}
+
+fn check_rgb(name: &str, width: u32, height: u32, actual: Vec<u8>) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("tests/snapshots").join(format!("{name}.png"));
 
@@ -498,4 +507,107 @@ fn legend_light_background() {
                 })),
         );
     check("legend_light_background", w, h, canvas);
+}
+
+#[test]
+fn empty_plot() {
+    let (w, h) = (320, 240);
+    let waiting = Series::new::<f64>(&[])
+        .with_marker_style(MarkerStyle::None)
+        .with_line_style(LineStyle::Solid {
+            color: colors::DODGER_BLUE,
+            thickness: 0,
+        })
+        .with_label("waiting for data");
+    let canvas = TerminalCanvas::new(w, h, colors::BLACK)
+        .with_buffer(BufferType::Uniform(8))
+        .with_graph(
+            Graph::new()
+                .with_series(waiting)
+                .with_axes(axes())
+                .with_grid_lines(grid())
+                .with_title("No data yet"),
+        );
+    check("empty_plot", w, h, canvas);
+}
+
+fn samples(f: fn(f64) -> f64) -> Vec<(f64, f64)> {
+    (0..=100)
+        .map(|i| f64::from(i) * 0.1)
+        .map(|x| (x, f(x)))
+        .collect()
+}
+
+#[test]
+fn figure_grid() {
+    // tick labels of different widths, titles on three plots, an x name on one: in this first
+    // layout the plot areas do not line up
+    let (w, h) = (800, 560);
+    let fig = Figure::new(2, 2)
+        .plot(
+            0,
+            0,
+            Plot::new()
+                .line(samples(|x| 20.0 + 3.0 * x.sin()))
+                .title("Temperature A")
+                .y_label("temp (°C)"),
+        )
+        .plot(
+            0,
+            1,
+            Plot::new()
+                .line(samples(|x| 21.0 + 2.5 * (0.8 * x).cos()))
+                .title("Temperature B"),
+        )
+        .plot(
+            1,
+            0,
+            Plot::new()
+                .line(samples(|x| 101300.0 + 600.0 * (0.5 * x).sin()))
+                .title("Pressure")
+                .y_label("Pa")
+                .x_label("time (s)"),
+        )
+        .plot(
+            1,
+            1,
+            Plot::new().line(samples(|x| 101000.0 + 400.0 * (0.7 * x).cos())),
+        )
+        .font_size(14);
+    check_rgb(
+        "figure_grid",
+        w,
+        h,
+        fig.render(w, h).expect("figure should draw"),
+    );
+}
+
+#[test]
+fn figure_spanning() {
+    let (w, h) = (640, 480);
+    let wide = Plot::new()
+        .line(Series::from(samples(f64::sin)).with_label("sin"))
+        .line(Series::from(samples(f64::cos)).with_label("cos"))
+        .title("Signals");
+    let fig = Figure::new(2, 2)
+        .plot(0, .., wide)
+        .plot(
+            1,
+            0,
+            Plot::new()
+                .scatter(samples(|x| (x * 1.7).sin() * x))
+                .title("Scatter"),
+        )
+        .plot(
+            1,
+            1,
+            Plot::new().line_points(samples(|x| x * x)).title("Square"),
+        )
+        .background(colors::WHITE);
+    check_rgb(
+        "figure_spanning",
+        w,
+        h,
+        fig.render(w, h).expect("figure should draw"),
+    );
 }

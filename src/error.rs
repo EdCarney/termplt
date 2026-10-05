@@ -1,7 +1,7 @@
 //! The crate's error type.
 
 use crate::terminal_commands::responses::TerminalCommandError;
-use std::{fmt, io};
+use std::{fmt, io, ops::Range};
 
 /// A `Result` whose error is [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
@@ -10,9 +10,15 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
-    /// The graph has no finite data points (NaN and ±∞ are ignored).
+    /// The graph has no finite data points (NaN and ±∞ are ignored). Returned only by
+    /// `Graph::limits` and `Graph::get_mask`; drawing a plot doesn't need data.
     NoData,
-    /// Every data point lies outside the explicit axis limits.
+    /// Every data point lies outside the explicit axis limits. No longer returned: such a plot
+    /// draws its axes at the limits. Kept so code matching it still compiles.
+    #[deprecated(
+        since = "0.5.0",
+        note = "no longer returned: a plot whose points all lie outside its limits draws its axes"
+    )]
     NoVisibleData,
     /// Explicit limits are non-finite or inverted (`min > max`).
     InvalidLimits {
@@ -25,6 +31,31 @@ pub enum Error {
     },
     /// The data spans more than `f64` can represent, so it cannot be scaled.
     DataRangeTooLarge,
+    /// A figure has no rows or no columns.
+    EmptyGrid {
+        /// The figure's rows.
+        rows: usize,
+        /// The figure's columns.
+        cols: usize,
+    },
+    /// A plot in a figure covers no slot, or slots outside the grid.
+    InvalidCell {
+        /// The plot's position in `Figure::plots`.
+        index: usize,
+        /// The rows it covers, resolved to a range (`1` is `1..2`, `..` is `0..len`).
+        rows: Range<usize>,
+        /// The columns it covers, resolved the same way.
+        cols: Range<usize>,
+        /// The figure's rows and columns.
+        grid: (usize, usize),
+    },
+    /// Two plots in a figure cover the same slot.
+    CellsOverlap {
+        /// Position in `Figure::plots` of the earlier plot.
+        first: usize,
+        /// Position in `Figure::plots` of the later plot.
+        second: usize,
+    },
     /// The canvas has no room for the plot once the buffer, tick labels and marker insets are
     /// taken out (or the canvas has zero size).
     CanvasTooSmall {
@@ -89,6 +120,7 @@ impl fmt::Display for Error {
                 f,
                 "the graph has no data points to plot (non-finite values are ignored)"
             ),
+            #[allow(deprecated)]
             Error::NoVisibleData => {
                 write!(f, "no data points lie within the specified axis limits")
             }
@@ -114,6 +146,26 @@ impl fmt::Display for Error {
                 "the canvas is too small: the plot area would be {plot_width}x{plot_height} \
                  pixels after the buffer, labels and markers; use a larger canvas (or terminal \
                  window) or a smaller buffer or markers"
+            ),
+            Error::EmptyGrid { rows, cols } => write!(
+                f,
+                "a figure needs at least one row and one column, but this one has {rows} rows \
+                 and {cols} columns"
+            ),
+            Error::InvalidCell {
+                index,
+                rows,
+                cols,
+                grid,
+            } => write!(
+                f,
+                "plot {index} in the figure covers rows {}..{} and columns {}..{}, which is \
+                 empty or outside the figure's {} rows and {} columns",
+                rows.start, rows.end, cols.start, cols.end, grid.0, grid.1
+            ),
+            Error::CellsOverlap { first, second } => write!(
+                f,
+                "plots {first} and {second} in the figure cover the same slot"
             ),
             Error::NotATerminal => write!(
                 f,
@@ -204,6 +256,29 @@ impl From<image::ImageError> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn figure_error_messages() {
+        let empty = Error::EmptyGrid { rows: 0, cols: 2 };
+        assert!(
+            empty
+                .to_string()
+                .contains("at least one row and one column")
+        );
+        let invalid = Error::InvalidCell {
+            index: 1,
+            rows: 1..2,
+            cols: 1..3,
+            grid: (2, 2),
+        };
+        assert!(invalid.to_string().contains("plot 1"));
+        assert!(invalid.to_string().contains("1..3"));
+        let overlap = Error::CellsOverlap {
+            first: 1,
+            second: 2,
+        };
+        assert!(overlap.to_string().contains("plots 1 and 2"));
+    }
 
     #[test]
     fn invalid_limits_messages() {

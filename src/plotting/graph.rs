@@ -202,17 +202,18 @@ impl Graph {
         self.y_limits.map_or(Ok(()), |l| check("y", l))
     }
 
-    fn has_explicit_limits(&self) -> bool {
-        self.x_limits.is_some() || self.y_limits.is_some()
-    }
-
     /// Returns a copy of the graph containing only the points that will be drawn: finite points
     /// that lie within the explicit limits (if any). Where points were removed, a single
     /// non-finite gap point is left in their place, so lines break there instead of joining
     /// the neighbours of the removed points. Series left empty are kept.
     fn visible(&self) -> Result<Graph> {
-        let limits = self.limits()?;
-        let clip = self.has_explicit_limits();
+        self.validate_limits()?;
+        let inside = |range: Option<(f64, f64)>, v: f64| {
+            range.is_none_or(|(min, max)| (min..=max).contains(&v))
+        };
+        let keep = |p: &Point<f64>| {
+            is_finite_point(p) && inside(self.x_limits, p.x) && inside(self.y_limits, p.y)
+        };
         let data = self
             .data
             .iter()
@@ -220,7 +221,7 @@ impl Graph {
                 series.map_points(|points| {
                     let mut kept = Vec::with_capacity(points.len());
                     for &p in points {
-                        if is_finite_point(&p) && (!clip || limits.contains(&p)) {
+                        if keep(&p) {
                             kept.push(p);
                         } else if kept.last().is_some_and(is_finite_point) {
                             kept.push(GAP);
@@ -259,8 +260,25 @@ impl Graph {
     /// after clipping to explicit limits, with a margin of [`DATA_MARGIN`] of the span added on
     /// axes without explicit limits (so data does not touch the axes), and zero-width
     /// dimensions (e.g. a single point or a constant series) expanded so the data is centered.
+    /// When no point is visible (all outside the explicit limits), the range is that of all the
+    /// finite data with the explicit limits applied, so an axis without limits keeps the data's
+    /// range, as in matplotlib. Without any finite data, axes without explicit limits are 0 to
+    /// 1, as matplotlib draws empty axes.
     pub fn view_limits(&self) -> Result<Limits<f64>> {
-        let limits = self.visible()?.limits().map_err(|_| Error::NoVisibleData)?;
+        let limits = match self.visible()?.limits() {
+            Err(Error::NoData) => match self.limits() {
+                Err(Error::NoData) => {
+                    let (x_min, x_max) = self.x_limits.unwrap_or((0.0, 1.0));
+                    let (y_min, y_max) = self.y_limits.unwrap_or((0.0, 1.0));
+                    return finite_view(pad_degenerate(Limits::new(
+                        Point::new(x_min, y_min),
+                        Point::new(x_max, y_max),
+                    )));
+                }
+                limits => limits?,
+            },
+            limits => limits?,
+        };
 
         let (span_x, span_y) = limits.span();
         let margin = Point::new(
@@ -275,17 +293,16 @@ impl Graph {
                 span_y * DATA_MARGIN
             },
         );
-        let limits = pad_degenerate(Limits::new(*limits.min() - margin, *limits.max() + margin));
-
-        let (span_x, span_y) = limits.span();
-        if !span_x.is_finite() || !span_y.is_finite() {
-            return Err(Error::DataRangeTooLarge);
-        }
-        Ok(limits)
+        finite_view(pad_degenerate(Limits::new(
+            *limits.min() - margin,
+            *limits.max() + margin,
+        )))
     }
 
     /// Scales the visible data so that [`Graph::view_limits`] maps onto `new_limits`. The
-    /// returned graph's explicit limits are `new_limits`.
+    /// returned graph's explicit limits are `new_limits`. Without visible points, the view is
+    /// that of [`Graph::view_limits`] (an axis without limits keeps the range of all the data, or
+    /// is 0 to 1 without any finite data) and the series are empty.
     pub fn scale(self, new_limits: Limits<f64>) -> Result<Graph> {
         let view_limits = self.view_limits()?;
         self.scale_with_view(&view_limits, new_limits)
@@ -343,6 +360,15 @@ const GAP: Point<f64> = Point {
 
 fn is_finite_point(p: &Point<f64>) -> bool {
     p.x.is_finite() && p.y.is_finite()
+}
+
+/// Errors with [`Error::DataRangeTooLarge`] when a span of the view is not finite.
+fn finite_view(limits: Limits<f64>) -> Result<Limits<f64>> {
+    let (span_x, span_y) = limits.span();
+    if !span_x.is_finite() || !span_y.is_finite() {
+        return Err(Error::DataRangeTooLarge);
+    }
+    Ok(limits)
 }
 
 /// Expands zero-width dimensions by 5% of the value (or ±0.5 around zero) so the value is drawn
@@ -783,10 +809,66 @@ mod tests {
     }
 
     #[test]
-    fn scale_with_limits_excluding_all_points_returns_error() {
+    fn scale_with_limits_excluding_all_points_keeps_empty_series() {
         let g = graph_with_data().with_x_limits(100, 200);
         let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
-        let err = g.scale(new_limits).unwrap_err();
-        assert!(matches!(err, Error::NoVisibleData), "{err}");
+        let scaled = g.scale(new_limits).unwrap();
+        assert!(scaled.data().iter().all(|s| s.data().is_empty()));
+        assert_eq!(scaled.x_limits(), Some((0.0, 100.0)));
+    }
+
+    fn unit_square() -> Limits<f64> {
+        Limits::new(Point::new(0.0, 0.0), Point::new(1.0, 1.0))
+    }
+
+    #[test]
+    fn view_limits_without_data_are_zero_to_one() {
+        assert_eq!(Graph::new().view_limits().unwrap(), unit_square());
+        let empty = Graph::new().with_series(Series::new::<f64>(&[]));
+        assert_eq!(empty.view_limits().unwrap(), unit_square());
+        let non_finite = Graph::new().with_series(Series::new(&[
+            Point::new(f64::NAN, 1.0),
+            Point::new(2.0, f64::INFINITY),
+        ]));
+        assert_eq!(non_finite.view_limits().unwrap(), unit_square());
+    }
+
+    #[test]
+    fn view_limits_without_data_keep_explicit_limits() {
+        let view = Graph::new().with_x_limits(2, 5).view_limits().unwrap();
+        assert_eq!(
+            view,
+            Limits::new(Point::new(2.0, 0.0), Point::new(5.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn view_limits_with_every_point_clipped_keep_the_data_range_on_free_axes() {
+        let view = graph_with_data()
+            .with_x_limits(100, 200)
+            .view_limits()
+            .unwrap();
+        assert_eq!(
+            view,
+            Limits::new(Point::new(100.0, -1.0), Point::new(200.0, 21.0))
+        );
+    }
+
+    #[test]
+    fn invalid_limits_fail_without_data_too() {
+        let err = Graph::new().with_x_limits(5, 1).view_limits().unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidLimits { axis: "x", .. }),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn scale_without_data_keeps_empty_series() {
+        let g = Graph::new().with_series(Series::new::<f64>(&[]));
+        let new_limits = Limits::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
+        let scaled = g.scale(new_limits).unwrap();
+        assert_eq!(scaled.data().len(), 1);
+        assert!(scaled.data()[0].data().is_empty());
     }
 }

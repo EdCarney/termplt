@@ -341,3 +341,37 @@ fn verbose_reports_the_legend() {
     assert!(run(&["--legend"]).contains("[verbose] legend: on, best"));
     assert!(run(&["--legend-loc", "lower-left"]).contains("[verbose] legend: on, lower-left"));
 }
+
+#[test]
+fn limits_excluding_every_point_warn_and_draw_empty_axes() {
+    let dir = tempfile::tempdir().unwrap();
+    let csv = dir.path().join("d.csv");
+    std::fs::write(&csv, "x,y\n1,1\n2,4\n3,9\n").unwrap();
+    let png = dir.path().join("out.png");
+    let out = termplt(
+        &[
+            csv.to_str().unwrap(),
+            "--xlim",
+            "100,200",
+            "-o",
+            png.to_str().unwrap(),
+        ],
+        "",
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stderr(&out).contains("no data points lie within the axis limits"));
+    assert!(png.exists());
+
+    let out = termplt(
+        &[
+            csv.to_str().unwrap(),
+            "--xlim",
+            "0,10",
+            "-o",
+            png.to_str().unwrap(),
+        ],
+        "",
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(!stderr(&out).contains("no data points lie within the axis limits"));
+}

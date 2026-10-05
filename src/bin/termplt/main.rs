@@ -103,6 +103,12 @@ fn run(cli: Cli) -> Result<()> {
     if cli.follow {
         return follow(&cli, &specs, loaded, font);
     }
+    if limits_exclude_every_point(loaded.iter().map(|l| &l.series), cli.xlim, cli.ylim) {
+        eprintln!(
+            "warning: no data points lie within the axis limits (--xlim/--ylim); \
+             drawing empty axes"
+        );
+    }
     let plot = build_plot(&cli, &specs, loaded)?;
 
     // an image file needs no terminal; displaying one needs a terminal to size it and draw on
@@ -144,6 +150,23 @@ struct Loaded {
     columns: ColumnNames,
     /// The y column's 1-based index.
     y_column: usize,
+}
+
+/// Whether `--xlim`/`--ylim` are set and no finite point of any series lies inside every limit
+/// that is set (inclusive), so the plot would draw empty axes.
+fn limits_exclude_every_point<'a>(
+    series: impl IntoIterator<Item = &'a Series>,
+    xlim: Option<(f64, f64)>,
+    ylim: Option<(f64, f64)>,
+) -> bool {
+    let inside =
+        |v: f64, lim: Option<(f64, f64)>| lim.is_none_or(|(min, max)| v >= min && v <= max);
+    (xlim.is_some() || ylim.is_some())
+        && !series.into_iter().any(|series| {
+            series.data().iter().any(|p| {
+                p.x.is_finite() && p.y.is_finite() && inside(p.x, xlim) && inside(p.y, ylim)
+            })
+        })
 }
 
 /// Builds the plot from the series, in the order of `specs`: the series named for the legend,
@@ -549,6 +572,39 @@ mod tests {
 
     fn cli(args: &[&str]) -> Cli {
         Cli::try_parse_from(std::iter::once("termplt").chain(args.iter().copied())).unwrap()
+    }
+
+    fn series_of(points: &[(f64, f64)]) -> Series {
+        Series::new(
+            &points
+                .iter()
+                .map(|&(x, y)| termplt::prelude::Point::new(x, y))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn limits_exclude_every_point_only_when_limits_are_set_and_nothing_is_inside() {
+        let data = [series_of(&[(1.0, 1.0), (2.0, 4.0), (f64::NAN, 2.0)])];
+        let excluded = |xlim, ylim| limits_exclude_every_point(&data, xlim, ylim);
+        assert!(!excluded(None, None));
+        assert!(!excluded(Some((0.0, 10.0)), None));
+        assert!(excluded(Some((100.0, 200.0)), None));
+        assert!(excluded(None, Some((10.0, 20.0))));
+        // each point is inside one limit, but none is inside both
+        assert!(excluded(Some((1.0, 1.0)), Some((4.0, 4.0))));
+        // limits are inclusive
+        assert!(!excluded(Some((2.0, 3.0)), Some((4.0, 4.0))));
+        // non-finite points never count; no points at all is excluded when limits are set
+        let nan = [series_of(&[(f64::NAN, f64::NAN)]), series_of(&[])];
+        assert!(limits_exclude_every_point(&nan, Some((0.0, 1.0)), None));
+        // one series with a point inside is enough
+        let two = [series_of(&[(50.0, 0.0)]), series_of(&[(150.0, 0.0)])];
+        assert!(!limits_exclude_every_point(
+            &two,
+            Some((100.0, 200.0)),
+            None
+        ));
     }
 
     #[test]
