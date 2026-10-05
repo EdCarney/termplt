@@ -217,9 +217,13 @@ A separate change that lands first. It also applies to a `Plot` drawn alone.
 
 - **View limits.** `Graph::view_limits()` still validates explicit limits first
   (`InvalidLimits`). Only one case is new: when no point is visible (no finite points at all,
-  or none inside the explicit limits), each axis without explicit limits is 0 to 1, with no
-  margin or padding, as matplotlib draws empty axes, and each axis with explicit limits uses
-  them as today. Whenever some point is visible, the view is computed exactly as today. The
+  or none inside the explicit limits), each axis with explicit limits uses them as today.
+  An axis without explicit limits takes the range of all the finite data, with the usual
+  margin and padding, as matplotlib scales each axis from all the data (so data with y from 1
+  to 9 and `x_limits(100, 200)` keeps a y axis of about 0.6 to 9.4, and a live plot with a
+  fixed x window does not jump to 0 to 1 when the window is briefly empty). Only without any
+  finite data is such an axis 0 to 1, with no margin or padding, as matplotlib draws empty
+  axes. Whenever some point is visible, the view is computed exactly as today. The
   private `Graph::visible()` must not fail on a graph without finite points: there is nothing
   to clip.
 - **Scaling.** `Graph::scale` and the canvas's `scale_with_view` return a graph whose series are
@@ -240,9 +244,11 @@ A separate change that lands first. It also applies to a `Plot` drawn alone.
   `Graph::get_mask`; drawing a plot doesn't need data. `NoVisibleData` is no longer returned
   and is kept so code matching it still compiles.
 - **Live and CLI.** `Plot::show_live` on an empty plot now shows empty axes, and
-  `LivePlot::update` with emptied series redraws empty axes. The CLI is unchanged: it filters
-  non-finite points and reports "no data points found" itself before building a plot, so
-  `--follow` still waits for its first point.
+  `LivePlot::update` with emptied series redraws empty axes. The CLI filters non-finite
+  points and reports "no data points found" itself before building a plot, so `--follow` still
+  waits for its first point. Static output with `--xlim`/`--ylim` that exclude every point no
+  longer fails: it draws empty axes and prints `warning: no data points lie within the axis
+  limits (--xlim/--ylim); drawing empty axes` to stderr (exit status 0; never in `--follow`).
 - **Tests that change.**
   - `canvas.rs` `empty_graph_returns_error` now expects empty axes.
   - `graph.rs` `scale_with_limits_excluding_all_points_returns_error` now expects empty
@@ -278,7 +284,7 @@ A separate change that lands first. It also applies to a `Plot` drawn alone.
 
 **Empty axes** (`graph.rs`, `canvas.rs`): the view is 0 to 1 without data; explicit limits on
 one axis with no data give those limits on it and 0 to 1 on the other; points all outside the
-explicit limits give the limits and no error; the legend of an empty labeled series is drawn
+explicit limits give the limits and no error, with an axis without limits keeping the data's range; the legend of an empty labeled series is drawn
 upper right.
 
 **Golden images** (`tests/golden.rs`, new snapshots, reviewed before committing): a 2×2 grid

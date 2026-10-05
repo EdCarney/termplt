@@ -45,7 +45,7 @@ Public API layers, top-down:
 
 `Series`, `Graph` and `TerminalCanvas` are not generic: data is converted to `f64` at the boundary (`Series::new`, `from_xy`, `from_y`, `FromIterator<(x, y)>`, `From<Vec<(x, y)>>`, `From<(xs, ys)>`). `Graphable` covers every primitive integer and float type via the crate's `ToF64` trait (`as` casts), so `i64`/`u64`/`usize` work. `Point<T>`, `Limits<T>` and the internal `Line<T>` stay generic because the pixel math uses them with `u32`/`i32`; the `Convertable`/`UIntConvertable`/`IntConvertable`/`FloatConvertable` traits do clamped casts between those (`v.clamp(0.0, u32::MAX as f64) as u32`).
 
-**Zero-span safety:** `Graph::view_limits()` pads zero-width dimensions (5% of the value, or ±0.5 around zero) before scaling, so single points and constant series are centered. As a fallback, `Graph::scale_with_view` maps a zero span to the middle of the target range. When no point is visible, `view_limits()` is 0–1 on axes without explicit limits (matplotlib's empty axes), and `layout_with` uses no marker inset for a graph without series.
+**Zero-span safety:** `Graph::view_limits()` pads zero-width dimensions (5% of the value, or ±0.5 around zero) before scaling, so single points and constant series are centered. As a fallback, `Graph::scale_with_view` maps a zero span to the middle of the target range. When no point is visible, `view_limits()` uses the range of all the finite data on axes without explicit limits (matplotlib scales each axis from all the data), and is 0–1 there only without any finite data (matplotlib's empty axes); `layout_with` uses no marker inset for a graph without series.
 
 ### Rendering Pipeline (`canvas.rs` → `graph.rs`)
 

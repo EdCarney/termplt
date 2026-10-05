@@ -2,7 +2,7 @@
 
 use crate::{
     DEFAULT_PNG_SIZE, Error, LivePlot, Plot, Result,
-    plot::{self, Defaults, Render},
+    plot::{self, Defaults},
     plotting::{colors, font::Font, text::DEFAULT_FONT_SIZE},
     terminal::{Image, Placement, Terminal},
 };
@@ -265,8 +265,6 @@ impl plot::sealed::Draw for Figure {
     }
 }
 
-impl Render for Figure {}
-
 mod sealed {
     use std::ops::Range;
 
@@ -318,13 +316,7 @@ impl sealed::Span for RangeFull {
     }
 }
 
-impl GridSpan for usize {}
-impl GridSpan for Range<usize> {}
-impl GridSpan for RangeInclusive<usize> {}
-impl GridSpan for RangeFrom<usize> {}
-impl GridSpan for RangeTo<usize> {}
-impl GridSpan for RangeToInclusive<usize> {}
-impl GridSpan for RangeFull {}
+impl<T: sealed::Span> GridSpan for T {}
 
 #[cfg(test)]
 mod tests {

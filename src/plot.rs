@@ -434,7 +434,7 @@ impl sealed::Draw for Plot {
     }
 }
 
-impl Render for Plot {}
+impl<T: sealed::Draw> Render for T {}
 
 /// A plot or figure shown in the terminal by [`Plot::show_live`] or
 /// [`Figure::show_live`](crate::Figure::show_live) that can be redrawn in place.

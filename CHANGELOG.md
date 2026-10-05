@@ -23,7 +23,10 @@ All notable changes to this project are documented here. The format is based on
 - A plot without data now draws empty axes (0 to 1 on each axis without explicit limits, as
   matplotlib draws empty axes) instead of failing with `Error::NoData`. Points all outside
   explicit limits now draw the axes at those limits instead of failing with
-  `Error::NoVisibleData`, which is no longer returned. Live plots can start empty.
+  `Error::NoVisibleData`, which is no longer returned (and is now deprecated); an axis
+  without limits keeps the range of all the data. Live plots can start empty.
+- The CLI now draws empty axes, with a warning on stderr, instead of failing when `--xlim` or
+  `--ylim` exclude every point.
 - A plot that sets the default background or font (`Plot::new().background(colors::BLACK)`,
   `.font(Font::default())`) no longer compares equal to one that leaves them unset. They still
   draw alike.

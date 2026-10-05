@@ -15,6 +15,10 @@ pub enum Error {
     NoData,
     /// Every data point lies outside the explicit axis limits. No longer returned: such a plot
     /// draws its axes at the limits. Kept so code matching it still compiles.
+    #[deprecated(
+        since = "0.5.0",
+        note = "no longer returned: a plot whose points all lie outside its limits draws its axes"
+    )]
     NoVisibleData,
     /// Explicit limits are non-finite or inverted (`min > max`).
     InvalidLimits {
@@ -116,6 +120,7 @@ impl fmt::Display for Error {
                 f,
                 "the graph has no data points to plot (non-finite values are ignored)"
             ),
+            #[allow(deprecated)]
             Error::NoVisibleData => {
                 write!(f, "no data points lie within the specified axis limits")
             }

@@ -260,18 +260,23 @@ impl Graph {
     /// after clipping to explicit limits, with a margin of [`DATA_MARGIN`] of the span added on
     /// axes without explicit limits (so data does not touch the axes), and zero-width
     /// dimensions (e.g. a single point or a constant series) expanded so the data is centered.
-    /// Without visible points, axes without explicit limits are 0 to 1, as matplotlib draws
-    /// empty axes.
+    /// When no point is visible (all outside the explicit limits), the range is that of all the
+    /// finite data with the explicit limits applied, so an axis without limits keeps the data's
+    /// range, as in matplotlib. Without any finite data, axes without explicit limits are 0 to
+    /// 1, as matplotlib draws empty axes.
     pub fn view_limits(&self) -> Result<Limits<f64>> {
         let limits = match self.visible()?.limits() {
-            Err(Error::NoData) => {
-                let (x_min, x_max) = self.x_limits.unwrap_or((0.0, 1.0));
-                let (y_min, y_max) = self.y_limits.unwrap_or((0.0, 1.0));
-                return finite_view(pad_degenerate(Limits::new(
-                    Point::new(x_min, y_min),
-                    Point::new(x_max, y_max),
-                )));
-            }
+            Err(Error::NoData) => match self.limits() {
+                Err(Error::NoData) => {
+                    let (x_min, x_max) = self.x_limits.unwrap_or((0.0, 1.0));
+                    let (y_min, y_max) = self.y_limits.unwrap_or((0.0, 1.0));
+                    return finite_view(pad_degenerate(Limits::new(
+                        Point::new(x_min, y_min),
+                        Point::new(x_max, y_max),
+                    )));
+                }
+                limits => limits?,
+            },
             limits => limits?,
         };
 
@@ -295,8 +300,9 @@ impl Graph {
     }
 
     /// Scales the visible data so that [`Graph::view_limits`] maps onto `new_limits`. The
-    /// returned graph's explicit limits are `new_limits`. Without visible points, axes without
-    /// explicit limits are 0 to 1, as matplotlib draws empty axes, and the series are empty.
+    /// returned graph's explicit limits are `new_limits`. Without visible points, the view is
+    /// that of [`Graph::view_limits`] (an axis without limits keeps the range of all the data, or
+    /// is 0 to 1 without any finite data) and the series are empty.
     pub fn scale(self, new_limits: Limits<f64>) -> Result<Graph> {
         let view_limits = self.view_limits()?;
         self.scale_with_view(&view_limits, new_limits)
@@ -837,14 +843,14 @@ mod tests {
     }
 
     #[test]
-    fn view_limits_with_every_point_clipped_are_the_explicit_limits() {
+    fn view_limits_with_every_point_clipped_keep_the_data_range_on_free_axes() {
         let view = graph_with_data()
             .with_x_limits(100, 200)
             .view_limits()
             .unwrap();
         assert_eq!(
             view,
-            Limits::new(Point::new(100.0, 0.0), Point::new(200.0, 1.0))
+            Limits::new(Point::new(100.0, -1.0), Point::new(200.0, 21.0))
         );
     }
 
