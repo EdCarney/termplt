@@ -85,12 +85,16 @@ impl Graph {
     }
 
     /// Fixes the x range; points outside it are not drawn, and lines break where they were. Without it, the range fits the data.
+    /// The range must be non-empty (`min < max`) and finite, or drawing fails with
+    /// [`Error::InvalidLimits`].
     pub fn with_x_limits<T: Graphable>(mut self, min: T, max: T) -> Self {
         self.x_limits = Some((min.to_f64(), max.to_f64()));
         self
     }
 
     /// Fixes the y range; points outside it are not drawn, and lines break where they were. Without it, the range fits the data.
+    /// The range must be non-empty (`min < max`) and finite, or drawing fails with
+    /// [`Error::InvalidLimits`].
     pub fn with_y_limits<T: Graphable>(mut self, min: T, max: T) -> Self {
         self.y_limits = Some((min.to_f64(), max.to_f64()));
         self
@@ -156,7 +160,7 @@ impl Graph {
     /// explicit limits. Non-finite points (NaN, ±∞) are ignored.
     ///
     /// Errors if the graph has no finite data points or the explicit limits are invalid
-    /// (inverted or non-finite).
+    /// (empty, inverted or non-finite).
     pub fn limits(&self) -> Result<Limits<f64>> {
         self.validate_limits()?;
 
@@ -193,7 +197,7 @@ impl Graph {
 
     fn validate_limits(&self) -> Result<()> {
         let check = |axis: &'static str, (min, max): (f64, f64)| -> Result<()> {
-            if !min.is_finite() || !max.is_finite() || min > max {
+            if !min.is_finite() || !max.is_finite() || min >= max {
                 return Err(Error::InvalidLimits { axis, min, max });
             }
             Ok(())
@@ -717,6 +721,24 @@ mod tests {
             .limits()
             .unwrap_err();
         assert!(err.to_string().contains("inverted"), "{err}");
+    }
+
+    #[test]
+    fn empty_explicit_limits_return_error() {
+        let err = graph_with_data().with_x_limits(5, 5).limits().unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidLimits { axis: "x", .. }),
+            "{err}"
+        );
+        assert!(err.to_string().contains("empty"), "{err}");
+        let err = graph_with_data()
+            .with_y_limits(0.0, 0.0)
+            .view_limits()
+            .unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidLimits { axis: "y", .. }),
+            "{err}"
+        );
     }
 
     #[test]

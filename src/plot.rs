@@ -134,12 +134,16 @@ impl Plot {
     }
 
     /// Fixes the x range; points outside it are not drawn, and lines break where they were.
+    /// The range must be non-empty (`min < max`) and finite, or drawing fails with
+    /// [`Error::InvalidLimits`](crate::Error::InvalidLimits).
     pub fn x_limits(mut self, min: f64, max: f64) -> Self {
         self.x_limits = Some((min, max));
         self
     }
 
     /// Fixes the y range; points outside it are not drawn, and lines break where they were.
+    /// The range must be non-empty (`min < max`) and finite, or drawing fails with
+    /// [`Error::InvalidLimits`](crate::Error::InvalidLimits).
     pub fn y_limits(mut self, min: f64, max: f64) -> Self {
         self.y_limits = Some((min, max));
         self
