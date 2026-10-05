@@ -135,23 +135,32 @@ fn bresenham(start: Point<i32>, end: Point<i32>, mut f: impl FnMut(Point<i32>)) 
     }
 }
 
-/// A line segment drawn straight into a canvas: the same pixels as
-/// `Line::new(BetweenPoints { start, end }, style).get_mask()`, without the intermediate
-/// allocations. `stamp` must be `LineStamp::new(style)`, and `last` the last pixel stamped with
-/// it in this color (whose stamp is therefore fully painted), which is updated.
+/// A line segment drawn straight into a canvas, without the intermediate allocations of
+/// [`Drawable::get_mask`]. `stamp` must be `LineStamp::new(style)`, and `last` the last pixel
+/// stamped with it in this color (whose stamp is therefore fully painted), which is updated.
+/// `phase` counts the pixels of the line drawn so far, which the dash pattern continues from,
+/// and is updated: from 0, the segment draws the pixels of
+/// `Line::new(BetweenPoints { start, end }, style).get_mask()`; otherwise it continues a line
+/// whose last pixel is `start`, which is not counted again, so a dashed line stays dashed
+/// however short its segments are. Where a line breaks, reset `phase` to 0 and the pattern
+/// restarts after the gap.
 pub(crate) fn draw_segment(
     canvas: &mut Canvas,
     (start, end): (Point<u32>, Point<u32>),
     style: &LineStyle,
     stamp: &LineStamp,
     last: &mut Option<Point<i32>>,
+    phase: &mut usize,
 ) {
     let color = style.color();
     let dashed = matches!(style, LineStyle::Dashed { .. });
-    let mut index = 0;
+    let mut shared_start = *phase > 0;
     bresenham(start.convert_to_i32(), end.convert_to_i32(), |p| {
-        let on = !dashed || index % (DASH_ON + DASH_OFF) < DASH_ON;
-        index += 1;
+        if std::mem::take(&mut shared_start) {
+            return;
+        }
+        let on = !dashed || *phase % (DASH_ON + DASH_OFF) < DASH_ON;
+        *phase += 1;
         if !on {
             return;
         }
@@ -214,26 +223,53 @@ fn disc_offsets(radius: u32) -> Vec<Point<i32>> {
 const DASH_ON: usize = 6;
 const DASH_OFF: usize = 4;
 
+/// The pixels of `path` (a line's pixels, ordered from start to end) that `style` draws: all of
+/// them for a solid line, the dashes for a dashed one, the pattern starting at the first pixel.
+fn dash_path(path: Vec<Point<u32>>, style: &LineStyle) -> Vec<Point<u32>> {
+    match style {
+        LineStyle::Solid { .. } => path,
+        LineStyle::Dashed { .. } => path
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| i % (DASH_ON + DASH_OFF) < DASH_ON)
+            .map(|(_, p)| p)
+            .collect(),
+    }
+}
+
+/// The mask of a line between points whose pixels, ordered from start to end, are `path`: the
+/// dash pattern runs along the whole path from its first pixel, and thickness is applied by
+/// stamping a disc of radius `thickness` at every pixel, which also gives round joins where
+/// consecutive segments meet.
+pub(crate) fn path_mask(path: Vec<Point<u32>>, style: &LineStyle) -> MaskPoints {
+    let path = dash_path(path, style);
+    let thickness = style.thickness();
+    let points = if thickness > 0 {
+        let stamp = disc_offsets(thickness);
+        let mut points = Vec::with_capacity(path.len() * stamp.len());
+        for p in &path {
+            let p = p.convert_to_i32();
+            points.extend(stamp.iter().map(|&offset| (p + offset).convert_to_u32()));
+        }
+        points
+    } else {
+        path
+    };
+    MaskPoints {
+        points,
+        color: style.color(),
+    }
+}
+
 impl<T: IntConvertable + Graphable> Drawable for Line<T> {
     fn get_mask(&self) -> Result<Vec<MaskPoints>> {
-        let (color, thickness, dashed) = match self.style {
-            LineStyle::Solid { color, thickness } => (color, thickness, false),
-            LineStyle::Dashed { color, thickness } => (color, thickness, true),
-        };
-
         // pixels along the line, ordered from start to end
-        let mut path = self.convert_to_i32().full_drawable_points();
-        if dashed {
-            path = path
-                .into_iter()
-                .enumerate()
-                .filter(|(i, _)| i % (DASH_ON + DASH_OFF) < DASH_ON)
-                .map(|(_, p)| p)
-                .collect();
-        }
+        let path = self.convert_to_i32().full_drawable_points();
 
-        let points = match self.positioning {
+        let mask = match self.positioning {
             LinePositioning::Vertical { .. } | LinePositioning::Horizontal { .. } => {
+                let path = dash_path(path, &self.style);
+                let thickness = self.style.thickness();
                 // thickness is applied by drawing shifted copies on both sides of the line
                 let mut points = Vec::with_capacity(path.len() * (2 * thickness as usize + 1));
                 for shift in -(thickness as i32)..=thickness as i32 {
@@ -246,23 +282,15 @@ impl<T: IntConvertable + Graphable> Drawable for Line<T> {
                             .map(|&p| (p.convert_to_i32() + shift_point).convert_to_u32()),
                     );
                 }
-                points
-            }
-            // thickness is applied by stamping a disc of radius `thickness` at every pixel, which
-            // also gives round joins where consecutive segments meet
-            LinePositioning::BetweenPoints { .. } if thickness > 0 => {
-                let stamp = disc_offsets(thickness);
-                let mut points = Vec::with_capacity(path.len() * stamp.len());
-                for p in &path {
-                    let p = p.convert_to_i32();
-                    points.extend(stamp.iter().map(|&offset| (p + offset).convert_to_u32()));
+                MaskPoints {
+                    points,
+                    color: self.style.color(),
                 }
-                points
             }
-            LinePositioning::BetweenPoints { .. } => path,
+            LinePositioning::BetweenPoints { .. } => path_mask(path, &self.style),
         };
 
-        Ok(vec![MaskPoints { points, color }])
+        Ok(vec![mask])
     }
 }
 

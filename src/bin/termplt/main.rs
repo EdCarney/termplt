@@ -412,7 +412,6 @@ fn with_hint(e: termplt::Error, cli: &Cli) -> Box<dyn Error> {
     }
 }
 
-/// Only PNG output is supported; catch other extensions before doing any work.
 /// Reads a font file for --font.
 fn load_font(path: &Path) -> Result<Font> {
     let data = fs::read(path).map_err(|e| format!("cannot read font '{}': {e}", path.display()))?;
@@ -420,6 +419,7 @@ fn load_font(path: &Path) -> Result<Font> {
         .map_err(|_| format!("'{}' is not a TrueType or OpenType font", path.display()).into())
 }
 
+/// Only PNG output is supported; catch other extensions before doing any work.
 fn check_output_path(path: &Path) -> Result<()> {
     match path.extension().and_then(|e| e.to_str()) {
         Some(ext) if ext.eq_ignore_ascii_case("png") => Ok(()),
@@ -488,9 +488,9 @@ fn collect_specs(cli: &Cli, stdin_is_piped: bool) -> Result<Vec<SeriesSpec>> {
     Ok(specs)
 }
 
-/// Whether to show the legend: `--no-legend` hides it; `--legend` or `--legend-loc` shows it;
-/// otherwise it's shown for 2 or more series. The plot still draws one only when a series has
-/// a name.
+/// Whether to show the legend: `--no-legend` hides it; `--legend` or `--legend-loc` shows it
+/// (the last of them given wins, so the overridden flags are already cleared); otherwise it's
+/// shown for 2 or more series. The plot still draws one only when a series has a name.
 fn legend_shown(cli: &Cli, series: usize) -> bool {
     !cli.no_legend && (cli.legend || cli.legend_loc.is_some() || series >= 2)
 }
@@ -617,6 +617,10 @@ mod tests {
         assert!(!legend_shown(
             &cli(&["--legend-loc", "center", "--no-legend"]),
             2
+        ));
+        assert!(legend_shown(
+            &cli(&["--no-legend", "--legend-loc", "center"]),
+            1
         ));
         assert!(!legend_shown(&cli(&["--legend", "--no-legend"]), 1));
         assert!(legend_shown(&cli(&["--no-legend", "--legend"]), 1));

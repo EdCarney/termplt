@@ -85,12 +85,16 @@ impl Graph {
     }
 
     /// Fixes the x range; points outside it are not drawn, and lines break where they were. Without it, the range fits the data.
+    /// The range must be non-empty (`min < max`) and finite, or drawing fails with
+    /// [`Error::InvalidLimits`].
     pub fn with_x_limits<T: Graphable>(mut self, min: T, max: T) -> Self {
         self.x_limits = Some((min.to_f64(), max.to_f64()));
         self
     }
 
     /// Fixes the y range; points outside it are not drawn, and lines break where they were. Without it, the range fits the data.
+    /// The range must be non-empty (`min < max`) and finite, or drawing fails with
+    /// [`Error::InvalidLimits`].
     pub fn with_y_limits<T: Graphable>(mut self, min: T, max: T) -> Self {
         self.y_limits = Some((min.to_f64(), max.to_f64()));
         self
@@ -156,7 +160,7 @@ impl Graph {
     /// explicit limits. Non-finite points (NaN, ±∞) are ignored.
     ///
     /// Errors if the graph has no finite data points or the explicit limits are invalid
-    /// (inverted or non-finite).
+    /// (empty, inverted or non-finite).
     pub fn limits(&self) -> Result<Limits<f64>> {
         self.validate_limits()?;
 
@@ -193,7 +197,7 @@ impl Graph {
 
     fn validate_limits(&self) -> Result<()> {
         let check = |axis: &'static str, (min, max): (f64, f64)| -> Result<()> {
-            if !min.is_finite() || !max.is_finite() || min > max {
+            if !min.is_finite() || !max.is_finite() || min >= max {
                 return Err(Error::InvalidLimits { axis, min, max });
             }
             Ok(())
@@ -300,9 +304,10 @@ impl Graph {
     }
 
     /// Scales the visible data so that [`Graph::view_limits`] maps onto `new_limits`. The
-    /// returned graph's explicit limits are `new_limits`. Without visible points, the view is
-    /// that of [`Graph::view_limits`] (an axis without limits keeps the range of all the data, or
-    /// is 0 to 1 without any finite data) and the series are empty.
+    /// returned graph's explicit limits are `new_limits`, so they must span more than a point on
+    /// each axis for its [`Graph::limits`] to succeed. Without visible points, the view is that
+    /// of [`Graph::view_limits`] (an axis without limits keeps the range of all the data, or is
+    /// 0 to 1 without any finite data) and the series are empty.
     pub fn scale(self, new_limits: Limits<f64>) -> Result<Graph> {
         let view_limits = self.view_limits()?;
         self.scale_with_view(&view_limits, new_limits)
@@ -717,6 +722,24 @@ mod tests {
             .limits()
             .unwrap_err();
         assert!(err.to_string().contains("inverted"), "{err}");
+    }
+
+    #[test]
+    fn empty_explicit_limits_return_error() {
+        let err = graph_with_data().with_x_limits(5, 5).limits().unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidLimits { axis: "x", .. }),
+            "{err}"
+        );
+        assert!(err.to_string().contains("empty"), "{err}");
+        let err = graph_with_data()
+            .with_y_limits(0.0, 0.0)
+            .view_limits()
+            .unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidLimits { axis: "y", .. }),
+            "{err}"
+        );
     }
 
     #[test]

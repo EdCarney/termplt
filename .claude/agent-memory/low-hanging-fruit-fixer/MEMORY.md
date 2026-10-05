@@ -23,5 +23,4 @@ tracks the improvement plan and what is still open. Paths below are relative to 
 - `src/bin/termplt/`: CLI (clap).
 
 ## Still open (see IMPROVEMENTS.md)
-- Item 13: no text font beyond digits, so no titles, axis names or legends.
 - Segment clipping at explicit limits (points outside are dropped instead).

@@ -20,7 +20,7 @@ pub enum Error {
         note = "no longer returned: a plot whose points all lie outside its limits draws its axes"
     )]
     NoVisibleData,
-    /// Explicit limits are non-finite or inverted (`min > max`).
+    /// Explicit limits are non-finite, empty (`min == max`) or inverted (`min > max`).
     InvalidLimits {
         /// `"x"` or `"y"`.
         axis: &'static str,
@@ -127,6 +127,8 @@ impl fmt::Display for Error {
             Error::InvalidLimits { axis, min, max } => {
                 if !min.is_finite() || !max.is_finite() {
                     write!(f, "{axis} limits must be finite, got {min}..{max}")
+                } else if min == max {
+                    write!(f, "{axis} limits are empty: min and max are both {min}")
                 } else {
                     write!(
                         f,
@@ -288,6 +290,15 @@ mod tests {
             max: 1.0,
         };
         assert!(inverted.to_string().contains("inverted"));
+        let empty = Error::InvalidLimits {
+            axis: "x",
+            min: 5.0,
+            max: 5.0,
+        };
+        assert_eq!(
+            empty.to_string(),
+            "x limits are empty: min and max are both 5"
+        );
         let infinite = Error::InvalidLimits {
             axis: "y",
             min: 0.0,

@@ -81,8 +81,7 @@ impl KittyCommand {
         ctrl_data: &[String],
         passthrough: Passthrough,
     ) -> KittyCommand {
-        let payload = encoding::read_bytes_to_b64(payload)
-            .expect("base64 encoding of a byte slice cannot fail");
+        let payload = encoding::read_bytes_to_b64(payload);
         let mut ctrl_data = Vec::from(ctrl_data);
 
         let chunks = payload.chunks(MAX_PAYLOAD_SIZE);
