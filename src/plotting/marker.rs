@@ -104,6 +104,27 @@ impl Marker {
         );
         Limits::new(min, max)
     }
+
+    /// The point `(x_adj, y_adj)` away from the center, rounded to whole pixels and clamped to
+    /// at most `size` pixels from the center in each direction (and to the canvas at 0).
+    fn offset_point(&self, size: u32, x_adj: f32, y_adj: f32) -> Point<u32> {
+        let size = size as i32;
+        let x_adj = if x_adj > 0. {
+            i32::min(x_adj.round().convert_to_i32(), size)
+        } else {
+            i32::max(x_adj.round().convert_to_i32(), -size)
+        };
+        let y_adj = if y_adj > 0. {
+            i32::min(y_adj.round().convert_to_i32(), size)
+        } else {
+            i32::max(y_adj.round().convert_to_i32(), -size)
+        };
+
+        let x = (self.center.x.convert_to_i32() + x_adj).convert_to_u32();
+        let y = (self.center.y.convert_to_i32() + y_adj).convert_to_u32();
+
+        Point::new(x, y)
+    }
 }
 
 /// The pixel offsets from a marker's center that a marker of this style covers, sorted and
@@ -174,25 +195,6 @@ impl Drawable for Marker {
                 ]
             }
             MarkerStyle::FilledCircle { size, color } => {
-                let get_point_fn = |x_adj: f32, y_adj: f32| -> Point<u32> {
-                    let size = size as i32;
-                    let x_adj = if x_adj > 0. {
-                        i32::min(x_adj.round().convert_to_i32(), size)
-                    } else {
-                        i32::max(x_adj.round().convert_to_i32(), -size)
-                    };
-                    let y_adj = if y_adj > 0. {
-                        i32::min(y_adj.round().convert_to_i32(), size)
-                    } else {
-                        i32::max(y_adj.round().convert_to_i32(), -size)
-                    };
-
-                    let x = (self.center.x.convert_to_i32() + x_adj).convert_to_u32();
-                    let y = (self.center.y.convert_to_i32() + y_adj).convert_to_u32();
-
-                    Point::new(x, y)
-                };
-
                 let mut points = Vec::new();
                 let radius = size as f32;
                 let step = f32::atan(1.0 / radius);
@@ -202,8 +204,8 @@ impl Drawable for Marker {
                     let y_adj = radius * f32::sin(angle);
 
                     let iter_points = Point::<u32>::range(
-                        &get_point_fn(-x_adj, -y_adj),
-                        &get_point_fn(x_adj, y_adj),
+                        &self.offset_point(size, -x_adj, -y_adj),
+                        &self.offset_point(size, x_adj, y_adj),
                     );
 
                     points.extend(iter_points);
@@ -212,25 +214,6 @@ impl Drawable for Marker {
                 vec![MaskPoints { points, color }]
             }
             MarkerStyle::HollowCircle { size, color } => {
-                let get_point_fn = |x_adj: f32, y_adj: f32| -> Point<u32> {
-                    let size = size as i32;
-                    let x_adj = if x_adj > 0. {
-                        i32::min(x_adj.round().convert_to_i32(), size)
-                    } else {
-                        i32::max(x_adj.round().convert_to_i32(), -size)
-                    };
-                    let y_adj = if y_adj > 0. {
-                        i32::min(y_adj.round().convert_to_i32(), size)
-                    } else {
-                        i32::max(y_adj.round().convert_to_i32(), -size)
-                    };
-
-                    let x = (self.center.x.convert_to_i32() + x_adj).convert_to_u32();
-                    let y = (self.center.y.convert_to_i32() + y_adj).convert_to_u32();
-
-                    Point::new(x, y)
-                };
-
                 let mut points = Vec::new();
                 let radius = size as f32;
                 let step = f32::atan(1.0 / radius);
@@ -240,10 +223,10 @@ impl Drawable for Marker {
                     let y_adj = radius * f32::sin(angle);
 
                     let iter_points = vec![
-                        get_point_fn(x_adj, y_adj),
-                        get_point_fn(-x_adj, y_adj),
-                        get_point_fn(x_adj, -y_adj),
-                        get_point_fn(-x_adj, -y_adj),
+                        self.offset_point(size, x_adj, y_adj),
+                        self.offset_point(size, -x_adj, y_adj),
+                        self.offset_point(size, x_adj, -y_adj),
+                        self.offset_point(size, -x_adj, -y_adj),
                     ];
 
                     points.extend(iter_points);
