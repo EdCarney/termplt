@@ -208,7 +208,7 @@ impl Image {
         y_pix: u32,
     ) -> Result<PositionDetails> {
         // check positioning specification is valid
-        if x_pix > window_sz.x_pix || y_pix > window_sz.y_pix {
+        if x_pix >= window_sz.x_pix || y_pix >= window_sz.y_pix {
             Err(Error::PositionOutsideWindow)
         } else {
             let row = (y_pix / window_sz.pix_per_row) + 1;
@@ -425,5 +425,28 @@ mod tests {
             delete_image_command(5, true, Passthrough::Tmux).into_bytes(),
             b"\x1bPtmux;\x1b\x1b_Ga=d,d=I,i=5,q=2\x1b\x1b\\\x1b\\"
         );
+    }
+
+    #[test]
+    fn positions_outside_the_window_are_rejected() {
+        let window = WindowSize {
+            rows: 2,
+            cols: 4,
+            x_pix: 40,
+            y_pix: 20,
+            pix_per_row: 10,
+            pix_per_col: 10,
+        };
+        // the last pixel lies in the last cell
+        let details = Image::get_positioning_details(&window, 39, 19).unwrap();
+        assert_eq!((details.row, details.col), (2, 4));
+        assert_eq!((details.offset_x, details.offset_y), (9, 9));
+        // the window's size in pixels is one past its last pixel, so it is outside
+        for (x, y) in [(40, 19), (39, 20), (40, 20)] {
+            assert!(matches!(
+                Image::get_positioning_details(&window, x, y),
+                Err(Error::PositionOutsideWindow)
+            ));
+        }
     }
 }

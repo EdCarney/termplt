@@ -1,8 +1,6 @@
-use std::io;
-
 const B64_CHARS: [u8; 64] = *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-pub fn read_bytes_to_b64(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
+pub fn read_bytes_to_b64(bytes: &[u8]) -> Vec<u8> {
     // every 3 bytes produces 4 base64 characters; per RFC 4648, the output length is always a
     // multiple of 4 (partial groups are padded with '=')
     let num_raw = bytes.len();
@@ -29,7 +27,7 @@ pub fn read_bytes_to_b64(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
         convert_partial_bytes_to_b64(&bytes[raw_start..], &mut b64_data[b64_start..]);
     }
 
-    Ok(b64_data)
+    b64_data
 }
 
 /// Converts a 'full set' (3 bytes) to four 6-bit base64 encoded values. Populates these values
@@ -70,7 +68,7 @@ mod tests {
     #[test]
     fn encode_1_byte() {
         let text = b"M";
-        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        let enc_bytes = read_bytes_to_b64(text);
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
         assert_eq!(
             enc_text.len(),
@@ -83,7 +81,7 @@ mod tests {
     #[test]
     fn encode_2_bytes() {
         let text = b"Ma";
-        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        let enc_bytes = read_bytes_to_b64(text);
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
         assert_eq!(
             enc_text.len(),
@@ -96,7 +94,7 @@ mod tests {
     #[test]
     fn encode_3_bytes() {
         let text = b"Man";
-        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        let enc_bytes = read_bytes_to_b64(text);
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
         assert_eq!(
             enc_text.len(),
@@ -109,7 +107,7 @@ mod tests {
     #[test]
     fn encode_empty_input() {
         let text = b"";
-        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        let enc_bytes = read_bytes_to_b64(text);
         assert_eq!(
             enc_bytes.len(),
             0,
@@ -121,7 +119,7 @@ mod tests {
     fn encode_output_length_is_always_multiple_of_4() {
         for len in 1..=20 {
             let input: Vec<u8> = (0..len).map(|i| i as u8).collect();
-            let enc_bytes = read_bytes_to_b64(&input).expect("Failed to encode");
+            let enc_bytes = read_bytes_to_b64(&input);
             assert_eq!(
                 enc_bytes.len() % 4,
                 0,
@@ -134,7 +132,7 @@ mod tests {
     fn encode_longer_string() {
         // "Many hands make light work." is a well-known base64 test vector
         let text = b"Many hands make light work.";
-        let enc_bytes = read_bytes_to_b64(text).expect("Failed to encode text");
+        let enc_bytes = read_bytes_to_b64(text);
         let enc_text = std::str::from_utf8(&enc_bytes).expect("Encoded text is invalid UTF-8");
         assert_eq!(enc_text, "TWFueSBoYW5kcyBtYWtlIGxpZ2h0IHdvcmsu");
     }
