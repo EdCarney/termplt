@@ -4,7 +4,11 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
-## [Unreleased]
+## [0.5.0] - 2026-10-05
+
+Subplots: several plots drawn as one image on a grid, static or live (`Figure`), and empty axes
+for plots without data. Small breaking changes: drawing a plot without visible data no longer
+fails, `Error::NoVisibleData` is deprecated, and `LivePlot::update` is generic.
 
 ### Added
 - `Figure::show_live` and `show_live_in`, and `LivePlot::update` taking a plot or a figure
@@ -228,6 +232,7 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 
 First releases (0.1.0 and 0.1.1, published the same day).
 
+[0.5.0]: https://github.com/EdCarney/termplt/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/EdCarney/termplt/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/EdCarney/termplt/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/EdCarney/termplt/compare/v0.2.0...v0.2.1
