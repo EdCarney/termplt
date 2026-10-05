@@ -9,14 +9,15 @@ use termplt::plotting::{
 pub const DEFAULT_MARKER_SIZE: u32 = 2;
 pub const DEFAULT_LINE_THICKNESS: u32 = 0;
 
-/// Colors and marker shapes assigned to series in order when not set explicitly.
-const PALETTE: &[(RGB8, Marker)] = &[
-    (colors::DODGER_BLUE, Marker::FilledCircle),
-    (colors::RED, Marker::HollowCircle),
-    (colors::LIME, Marker::FilledSquare),
-    (colors::ORANGE, Marker::HollowSquare),
-    (colors::CYAN, Marker::FilledCircle),
-    (colors::MAGENTA, Marker::HollowCircle),
+/// Marker shapes assigned to series in order when not set explicitly, alongside the colors of
+/// [`colors::PALETTE`] (one shape per color).
+const MARKERS: [Marker; 6] = [
+    Marker::FilledCircle,
+    Marker::HollowCircle,
+    Marker::FilledSquare,
+    Marker::HollowSquare,
+    Marker::FilledCircle,
+    Marker::HollowCircle,
 ];
 
 /// Where a series' data comes from.
@@ -292,7 +293,8 @@ pub fn parse_color(name: &str) -> Result<RGB8> {
 /// Builds a series from its points and style. `index` selects the palette entry used for
 /// anything the style leaves unset.
 pub fn build_series(points: &[Point<f64>], style: &Style, index: usize) -> Result<Series> {
-    let (palette_color, palette_marker) = PALETTE[index % PALETTE.len()];
+    let palette_color = colors::PALETTE[index % colors::PALETTE.len()];
+    let palette_marker = MARKERS[index % MARKERS.len()];
 
     let color = style.color.as_deref().map(parse_color).transpose()?;
     let marker_color = style
@@ -446,6 +448,11 @@ mod tests {
 
     fn two_points() -> Vec<Point<f64>> {
         vec![Point::new(1.0, 2.0), Point::new(3.0, 4.0)]
+    }
+
+    #[test]
+    fn markers_pair_with_the_palette_colors() {
+        assert_eq!(MARKERS.len(), colors::PALETTE.len());
     }
 
     #[test]
