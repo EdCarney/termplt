@@ -304,9 +304,10 @@ impl Graph {
     }
 
     /// Scales the visible data so that [`Graph::view_limits`] maps onto `new_limits`. The
-    /// returned graph's explicit limits are `new_limits`. Without visible points, the view is
-    /// that of [`Graph::view_limits`] (an axis without limits keeps the range of all the data, or
-    /// is 0 to 1 without any finite data) and the series are empty.
+    /// returned graph's explicit limits are `new_limits`, so they must span more than a point on
+    /// each axis for its [`Graph::limits`] to succeed. Without visible points, the view is that
+    /// of [`Graph::view_limits`] (an axis without limits keeps the range of all the data, or is
+    /// 0 to 1 without any finite data) and the series are empty.
     pub fn scale(self, new_limits: Limits<f64>) -> Result<Graph> {
         let view_limits = self.view_limits()?;
         self.scale_with_view(&view_limits, new_limits)

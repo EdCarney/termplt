@@ -17,11 +17,11 @@ All notable changes to this project are documented here. The format is based on
   `--no-legend --legend-loc center` now shows the legend at the center. (#73)
 - `Image::display_at_position` rejects a position on the window's far edge (`x == width` or
   `y == height`), which named a cell outside the window. (#76)
-
-### Fixed
 - Internal cleanups with no visible change: the CLI's default colors come from
   `colors::PALETTE` instead of a copy, the circle markers share one offset helper, the
   fallback label color uses `colors::luminance`, and base64 encoding is infallible. (#82, #76)
+
+### Fixed
 - A misplaced doc comment in the CLI and a stale note in the agent memory. (#77)
 
 ## [0.5.0] - 2026-10-05
