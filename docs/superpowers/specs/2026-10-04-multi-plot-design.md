@@ -284,8 +284,8 @@ A separate change that lands first. It also applies to a `Plot` drawn alone.
 
 **Empty axes** (`graph.rs`, `canvas.rs`): the view is 0 to 1 without data; explicit limits on
 one axis with no data give those limits on it and 0 to 1 on the other; points all outside the
-explicit limits give the limits and no error, with an axis without limits keeping the data's range; the legend of an empty labeled series is drawn
-upper right.
+explicit limits give the limits and no error, with an axis without limits keeping the data's
+range; the legend of an empty labeled series is drawn upper right.
 
 **Golden images** (`tests/golden.rs`, new snapshots, reviewed before committing): a 2×2 grid
 with different tick label widths and titles; a spanning layout (one wide plot over two); an
