@@ -176,12 +176,18 @@ pub struct Cli {
     pub legend: bool,
 
     /// Hide the legend
-    #[arg(long, overrides_with = "legend", help_heading = "Plot")]
+    #[arg(long, overrides_with_all = ["legend", "legend_loc"], help_heading = "Plot")]
     pub no_legend: bool,
 
     /// Where the legend goes inside the plot; implies --legend [default: best, the location
     /// covering the least data]
-    #[arg(long, value_name = "LOC", value_enum, help_heading = "Plot")]
+    #[arg(
+        long,
+        value_name = "LOC",
+        value_enum,
+        overrides_with = "no_legend",
+        help_heading = "Plot"
+    )]
     pub legend_loc: Option<LegendLoc>,
 
     /// Write the plot to a PNG file (e.g. plot.png) instead of displaying it; no terminal is
@@ -407,6 +413,14 @@ mod tests {
         assert!(!cli.legend && cli.no_legend);
         let cli = parse(&["--no-legend", "--legend"]).unwrap();
         assert!(cli.legend && !cli.no_legend);
+        // and the last of --legend-loc and --no-legend
+        let cli = parse(&["--legend-loc", "center", "--no-legend"]).unwrap();
+        assert!(cli.legend_loc.is_none() && cli.no_legend);
+        let cli = parse(&["--no-legend", "--legend-loc", "center"]).unwrap();
+        assert!(cli.legend_loc == Some(LegendLoc::Center) && !cli.no_legend);
+        // --legend-loc and --legend are compatible
+        let cli = parse(&["--legend", "--legend-loc", "center"]).unwrap();
+        assert!(cli.legend && cli.legend_loc == Some(LegendLoc::Center));
     }
 
     #[test]

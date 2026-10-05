@@ -488,9 +488,9 @@ fn collect_specs(cli: &Cli, stdin_is_piped: bool) -> Result<Vec<SeriesSpec>> {
     Ok(specs)
 }
 
-/// Whether to show the legend: `--no-legend` hides it; `--legend` or `--legend-loc` shows it;
-/// otherwise it's shown for 2 or more series. The plot still draws one only when a series has
-/// a name.
+/// Whether to show the legend: `--no-legend` hides it; `--legend` or `--legend-loc` shows it
+/// (the last of them given wins, so the overridden flags are already cleared); otherwise it's
+/// shown for 2 or more series. The plot still draws one only when a series has a name.
 fn legend_shown(cli: &Cli, series: usize) -> bool {
     !cli.no_legend && (cli.legend || cli.legend_loc.is_some() || series >= 2)
 }
@@ -617,6 +617,10 @@ mod tests {
         assert!(!legend_shown(
             &cli(&["--legend-loc", "center", "--no-legend"]),
             2
+        ));
+        assert!(legend_shown(
+            &cli(&["--no-legend", "--legend-loc", "center"]),
+            1
         ));
         assert!(!legend_shown(&cli(&["--legend", "--no-legend"]), 1));
         assert!(legend_shown(&cli(&["--no-legend", "--legend"]), 1));
