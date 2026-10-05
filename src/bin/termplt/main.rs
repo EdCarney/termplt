@@ -412,7 +412,6 @@ fn with_hint(e: termplt::Error, cli: &Cli) -> Box<dyn Error> {
     }
 }
 
-/// Only PNG output is supported; catch other extensions before doing any work.
 /// Reads a font file for --font.
 fn load_font(path: &Path) -> Result<Font> {
     let data = fs::read(path).map_err(|e| format!("cannot read font '{}': {e}", path.display()))?;
@@ -420,6 +419,7 @@ fn load_font(path: &Path) -> Result<Font> {
         .map_err(|_| format!("'{}' is not a TrueType or OpenType font", path.display()).into())
 }
 
+/// Only PNG output is supported; catch other extensions before doing any work.
 fn check_output_path(path: &Path) -> Result<()> {
     match path.extension().and_then(|e| e.to_str()) {
         Some(ext) if ext.eq_ignore_ascii_case("png") => Ok(()),
