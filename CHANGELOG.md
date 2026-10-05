@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
+## [Unreleased]
+
+### Changed
+- Dashed lines keep their 6-on/4-off pattern along the whole series instead of restarting it at
+  every segment, so dense data (segments shorter than a dash) no longer draws as a solid line.
+  The pattern restarts after a gap (a non-finite point). (#64)
+- Explicit limits must be non-empty: `with_x_limits(5, 5)` and `Plot::x_limits(5.0, 5.0)` now
+  fail with `Error::InvalidLimits` ("limits are empty") instead of being widened to a padded
+  range around the value, as the CLI's `--xlim`/`--ylim` already required. (#68)
+- CLI: `--legend-loc` and `--no-legend` are last-wins, like `--legend` and `--no-legend`:
+  `--no-legend --legend-loc center` now shows the legend at the center. (#73)
+- `Image::display_at_position` rejects a position on the window's far edge (`x == width` or
+  `y == height`), which named a cell outside the window. (#76)
+
+### Fixed
+- Internal cleanups with no visible change: the CLI's default colors come from
+  `colors::PALETTE` instead of a copy, the circle markers share one offset helper, the
+  fallback label color uses `colors::luminance`, and base64 encoding is infallible. (#82, #76)
+- A misplaced doc comment in the CLI and a stale note in the agent memory. (#77)
+
 ## [0.5.0] - 2026-10-05
 
 Subplots: several plots drawn as one image on a grid, static or live (`Figure`), and empty axes
@@ -232,6 +252,7 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 
 First releases (0.1.0 and 0.1.1, published the same day).
 
+[Unreleased]: https://github.com/EdCarney/termplt/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/EdCarney/termplt/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/EdCarney/termplt/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/EdCarney/termplt/compare/v0.2.1...v0.3.0
