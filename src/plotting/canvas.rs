@@ -81,6 +81,7 @@ pub(crate) struct Canvas {
 }
 
 impl Canvas {
+    /// Creates a canvas of `width` x `height` pixels filled with `background`.
     pub fn new(width: u32, height: u32, background: RGB8) -> Canvas {
         let pixels = width as usize * height as usize;
         let mut bytes = Vec::with_capacity(pixels * 3);
@@ -133,10 +134,17 @@ impl Canvas {
         }
     }
 
-    pub fn get_bytes(&self) -> Vec<u8> {
-        self.bytes.clone()
+    /// Borrows canvas pixels as RGB8 bytes, row-major from the top row.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
     }
 
+    /// Copies the canvas pixels as RGB8 bytes, row-major from the top row.
+    pub fn get_bytes(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+
+    /// Consumes the canvas and returns its pixels as RGB8 bytes, row-major from the top row.
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
@@ -1048,6 +1056,13 @@ mod tests {
             .unwrap()
             .into_bytes();
         assert!(bytes.iter().any(|&b| b < 64));
+    }
+
+    #[test]
+    fn as_bytes_is_row_major_from_top_row() {
+        let mut canvas = Canvas::new(2, 2, colors::BLACK);
+        canvas.put(1, 1, colors::RED);
+        assert_eq!(canvas.as_bytes(), [0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]
