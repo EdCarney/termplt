@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `Terminal::max_square_size` to return size for the maximum possible square size in pixels
+  that could fit in the terminal.
+
 ### Changed
 - Dashed lines keep their 6-on/4-off pattern along the whole series instead of restarting it at
   every segment, so dense data (segments shorter than a dash) no longer draws as a solid line.
