@@ -1,6 +1,7 @@
-//! Named colors (the CSS/X11 set), a series palette and color parsing.
+//! Named colors (the CSS/X11 set), a series palette and color parsing. The color type itself,
+//! [`RGB8`], is re-exported from the `rgb` crate for colors of your own: `RGB8::new(r, g, b)`.
 
-use rgb::RGB8;
+pub use rgb::RGB8;
 
 /// `#800000`
 pub const MAROON: RGB8 = RGB8::new(128, 0, 0);

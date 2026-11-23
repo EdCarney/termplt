@@ -71,10 +71,48 @@ impl CanvasBuffer {
     }
 }
 
-/// An RGB8 pixel buffer, stored row-major from the top row, addressed with (0, 0) at the
-/// lower-left corner.
+/// An RGB8 pixel buffer to draw on directly, for images that are not plots: create it filled
+/// with one color, set pixels with [`Canvas::put`] (or mix them in with [`Canvas::blend`]), and
+/// send [`Canvas::as_bytes`] to the terminal. [`TerminalCanvas`] draws its plots on one.
+///
+/// Pixels are addressed with (0, 0) at the lower-left corner, like the points of a plot. The
+/// bytes are stored row-major from the top row, three per pixel, which is the layout
+/// [`Image::png_from_rgb`](crate::terminal::Image::png_from_rgb) and
+/// [`Placement::replace_rgb`](crate::terminal::Placement::replace_rgb) take.
+///
+/// ```
+/// use termplt::plotting::{
+///     canvas::Canvas,
+///     colors::{self, RGB8},
+/// };
+///
+/// let mut canvas = Canvas::new(2, 2, colors::BLACK);
+/// canvas.put(0, 0, colors::RED); // lower left: the first pixel of the last row
+/// canvas.put(1, 1, RGB8::new(0, 128, 255)); // upper right: the second pixel of the first row
+/// assert_eq!(
+///     canvas.as_bytes(),
+///     [0, 0, 0, 0, 128, 255, 255, 0, 0, 0, 0, 0]
+/// );
+/// ```
+///
+/// A square canvas shown in the terminal and redrawn in place as it changes:
+///
+/// ```no_run
+/// use termplt::plotting::{canvas::Canvas, colors};
+/// use termplt::terminal::{Image, Terminal};
+///
+/// let terminal = Terminal::connect()?;
+/// let side = terminal.max_square_size();
+/// let mut canvas = Canvas::new(side, side, colors::BLACK);
+/// let mut placement = terminal.place(&Image::png_from_rgb(canvas.as_bytes(), side, side)?)?;
+/// for i in 0..side {
+///     canvas.put(i, i, colors::RED); // a diagonal growing from the lower-left corner
+///     placement.replace_rgb(canvas.as_bytes(), canvas.width(), canvas.height())?;
+/// }
+/// # Ok::<(), termplt::Error>(())
+/// ```
 #[derive(Debug)]
-pub(crate) struct Canvas {
+pub struct Canvas {
     bytes: Vec<u8>,
     width: u32,
     height: u32,
@@ -128,7 +166,7 @@ impl Canvas {
     }
 
     /// Sets the color for multiple points in the canvas.
-    pub fn set_pixels(&mut self, points: &[Point<u32>], color: &RGB8) {
+    pub(crate) fn set_pixels(&mut self, points: &[Point<u32>], color: &RGB8) {
         for point in points {
             self.put(point.x, point.y, *color);
         }
@@ -140,13 +178,23 @@ impl Canvas {
     }
 
     /// Copies the canvas pixels as RGB8 bytes, row-major from the top row.
-    pub fn get_bytes(&self) -> Vec<u8> {
+    pub(crate) fn get_bytes(&self) -> Vec<u8> {
         self.as_bytes().to_vec()
     }
 
     /// Consumes the canvas and returns its pixels as RGB8 bytes, row-major from the top row.
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
+    }
+
+    /// Width of the canvas in pixels.
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Height of the canvas in pixels.
+    pub fn height(&self) -> u32 {
+        self.height
     }
 }
 
@@ -272,7 +320,8 @@ impl PlacedText {
 }
 
 /// A pixel canvas that a [`Graph`] and [`Label`]s are drawn on. [`Plot`](crate::Plot) builds
-/// one for you; use it directly for full control over the layout.
+/// one for you; use it directly for full control over the layout. To set pixels yourself,
+/// without a graph, use a [`Canvas`].
 #[derive(Debug)]
 pub struct TerminalCanvas {
     canvas: Canvas,
@@ -1056,6 +1105,13 @@ mod tests {
             .unwrap()
             .into_bytes();
         assert!(bytes.iter().any(|&b| b < 64));
+    }
+
+    #[test]
+    fn width_and_height_report_correct_pixel_values() {
+        let canvas = Canvas::new(5, 10, colors::BLACK);
+        assert_eq!(canvas.width(), 5);
+        assert_eq!(canvas.height(), 10);
     }
 
     #[test]
