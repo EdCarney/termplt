@@ -4,7 +4,10 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/) (before 1.0, a minor version bump may break the API).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-24
+
+The pixel canvas plots are drawn on is public (`Canvas`), for images that are not plots. One
+breaking change: empty explicit limits are now an error (see "Changed").
 
 ### Added
 - `Terminal::max_square_size` to return size for the maximum possible square size in pixels
@@ -15,6 +18,9 @@ All notable changes to this project are documented here. The format is based on
   `Image::png_from_rgb` and `Placement::replace_rgb` take them.
 - `plotting::colors::RGB8` re-exports the color type, so a color can be made with
   `RGB8::new(r, g, b)` without depending on the `rgb` crate.
+- The prelude exports `Canvas` and `terminal::Image`.
+- `examples/canvas.rs`: a square canvas redrawn in place
+  (`cargo run --release --example canvas`).
 
 ### Changed
 - Dashed lines keep their 6-on/4-off pattern along the whole series instead of restarting it at
@@ -262,7 +268,7 @@ A large rework of the library and CLI. The library API has **breaking changes**;
 
 First releases (0.1.0 and 0.1.1, published the same day).
 
-[Unreleased]: https://github.com/EdCarney/termplt/compare/v0.5.0...HEAD
+[0.6.0]: https://github.com/EdCarney/termplt/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/EdCarney/termplt/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/EdCarney/termplt/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/EdCarney/termplt/compare/v0.2.1...v0.3.0
