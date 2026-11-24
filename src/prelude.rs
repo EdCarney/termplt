@@ -4,7 +4,7 @@ pub use crate::{
     Error, Figure, LivePlot, Plot, Result,
     plotting::{
         axes::{Axes, AxesPositioning},
-        canvas::{BufferType, TerminalCanvas},
+        canvas::{BufferType, Canvas, TerminalCanvas},
         colors,
         font::Font,
         graph::Graph,
@@ -16,5 +16,5 @@ pub use crate::{
         series::Series,
         text::TextStyle,
     },
-    terminal::Terminal,
+    terminal::{Image, Terminal},
 };
