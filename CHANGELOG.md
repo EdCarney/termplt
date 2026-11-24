@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `Terminal::max_square_size` to return size for the maximum possible square size in pixels
+  that could fit in the terminal.
+- `plotting::canvas::Canvas`, the RGB8 pixel buffer plots are drawn on, is public, for images
+  that are not plots: `new`, `put` and `blend` (with (0, 0) at the lower-left corner), `width`,
+  `height`, and `as_bytes`/`into_bytes` for the pixels, row-major from the top row, as
+  `Image::png_from_rgb` and `Placement::replace_rgb` take them.
+- `plotting::colors::RGB8` re-exports the color type, so a color can be made with
+  `RGB8::new(r, g, b)` without depending on the `rgb` crate.
+
 ### Changed
 - Dashed lines keep their 6-on/4-off pattern along the whole series instead of restarting it at
   every segment, so dense data (segments shorter than a dash) no longer draws as a solid line.

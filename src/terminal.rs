@@ -184,6 +184,12 @@ impl Terminal {
         text_size_for(&self.window)
     }
 
+    /// The maximum square size that fits the window: the minimum of the full width (less one
+    /// column, so the image does not wrap) and the height (less one row for the cursor).
+    pub fn max_square_size(&self) -> u32 {
+        max_square_size(&self.window)
+    }
+
     /// Displays an image at the cursor and moves the cursor below it.
     pub fn show(&self, image: &Image) -> Result<()> {
         let mut stdout = io::stdout();
@@ -429,6 +435,14 @@ fn default_plot_size(window: &WindowSize) -> (u32, u32) {
     let h = (window.y_pix * 3 / 5).max(MIN_PLOT_SIZE.1);
     let w = available_w.min(2 * h).max(MIN_PLOT_SIZE.0);
     (w, h)
+}
+
+fn max_square_size(window: &WindowSize) -> u32 {
+    // leave one column free so the image does not wrap
+    let max_w = window.x_pix.saturating_sub(window.pix_per_col);
+    // leave one row free for the cursor
+    let max_h = window.rows.saturating_sub(1) * window.pix_per_row;
+    max_w.min(max_h)
 }
 
 /// What [`Terminal::connect_to`] needs from the terminal and the OS, so every branch can be
@@ -805,6 +819,32 @@ mod tests {
         assert_eq!(size(100, 100), MIN_PLOT_SIZE);
     }
 
+    #[test]
+    fn max_square_fits_the_window() {
+        let pix_per_col = 10;
+        let pix_per_row = 20;
+        let size = |x_pix, y_pix| {
+            max_square_size(&WindowSize {
+                rows: y_pix / pix_per_row,
+                cols: x_pix / pix_per_col,
+                x_pix,
+                y_pix,
+                pix_per_col,
+                pix_per_row,
+            })
+        };
+        // wide terminal, height is the limiting dimension (minus one row for cursor)
+        let s = 1000 - pix_per_row;
+        assert_eq!(size(1600, 1000), s);
+        // tall terminal, width is the limiting dimension (minus one column)
+        let s = 500 - pix_per_col;
+        assert_eq!(size(500, 1000), s);
+        // tiny terminal, min sizing does not impact max square return; for equal input
+        // sides, height will be the limiting factor as cells are more tall than wide
+        let s = 100 - pix_per_row;
+        assert_eq!(size(100, 100), s);
+    }
+
     // -- placements --
 
     /// A raw RGB image, whose commands are easy to write out: 1x1 is one chunk (`AAAA`).
@@ -1050,6 +1090,49 @@ mod tests {
             49
         );
         let err = terminal.place_in_buffer(&rgb_image(1, 981)).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::ImageTooTall {
+                rows: 50,
+                screen_rows: 50
+            }
+        ));
+        assert!(err.to_string().contains("50 lines tall"), "{err}");
+    }
+
+    #[test]
+    fn max_square_size_leaves_a_line_to_spare_for_the_cursor() {
+        // 50 rows of 20 px: 49 rows fit
+        let terminal = Terminal::with_window(window());
+        let s = terminal.max_square_size();
+        assert_eq!(
+            terminal.place_in_buffer(&rgb_image(s, s)).unwrap().rows(),
+            49
+        );
+        let err = terminal.place_in_buffer(&rgb_image(s, s + 1)).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::ImageTooTall {
+                rows: 50,
+                screen_rows: 50
+            }
+        ));
+        assert!(err.to_string().contains("50 lines tall"), "{err}");
+    }
+
+    #[test]
+    fn max_square_size_accounts_for_leftover_height_pixels() {
+        // window is 1019 pixels tall with rows 20px tall
+        let terminal = Terminal::with_window(WindowSize {
+            y_pix: 1019,
+            ..window()
+        });
+        let s = terminal.max_square_size();
+        assert_eq!(
+            terminal.place_in_buffer(&rgb_image(s, s)).unwrap().rows(),
+            49
+        );
+        let err = terminal.place_in_buffer(&rgb_image(s, s + 1)).unwrap_err();
         assert!(matches!(
             err,
             Error::ImageTooTall {
